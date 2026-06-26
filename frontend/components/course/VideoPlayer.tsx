@@ -28,6 +28,9 @@ const LANG_VIDEO_OVERRIDES: Record<string, Partial<Record<string, string>>> = {
     ta: "2.1_tamil_tl4rf2",
     kn: "2.1_Kannada_azgabe",
   },
+  "When AI Confidently Lies - Hallucination": {
+    hi: "2.4_hindi_compressed_vxkloy",
+  },
 };
 
 function resolvePublicId(videoTitle: string, defaultId: string, lang: string): string {
