@@ -358,6 +358,9 @@ async def evaluate_assignment(
     lang_instruction = {
         "hi": "Respond entirely in Hindi (Devanagari script).",
         "mr": "Respond entirely in Marathi (Devanagari script).",
+        "te": "Respond entirely in Telugu.",
+        "ta": "Respond entirely in Tamil.",
+        "kn": "Respond entirely in Kannada.",
     }.get(lang, "Respond in English.")
 
     eval_prompt = f"""You are an expert educational evaluator for an AI literacy course for Indian freshers.
