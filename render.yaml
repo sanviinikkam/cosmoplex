@@ -1,0 +1,44 @@
+# Render blueprint for the Cosmoplex backend (FastAPI) + managed Postgres.
+# Frontend is deployed separately on Vercel.
+# Deploy: Render Dashboard → New → Blueprint → point at this repo.
+
+services:
+  - type: web
+    name: cosmoplex-api
+    runtime: docker
+    repo: # optional — Render fills this when you connect the repo
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    region: singapore
+    plan: starter          # "free" spins down on idle (kills WebSockets); use starter+ for production
+    numInstances: 1         # keep at 1 — WebSocket sessions keep state in memory
+    healthCheckPath: /health
+    # Persist generated PDF certificates across deploys/restarts.
+    disk:
+      name: certificates
+      mountPath: /app/certificates
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false          # paste your real key in the Render dashboard
+      - key: SECRET_KEY
+        generateValue: true  # Render generates a strong random value
+      - key: ENVIRONMENT
+        value: production
+      - key: FRONTEND_URL
+        sync: false          # set to your Vercel URL, e.g. https://cosmoplex.vercel.app
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cosmoplex-db
+          property: connectionString
+      # Optional integrations (leave unset unless you use them):
+      # - key: GROQ_API_KEY   # voice (Groq)
+      #     sync: false
+      # - key: FAL_API_KEY    # Illustrator image generation
+      #     sync: false
+
+databases:
+  - name: cosmoplex-db
+    region: singapore
+    plan: free               # free Postgres expires after ~90 days; upgrade for production
+    postgresMajorVersion: "16"
