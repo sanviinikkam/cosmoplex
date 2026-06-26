@@ -10,14 +10,11 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     region: singapore
-    plan: starter          # "free" spins down on idle (kills WebSockets); use starter+ for production
-    numInstances: 1         # keep at 1 — WebSocket sessions keep state in memory
+    plan: free              # free tier — no card required (spins down on idle; upgrade later for always-on)
     healthCheckPath: /health
-    # Persist generated PDF certificates across deploys/restarts.
-    disk:
-      name: certificates
-      mountPath: /app/certificates
-      sizeGB: 1
+    # NOTE: free tier has no persistent disk, so generated PDF certificates live
+    # on an ephemeral filesystem (lost on restart/redeploy — they regenerate on
+    # demand). Add a disk + paid plan later if you need them to persist.
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false          # paste your real key in the Render dashboard
