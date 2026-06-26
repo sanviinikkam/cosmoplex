@@ -21,9 +21,14 @@ async def lifespan(app: FastAPI):
     try:
         await create_tables()
         print("✓ Database tables ready")
+        # Seed the course on startup. seed() is idempotent — it checks for an
+        # existing course and skips if already seeded, so this is safe to run
+        # on every boot (and works around free-tier hosts having no shell).
+        from db.seed_course import seed
+        await seed(force=False)
     except Exception as e:
-        print(f"⚠ Database unavailable: {e}")
-        print("  Server starting anyway. Set up PostgreSQL and restart to enable persistence.")
+        print(f"⚠ Database setup/seed issue: {e}")
+        print("  Server starting anyway.")
     yield
 
 
