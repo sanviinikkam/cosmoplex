@@ -22,6 +22,7 @@ const CLOUD_NAME =
 // Used when a dubbed version exists for a language other than the default.
 const LANG_VIDEO_OVERRIDES: Record<string, Partial<Record<string, string>>> = {
   "The 10 AI Words Every Fresher Must Know": {
+    en: "2.1_English_compressed_s6vhdd",
     hi: "2.1_hindi_sixgnf",
     mr: "2.1_Marathi_cws5fc",
     te: "2.1_Telugu_qloes6",
