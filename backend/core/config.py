@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     environment: str = "development"
     pass_threshold: float = 0.70
 
+    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", mode="before")
+    @classmethod
+    def _strip_secret(cls, v):
+        # Pasted secrets often pick up trailing newlines/spaces, which break
+        # HTTP headers (e.g. the Anthropic API key) — strip them defensively.
+        return v.strip() if isinstance(v, str) else v
+
     @field_validator("database_url")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:
