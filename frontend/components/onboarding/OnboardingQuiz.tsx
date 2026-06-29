@@ -8,6 +8,7 @@ import { getToken } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { getQuizI18n } from "@/lib/quiz-i18n";
 import { useLang } from "@/lib/use-lang";
+import { VoiceInput } from "./VoiceInput";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,14 @@ export function OnboardingQuiz() {
 
   function set<K extends keyof FormData>(key: K, val: FormData[K]) {
     setForm((f) => ({ ...f, [key]: val }));
+  }
+
+  // Append dictated speech to a text field, preserving what's already there.
+  function appendText(key: keyof FormData, text: string) {
+    setForm((f) => {
+      const existing = typeof f[key] === "string" ? (f[key] as string) : "";
+      return { ...f, [key]: existing ? `${existing} ${text}` : text };
+    });
   }
 
   function next() {
@@ -245,28 +254,44 @@ export function OnboardingQuiz() {
                     : t.role.questionStudent}
                 </h2>
                 <p className="text-sm text-zinc-500 mb-6">{t.role.hint}</p>
-                <input
-                  type="text"
-                  placeholder={
-                    form.employment_status === "working"
-                      ? t.role.placeholderWorking
-                      : t.role.placeholderStudent
-                  }
-                  value={form.employment_status === "working" ? form.job_role : form.target_job_role}
-                  onChange={(e) =>
-                    form.employment_status === "working"
-                      ? set("job_role", e.target.value)
-                      : set("target_job_role", e.target.value)
-                  }
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 mb-4"
-                />
-                <input
-                  type="text"
-                  placeholder={t.role.industryPlaceholder}
-                  value={form.industry}
-                  onChange={(e) => set("industry", e.target.value)}
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
-                />
+                <div className="relative mb-4">
+                  <input
+                    type="text"
+                    placeholder={
+                      form.employment_status === "working"
+                        ? t.role.placeholderWorking
+                        : t.role.placeholderStudent
+                    }
+                    value={form.employment_status === "working" ? form.job_role : form.target_job_role}
+                    onChange={(e) =>
+                      form.employment_status === "working"
+                        ? set("job_role", e.target.value)
+                        : set("target_job_role", e.target.value)
+                    }
+                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 pr-12 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
+                  />
+                  <VoiceInput
+                    lang={lang}
+                    onText={(txt) =>
+                      appendText(form.employment_status === "working" ? "job_role" : "target_job_role", txt)
+                    }
+                    className="absolute top-1/2 -translate-y-1/2 right-2"
+                  />
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={t.role.industryPlaceholder}
+                    value={form.industry}
+                    onChange={(e) => set("industry", e.target.value)}
+                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 pr-12 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
+                  />
+                  <VoiceInput
+                    lang={lang}
+                    onText={(txt) => appendText("industry", txt)}
+                    className="absolute top-1/2 -translate-y-1/2 right-2"
+                  />
+                </div>
               </div>
             )}
 
@@ -280,13 +305,20 @@ export function OnboardingQuiz() {
                   {t.goal.question}
                 </h2>
                 <p className="text-sm text-zinc-500 mb-6">{t.goal.hint}</p>
-                <textarea
-                  placeholder={t.goal.placeholder}
-                  value={form.learning_objective}
-                  onChange={(e) => set("learning_objective", e.target.value)}
-                  rows={4}
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 resize-none"
-                />
+                <div className="relative">
+                  <textarea
+                    placeholder={t.goal.placeholder}
+                    value={form.learning_objective}
+                    onChange={(e) => set("learning_objective", e.target.value)}
+                    rows={4}
+                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 pr-12 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 resize-none"
+                  />
+                  <VoiceInput
+                    lang={lang}
+                    onText={(txt) => appendText("learning_objective", txt)}
+                    className="absolute bottom-2 right-2"
+                  />
+                </div>
               </div>
             )}
 
@@ -328,20 +360,34 @@ export function OnboardingQuiz() {
                 </h2>
                 <p className="text-sm text-zinc-500 mb-6">{t.optional_step.hint}</p>
                 <div className="flex flex-col gap-4">
-                  <input
-                    type="text"
-                    placeholder={t.optional_step.collegePlaceholder}
-                    value={form.college}
-                    onChange={(e) => set("college", e.target.value)}
-                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
-                  />
-                  <input
-                    type="text"
-                    placeholder={t.optional_step.hometownPlaceholder}
-                    value={form.hometown}
-                    onChange={(e) => set("hometown", e.target.value)}
-                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={t.optional_step.collegePlaceholder}
+                      value={form.college}
+                      onChange={(e) => set("college", e.target.value)}
+                      className="w-full border border-zinc-200 rounded-xl px-4 py-3 pr-12 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
+                    />
+                    <VoiceInput
+                      lang={lang}
+                      onText={(txt) => appendText("college", txt)}
+                      className="absolute top-1/2 -translate-y-1/2 right-2"
+                    />
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={t.optional_step.hometownPlaceholder}
+                      value={form.hometown}
+                      onChange={(e) => set("hometown", e.target.value)}
+                      className="w-full border border-zinc-200 rounded-xl px-4 py-3 pr-12 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
+                    />
+                    <VoiceInput
+                      lang={lang}
+                      onText={(txt) => appendText("hometown", txt)}
+                      className="absolute top-1/2 -translate-y-1/2 right-2"
+                    />
+                  </div>
                   <div>
                     <p className="text-xs font-medium text-zinc-500 mb-2">
                       {t.optional_step.aiLevelLabel}
