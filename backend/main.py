@@ -12,6 +12,7 @@ from api.auth_routes import router as auth_router
 from api.course_routes import router as course_router
 from api.learner_routes import router as learner_router
 from api.onboarding_routes import router as onboarding_router
+from api.whatsapp_routes import router as whatsapp_router
 from api.websocket import handle_learn_websocket
 
 
@@ -55,6 +56,7 @@ app.include_router(learner_router)
 app.include_router(course_router)
 app.include_router(admin_router)
 app.include_router(onboarding_router)
+app.include_router(whatsapp_router)
 
 # Serve generated certificates
 certs_dir = Path("certificates")
