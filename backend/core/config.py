@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""    # from the WhatsApp > API setup screen
     whatsapp_verify_token: str = "cosmoplex-verify"  # you choose this; must match Meta webhook config
     graph_api_version: str = "v21.0"
+    cloudinary_cloud_name: str = "dlpl4inio"  # for building lesson video links sent over WhatsApp
 
     @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", mode="before")
     @classmethod

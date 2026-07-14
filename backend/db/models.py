@@ -310,3 +310,20 @@ class VideoProgress(Base):
 
     learner = relationship("LearnerProfile", back_populates="video_progress")
     video = relationship("Video", back_populates="progress_records")
+
+
+class WhatsAppSession(Base):
+    """Conversation state for a WhatsApp user, keyed by phone number.
+
+    WhatsApp users are anonymous until they enrol, so we track their chosen
+    language and where they are in the flow here (separate from LearnerProfile).
+    """
+    __tablename__ = "whatsapp_sessions"
+
+    phone = Column(String(30), primary_key=True)          # e.g. "919876543210"
+    language = Column(String(10), nullable=True)           # en | hi | mr | te | ta | kn
+    stage = Column(String(30), default="new")              # new | language_set | learning
+    lesson_index = Column(Integer, default=0)              # position in the lesson list
+    name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
