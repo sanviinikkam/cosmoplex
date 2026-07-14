@@ -89,6 +89,29 @@ async def verify(
     return Response(status_code=403, content="verification failed")
 
 
+# ── One-time helper: register a phone number on the Cloud API ────────────────
+# Opening this URL registers the number (creates its Cloud API account + sets the
+# 2-step PIN) using the server-side token, so no terminal/curl is needed.
+# Guarded by the verify token so it isn't public.
+@router.get("/register")
+async def register_number(phone_number_id: str, pin: str, key: str):
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden")
+    if not settings.whatsapp_token:
+        return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
+    url = f"{GRAPH}/{settings.graph_api_version}/{phone_number_id}/register"
+    try:
+        async with httpx.AsyncClient(timeout=30) as h:
+            resp = await h.post(
+                url,
+                headers={"Authorization": f"Bearer {settings.whatsapp_token}"},
+                json={"messaging_product": "whatsapp", "pin": pin},
+            )
+        return {"ok": resp.status_code < 400, "status_code": resp.status_code, "body": resp.text}
+    except httpx.HTTPError as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request):
