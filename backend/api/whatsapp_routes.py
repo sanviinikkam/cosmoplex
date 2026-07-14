@@ -112,6 +112,44 @@ async def register_number(phone_number_id: str, pin: str, key: str):
         return {"ok": False, "error": str(e)}
 
 
+# ── One-shot setup: find the real Phone Number ID for a WABA and register it ──
+# Uses the server-side token, so you only pass the WABA id + verify key.
+@router.get("/setup")
+async def setup_number(waba_id: str, key: str, pin: str = "000111"):
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+    if not settings.whatsapp_token:
+        return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
+    headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
+    ver = settings.graph_api_version
+    try:
+        async with httpx.AsyncClient(timeout=30) as h:
+            listing = await h.get(f"{GRAPH}/{ver}/{waba_id}/phone_numbers", headers=headers)
+            if listing.status_code >= 400:
+                return {"ok": False, "step": "list_numbers", "status": listing.status_code, "body": listing.text}
+            numbers = listing.json().get("data", [])
+            if not numbers:
+                return {"ok": False, "step": "list_numbers", "error": "No phone numbers on this WABA.", "body": listing.text}
+            num = numbers[0]
+            phone_number_id = num.get("id")
+            display = num.get("display_phone_number")
+            reg = await h.post(
+                f"{GRAPH}/{ver}/{phone_number_id}/register",
+                headers=headers,
+                json={"messaging_product": "whatsapp", "pin": pin},
+            )
+            return {
+                "ok": reg.status_code < 400,
+                "found_number": display,
+                "phone_number_id": phone_number_id,
+                "register_status": reg.status_code,
+                "register_body": reg.text,
+                "all_numbers": [{"id": n.get("id"), "number": n.get("display_phone_number")} for n in numbers],
+            }
+    except httpx.HTTPError as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request):
