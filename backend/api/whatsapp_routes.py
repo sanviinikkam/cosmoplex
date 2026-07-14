@@ -150,6 +150,31 @@ async def setup_number(waba_id: str, key: str, pin: str = "000111"):
         return {"ok": False, "error": str(e)}
 
 
+# ── Subscribe THIS app to a WABA's webhooks (the commonly-missed step) ───────
+@router.get("/subscribe")
+async def subscribe_app(waba_id: str, key: str):
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+    if not settings.whatsapp_token:
+        return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
+    headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
+    ver = settings.graph_api_version
+    try:
+        async with httpx.AsyncClient(timeout=30) as h:
+            # Subscribe the app (identified by the token) to this WABA's webhooks.
+            sub = await h.post(f"{GRAPH}/{ver}/{waba_id}/subscribed_apps", headers=headers)
+            # Read back which apps are now subscribed, to confirm.
+            check = await h.get(f"{GRAPH}/{ver}/{waba_id}/subscribed_apps", headers=headers)
+        return {
+            "ok": sub.status_code < 400,
+            "subscribe_status": sub.status_code,
+            "subscribe_body": sub.text,
+            "currently_subscribed": check.text,
+        }
+    except httpx.HTTPError as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request):
