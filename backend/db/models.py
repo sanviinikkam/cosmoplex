@@ -322,8 +322,10 @@ class WhatsAppSession(Base):
 
     phone = Column(String(30), primary_key=True)          # e.g. "919876543210"
     language = Column(String(10), nullable=True)           # en | hi | mr | te | ta | kn
-    stage = Column(String(30), default="new")              # new | language_set | learning
+    stage = Column(String(30), default="new")              # new | lesson | quiz | quiz_failed | assignment | done
     lesson_index = Column(Integer, default=0)              # position in the lesson list
+    quiz_index = Column(Integer, default=0)                # current quiz question (0-based)
+    quiz_correct = Column(Integer, default=0)              # correct answers so far this attempt
     name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

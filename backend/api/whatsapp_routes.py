@@ -2,17 +2,20 @@
 WhatsApp Cloud API adapter (Meta direct).
 
   GET  /whatsapp/webhook  → Meta verification handshake
-  POST /whatsapp/webhook  → inbound messages → language picker → lesson delivery
+  POST /whatsapp/webhook  → inbound → language picker → lesson → quiz → assignment
 
-Flow:
-  1. First contact → send an interactive LIST so the user picks a language.
-  2. On language pick → save it (per phone) and deliver the first lesson video
-     in that language, with "Next lesson" / "Language" buttons.
-  3. "Next" advances lessons; any free text goes to the Teacher agent, which
-     replies in the chosen language.
-
-State is persisted per phone number in the whatsapp_sessions table.
+Learning flow (state persisted per phone in whatsapp_sessions):
+  1. First contact → interactive LIST of 6 languages.
+  2. Pick language → deliver Lesson 1 video + "Start quiz" button.
+  3. Quiz → 5 MCQs as interactive lists; 3/5 to pass, retake on fail.
+  4. Pass → deliver assignment; learner types their answer.
+  5. Answer graded by Claude (75/100 to pass); resubmit on fail.
+  6. Pass → lesson complete; free text routes to the Teacher agent.
 """
+import json
+import re
+
+import anthropic
 import httpx
 from fastapi import APIRouter, Request, Response, Query
 
@@ -21,12 +24,15 @@ from db.database import async_session_factory
 from db.models import WhatsAppSession
 from agents.base import LearnerState
 from agents.teacher import run_teacher
+from api.whatsapp_content import (
+    LESSON_VIDEOS, QUIZ, QUIZ_PASS, ASSIGNMENT, ASSIGN_PASS, CONTENT, tr,
+)
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 GRAPH = "https://graph.facebook.com"
+NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
 
-# ── Languages offered in the picker ──────────────────────────────────────────
 LANGS = {
     "en": "English",
     "hi": "हिंदी (Hindi)",
@@ -34,80 +40,6 @@ LANGS = {
     "te": "తెలుగు (Telugu)",
     "ta": "தமிழ் (Tamil)",
     "kn": "ಕನ್ನಡ (Kannada)",
-}
-
-# ── Course content: lessons that have a video in every language ──────────────
-# Each lesson maps a language code → Cloudinary public ID. Add more dicts here
-# as more localized lesson videos are recorded.
-LESSONS = [
-    {
-        "video": {
-            "en": "2.1_English_compressed_s6vhdd",
-            "hi": "2.1_hindi_sixgnf",
-            "mr": "2.1_Marathi_cws5fc",
-            "te": "2.1_Telugu_qloes6",
-            "ta": "2.1_tamil_tl4rf2",
-            "kn": "2.1_Kannada_azgabe",
-        },
-    },
-]
-
-# ── Localized UI strings (one dict per language) ─────────────────────────────
-CONTENT = {
-    "en": {
-        "picker_done": "Great! We'll learn in English. 🎉",
-        "lesson_caption": "📚 Lesson {n}: The 10 AI Words Every Fresher Must Know\n\nWatch the video, then tap “Next lesson”.",
-        "after_text": "What next?",
-        "next_btn": "▶️ Next lesson",
-        "menu_btn": "🌐 Language",
-        "no_more": "🎉 That's every lesson for now — more are coming soon! Meanwhile, ask me anything about what you learned.",
-        "watch_here": "▶️ Watch the lesson here:",
-    },
-    "hi": {
-        "picker_done": "बढ़िया! अब हम हिंदी में सीखेंगे। 🎉",
-        "lesson_caption": "📚 पाठ {n}: हर फ्रेशर को पता होने चाहिए ये 10 AI शब्द\n\nवीडियो देखें, फिर “अगला पाठ” दबाएँ।",
-        "after_text": "आगे क्या करें?",
-        "next_btn": "▶️ अगला पाठ",
-        "menu_btn": "🌐 भाषा",
-        "no_more": "🎉 फ़िलहाल इतने ही पाठ हैं — और जल्द आ रहे हैं! तब तक, आपने जो सीखा उसके बारे में मुझसे कुछ भी पूछें।",
-        "watch_here": "▶️ पाठ यहाँ देखें:",
-    },
-    "mr": {
-        "picker_done": "छान! आता आपण मराठीत शिकूया. 🎉",
-        "lesson_caption": "📚 धडा {n}: प्रत्येक फ्रेशरला माहिती हवे असे 10 AI शब्द\n\nव्हिडिओ पाहा, मग “पुढील धडा” दाबा.",
-        "after_text": "पुढे काय करायचे?",
-        "next_btn": "▶️ पुढील धडा",
-        "menu_btn": "🌐 भाषा",
-        "no_more": "🎉 सध्या एवढेच धडे आहेत — अजून लवकरच येत आहेत! तोपर्यंत, तुम्ही जे शिकलात त्याबद्दल मला काहीही विचारा.",
-        "watch_here": "▶️ धडा इथे पाहा:",
-    },
-    "te": {
-        "picker_done": "అద్భుతం! ఇక తెలుగులో నేర్చుకుందాం. 🎉",
-        "lesson_caption": "📚 పాఠం {n}: ప్రతి ఫ్రెషర్ తెలుసుకోవలసిన 10 AI పదాలు\n\nవీడియో చూసి, తర్వాత “తదుపరి పాఠం” నొక్కండి.",
-        "after_text": "తర్వాత ఏం చేద్దాం?",
-        "next_btn": "▶️ తదుపరి పాఠం",
-        "menu_btn": "🌐 భాష",
-        "no_more": "🎉 ప్రస్తుతానికి ఇవే పాఠాలు — మరిన్ని త్వరలో వస్తున్నాయి! అప్పటివరకు, మీరు నేర్చుకున్నదాని గురించి నన్ను ఏదైనా అడగండి.",
-        "watch_here": "▶️ పాఠాన్ని ఇక్కడ చూడండి:",
-    },
-    "ta": {
-        "picker_done": "அருமை! இனி தமிழில் கற்போம். 🎉",
-        "lesson_caption": "📚 பாடம் {n}: ஒவ்வொரு ஃப்ரெஷரும் தெரிந்திருக்க வேண்டிய 10 AI சொற்கள்\n\nவீடியோவைப் பாருங்கள், பிறகு “அடுத்த பாடம்” அழுத்துங்கள்.",
-        "after_text": "அடுத்து என்ன செய்யலாம்?",
-        "next_btn": "▶️ அடுத்த பாடம்",
-        "menu_btn": "🌐 மொழி",
-        "no_more": "🎉 தற்போதைக்கு இத்துடன் பாடங்கள் முடிந்தன — விரைவில் மேலும் வரும்! அதுவரை, நீங்கள் கற்றது பற்றி என்னிடம் எதையும் கேளுங்கள்.",
-        "watch_here": "▶️ பாடத்தை இங்கே பாருங்கள்:",
-    },
-    "kn": {
-        "picker_done": "ಅದ್ಭುತ! ಇನ್ನು ಕನ್ನಡದಲ್ಲಿ ಕಲಿಯೋಣ. 🎉",
-        "lesson_caption": "📚 ಪಾಠ {n}: ಪ್ರತಿ ಫ್ರೆಶರ್ ತಿಳಿದಿರಬೇಕಾದ 10 AI ಪದಗಳು\n\nವೀಡಿಯೊ ನೋಡಿ, ನಂತರ “ಮುಂದಿನ ಪಾಠ” ಒತ್ತಿ.",
-        "after_text": "ಮುಂದೆ ಏನು ಮಾಡೋಣ?",
-        "next_btn": "▶️ ಮುಂದಿನ ಪಾಠ",
-        "menu_btn": "🌐 ಭಾಷೆ",
-        "no_more": "🎉 ಸದ್ಯಕ್ಕೆ ಇಷ್ಟೇ ಪಾಠಗಳು — ಶೀಘ್ರದಲ್ಲೇ ಇನ್ನಷ್ಟು ಬರಲಿವೆ! ಅಲ್ಲಿಯವರೆಗೆ, ನೀವು ಕಲಿತದ್ದರ ಬಗ್ಗೆ ನನ್ನನ್ನು ಏನಾದರೂ ಕೇಳಿ.",
-        "watch_here": "▶️ ಪಾಠವನ್ನು ಇಲ್ಲಿ ನೋಡಿ:",
-    },
 }
 
 
@@ -144,39 +76,31 @@ async def _post(payload: dict) -> httpx.Response | None:
 
 async def send_text(to: str, body: str) -> None:
     await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
+        "messaging_product": "whatsapp", "to": to, "type": "text",
         "text": {"body": body[:4096]},
     })
 
 
 async def send_buttons(to: str, text: str, buttons: list[tuple[str, str]]) -> None:
-    """Send up to 3 reply buttons. `buttons` = list of (id, title)."""
+    """Up to 3 reply buttons. `buttons` = list of (id, title)."""
     await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
+        "messaging_product": "whatsapp", "to": to, "type": "interactive",
         "interactive": {
             "type": "button",
             "body": {"text": text[:1024]},
-            "action": {
-                "buttons": [
-                    {"type": "reply", "reply": {"id": bid, "title": title[:20]}}
-                    for bid, title in buttons[:3]
-                ]
-            },
+            "action": {"buttons": [
+                {"type": "reply", "reply": {"id": bid, "title": title[:20]}}
+                for bid, title in buttons[:3]
+            ]},
         },
     })
 
 
 async def send_list(to: str, header: str, body: str, button: str,
-                    rows: list[tuple[str, str, str]]) -> None:
+                    rows: list[tuple[str, str, str]], section_title: str = "Options") -> None:
     """Interactive list menu. `rows` = list of (id, title, description)."""
     await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
+        "messaging_product": "whatsapp", "to": to, "type": "interactive",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": header[:60]},
@@ -184,7 +108,7 @@ async def send_list(to: str, header: str, body: str, button: str,
             "action": {
                 "button": button[:20],
                 "sections": [{
-                    "title": "Languages",
+                    "title": section_title[:24],
                     "rows": [
                         {"id": rid, "title": title[:24], "description": desc[:72]}
                         for rid, title, desc in rows[:10]
@@ -196,19 +120,60 @@ async def send_list(to: str, header: str, body: str, button: str,
 
 
 async def send_video(to: str, link: str, caption: str) -> None:
-    """Send a video by link; fall back to a clickable link in text if Meta
-    rejects it (e.g. file too large to fetch, or an unsupported host)."""
+    """Send a video by link; fall back to a clickable link if Meta rejects it."""
     resp = await _post({
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "video",
+        "messaging_product": "whatsapp", "to": to, "type": "video",
         "video": {"link": link, "caption": caption[:1024]},
     })
     if resp is None or resp.status_code >= 400:
         await send_text(to, f"{caption}\n\n{link}")
 
 
-# ── Webhook verification (Meta calls this once when you set the URL) ──────────
+# ── Assignment grading (Claude Haiku, text answer) ───────────────────────────
+async def grade_answer(question: str, rubric: str, answer: str, lang: str) -> tuple[int, str]:
+    lang_instruction = {
+        "hi": "Respond entirely in Hindi (Devanagari script).",
+        "mr": "Respond entirely in Marathi (Devanagari script).",
+        "te": "Respond entirely in Telugu.",
+        "ta": "Respond entirely in Tamil.",
+        "kn": "Respond entirely in Kannada.",
+    }.get(lang, "Respond in English.")
+
+    prompt = f"""You are an expert educational evaluator for an AI literacy course for Indian freshers.
+
+Assignment question:
+{question}
+
+Rubric (use this to assign the score):
+{rubric}
+
+{lang_instruction}
+
+Learner's answer:
+{answer}
+
+Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
+{{"score": <integer 0-100>, "feedback": "<2-3 sentence feedback string>"}}"""
+
+    try:
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        result = json.loads(m.group()) if m else {}
+        score = max(0, min(100, int(result.get("score", 0))))
+        feedback = result.get("feedback", "")
+        return score, feedback
+    except Exception as e:
+        print(f"⚠ WhatsApp grading error: {e}")
+        return 0, "Sorry — I couldn't evaluate that just now. Please send your answer again."
+
+
+# ── Webhook verification ──────────────────────────────────────────────────────
 @router.get("/webhook")
 async def verify(
     hub_mode: str = Query(None, alias="hub.mode"),
@@ -277,7 +242,7 @@ async def setup_number(waba_id: str, key: str, pin: str = "000111"):
         return {"ok": False, "error": str(e)}
 
 
-# ── Subscribe THIS app to a WABA's webhooks (the commonly-missed step) ───────
+# ── Subscribe THIS app to a WABA's webhooks ──────────────────────────────────
 @router.get("/subscribe")
 async def subscribe_app(waba_id: str, key: str):
     if key != settings.whatsapp_verify_token:
@@ -309,15 +274,13 @@ async def receive(request: Request):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 contacts = value.get("contacts", [])
-                name = None
-                if contacts:
-                    name = contacts[0].get("profile", {}).get("name")
+                name = contacts[0].get("profile", {}).get("name") if contacts else None
                 for msg in value.get("messages", []):
                     frm = msg.get("from")
                     reply_id, text = _extract(msg)
                     if frm and (reply_id or text):
                         await _handle_message(frm, reply_id, text, name)
-    except Exception as e:  # never fail the webhook — Meta retries aggressively
+    except Exception as e:
         print(f"⚠ WhatsApp webhook error: {e}")
     return {"status": "ok"}
 
@@ -338,6 +301,7 @@ def _extract(msg: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
+# ── Senders for each step ─────────────────────────────────────────────────────
 async def _send_language_picker(to: str) -> None:
     rows = [(f"lang_{code}", label.split(" (")[0], label) for code, label in LANGS.items()]
     await send_list(
@@ -346,18 +310,42 @@ async def _send_language_picker(to: str) -> None:
         body="👋 Welcome to Cosmoplex — learn AI in your own language!\n\nFirst, choose the language you'd like to learn in:",
         button="Choose language",
         rows=rows,
+        section_title="Languages",
     )
 
 
-async def _send_lesson(to: str, lang: str, index: int) -> None:
-    c = CONTENT[lang]
-    lesson = LESSONS[index]
-    public_id = lesson["video"].get(lang) or lesson["video"]["en"]
-    caption = c["lesson_caption"].format(n=index + 1)
-    await send_video(to, _video_url(public_id), caption)
-    await send_buttons(to, c["after_text"], [("next", c["next_btn"]), ("menu", c["menu_btn"])])
+async def _send_lesson(to: str, lang: str) -> None:
+    public_id = LESSON_VIDEOS[0].get(lang) or LESSON_VIDEOS[0]["en"]
+    await send_video(to, _video_url(public_id), tr(lang, "lesson_caption").format(n=1))
+    await send_buttons(to, tr(lang, "after_text"),
+                       [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
+async def _send_quiz_question(to: str, lang: str, qidx: int) -> None:
+    item = QUIZ[qidx]
+    q = item["q"].get(lang, item["q"]["en"])
+    opts = item["opts"].get(lang, item["opts"]["en"])
+    numbered = "\n".join(f"{NUM_EMOJI[i]} {opt}" for i, opt in enumerate(opts))
+    body = f"{tr(lang, 'quiz_progress').format(n=qidx + 1)}\n\n{q}\n\n{numbered}"
+    rows = [(f"ans_{i}", NUM_EMOJI[i], opts[i]) for i in range(len(opts))]
+    await send_list(to, header="Quiz", body=body, button=tr(lang, "answer_btn"),
+                    rows=rows, section_title=tr(lang, "answer_btn"))
+
+
+async def _send_assignment(to: str, lang: str) -> None:
+    q = ASSIGNMENT["question"].get(lang, ASSIGNMENT["question"]["en"])
+    await send_text(to, tr(lang, "assignment_intro").format(q=q))
+
+
+async def _start_quiz(db, session, frm: str, lang: str) -> None:
+    session.stage = "quiz"
+    session.quiz_index = 0
+    session.quiz_correct = 0
+    await db.commit()
+    await _send_quiz_question(frm, lang, 0)
+
+
+# ── Main handler ──────────────────────────────────────────────────────────────
 async def _handle_message(frm: str, reply_id: str | None, text: str | None, name: str | None) -> None:
     async with async_session_factory() as db:
         session = await db.get(WhatsAppSession, frm)
@@ -367,47 +355,97 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if name and not session.name:
             session.name = name
 
-        # 1) Language selection from the list
+        low = (text or "").strip().lower()
+
+        # Language selection from the list
         if reply_id and reply_id.startswith("lang_"):
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
                 session.language = lang
-                session.stage = "learning"
-                session.lesson_index = 0
+                session.stage = "lesson"
                 await db.commit()
-                await send_text(frm, CONTENT[lang]["picker_done"])
-                await _send_lesson(frm, lang, 0)
+                await send_text(frm, tr(lang, "picker_done"))
+                await _send_lesson(frm, lang)
                 return
 
-        # 2) No language chosen yet → show the picker
+        # No language yet → show picker
         if not session.language:
             await db.commit()
             await _send_language_picker(frm)
             return
 
         lang = session.language
-        c = CONTENT[lang]
-        low = (text or "").strip().lower()
 
-        # 3) "Language" button / command → re-show the picker
+        # "Language" button/command → re-show picker anytime
         if reply_id == "menu" or low in ("menu", "language", "lang", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
             await db.commit()
             await _send_language_picker(frm)
             return
 
-        # 4) "Next" button / command → advance to the next lesson
-        if reply_id == "next" or low in ("next", "अगला", "पुढील", "தொடர்", "ముందుకు"):
-            idx = (session.lesson_index or 0) + 1
-            if idx < len(LESSONS):
-                session.lesson_index = idx
-                await db.commit()
-                await _send_lesson(frm, lang, idx)
-            else:
-                await db.commit()
-                await send_text(frm, c["no_more"])
+        # Start / retake quiz
+        if reply_id in ("quiz", "retake"):
+            await _start_quiz(db, session, frm, lang)
             return
 
-        # 5) Otherwise → route to the Teacher agent, replying in their language
+        # In the middle of the quiz
+        if session.stage == "quiz":
+            if reply_id and reply_id.startswith("ans_"):
+                qidx = session.quiz_index or 0
+                chosen = int(reply_id.split("_", 1)[1])
+                item = QUIZ[qidx]
+                if chosen == item["correct"]:
+                    session.quiz_correct = (session.quiz_correct or 0) + 1
+                    await send_text(frm, tr(lang, "correct"))
+                else:
+                    correct_opt = item["opts"].get(lang, item["opts"]["en"])[item["correct"]]
+                    await send_text(frm, tr(lang, "wrong").format(a=correct_opt))
+
+                qidx += 1
+                session.quiz_index = qidx
+                if qidx < len(QUIZ):
+                    await db.commit()
+                    await _send_quiz_question(frm, lang, qidx)
+                else:
+                    score = session.quiz_correct or 0
+                    if score >= QUIZ_PASS:
+                        session.stage = "assignment"
+                        await db.commit()
+                        await send_text(frm, tr(lang, "score_pass").format(s=score))
+                        await _send_assignment(frm, lang)
+                    else:
+                        session.stage = "quiz_failed"
+                        await db.commit()
+                        await send_buttons(
+                            frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS),
+                            [("retake", tr(lang, "retake_btn"))],
+                        )
+                return
+            # Nudge: they typed instead of tapping — resend the current question
+            await db.commit()
+            await _send_quiz_question(frm, lang, session.quiz_index or 0)
+            return
+
+        # Awaiting an assignment answer
+        if session.stage == "assignment":
+            if not text or len(text.strip()) < 10:
+                await db.commit()
+                await _send_assignment(frm, lang)
+                return
+            await db.commit()
+            await send_text(frm, tr(lang, "grading"))
+            q = ASSIGNMENT["question"].get(lang, ASSIGNMENT["question"]["en"])
+            score, feedback = await grade_answer(q, ASSIGNMENT["rubric"], text, lang)
+            if score >= ASSIGN_PASS:
+                session.stage = "done"
+                await db.commit()
+                await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback))
+                await send_text(frm, tr(lang, "done"))
+            else:
+                await db.commit()
+                await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback))
+            return
+
+        # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
         await db.commit()
         state = LearnerState(
             learner_id=f"wa:{frm}",

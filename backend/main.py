@@ -22,6 +22,16 @@ async def lifespan(app: FastAPI):
     try:
         await create_tables()
         print("✓ Database tables ready")
+        # Lightweight migration: create_all() adds missing tables but not missing
+        # columns. Add WhatsApp quiz-progress columns if the table predates them.
+        from sqlalchemy import text
+        from db.database import engine
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_index INTEGER DEFAULT 0"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_correct INTEGER DEFAULT 0"))
+        print("✓ WhatsApp session columns ready")
         # Seed the course on startup. seed() is idempotent — it checks for an
         # existing course and skips if already seeded, so this is safe to run
         # on every boot (and works around free-tier hosts having no shell).
