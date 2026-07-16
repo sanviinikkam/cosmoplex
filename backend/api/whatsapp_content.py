@@ -285,7 +285,7 @@ def tr(lang: str, key: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Cloudinary public ID of the intro video. Leave "" to skip the video step.
-INTRO_VIDEO_ID = ""
+INTRO_VIDEO_ID = "WhatsApp_Video_2026-07-15_at_10.06.39_AM_a1f6vf"
 
 # Human-readable English name per language code (for the AI pitch prompt).
 LANG_NAME = {"en": "English", "hi": "Hindi", "mr": "Marathi",
