@@ -27,6 +27,7 @@ from agents.base import LearnerState
 from agents.teacher import run_teacher
 from api.whatsapp_content import (
     LESSON_VIDEOS, QUIZ, QUIZ_PASS, ASSIGNMENT, ASSIGN_PASS, CONTENT, tr,
+    INTRO_VIDEO_ID, LANG_NAME, COURSE_FACTS, ONBOARD, ob,
 )
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -248,6 +249,34 @@ Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
         return 0, "Sorry — I couldn't evaluate that just now. Please send your answer again."
 
 
+async def generate_pitch(lang: str, status_label: str) -> str:
+    """A short, personalized 'why this course is for you' message, in-language."""
+    prompt = f"""You are a warm, concise counsellor for Cosmoplex AI School.
+
+Course facts:
+{COURSE_FACTS}
+
+The person you're messaging is: {status_label}.
+
+Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short lines max).
+- Give a quick, concrete taste of what they'll learn (name 2-3 real topics).
+- Give 2 specific reasons it's beneficial and relevant for someone who is {status_label}.
+- Warm and motivating, not salesy. Use *bold* sparingly (WhatsApp uses *single asterisks*).
+- Plain lines with the occasional emoji are fine. Do NOT use markdown headings or bullet lists.
+- Do NOT ask any question at the end."""
+    try:
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception as e:
+        print(f"⚠ WhatsApp pitch error: {e}")
+        return ""
+
+
 # ── Webhook verification ──────────────────────────────────────────────────────
 @router.get("/webhook")
 async def verify(
@@ -394,6 +423,51 @@ async def _send_language_picker(to: str) -> None:
     )
 
 
+# ── Onboarding (pre-sale funnel) ─────────────────────────────────────────────
+STATUS_MAP = {
+    "prof_student": "student",
+    "prof_graduate": "graduate",
+    "prof_working": "working",
+    "prof_jobseeker": "jobseeker",
+}
+STATUS_PITCH = {
+    "student": "a student",
+    "graduate": "a recent graduate",
+    "working": "a working professional",
+    "jobseeker": "someone actively looking for a job",
+}
+GOAL_MAP = {
+    "goal_job": "Land an AI/tech job",
+    "goal_grow": "Grow in current job",
+    "goal_build": "Build my own project",
+    "goal_explore": "Just exploring AI",
+}
+
+
+async def _send_profile_question(to: str, lang: str) -> None:
+    rows = [(oid, label, "") for oid, label in ob(lang, "profile_opts")]
+    await send_list(to, header="Cosmoplex", body=ob(lang, "profile_q"),
+                    button=ob(lang, "select_btn"), rows=rows, section_title=ob(lang, "select_btn"))
+
+
+async def _send_goal_question(to: str, lang: str) -> None:
+    rows = [(oid, label, "") for oid, label in ob(lang, "goal_opts")]
+    await send_list(to, header="Cosmoplex", body=ob(lang, "goal_q"),
+                    button=ob(lang, "select_btn"), rows=rows, section_title=ob(lang, "select_btn"))
+
+
+async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
+    """Greeting + brief + intro video, then the first profile question."""
+    session.stage = "welcome"
+    await db.commit()
+    await send_text(frm, ob(lang, "brief"))
+    if INTRO_VIDEO_ID:
+        await send_video(frm, INTRO_VIDEO_ID, ob(lang, "intro_caption"))
+    await _send_profile_question(frm, lang)
+    session.stage = "ask_profile"
+    await db.commit()
+
+
 async def _send_lesson(to: str, lang: str) -> None:
     public_id = LESSON_VIDEOS[0].get(lang) or LESSON_VIDEOS[0]["en"]
     await send_video(to, public_id, tr(lang, "lesson_caption").format(n=1))
@@ -486,20 +560,17 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await _send_language_picker(frm)
             return
 
-        # Language selection from the list
+        # Language selection from the list → begin the onboarding funnel
         if reply_id and reply_id.startswith("lang_"):
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
                 session.language = lang
-                session.stage = "lesson"
-                await db.commit()
-                await send_text(frm, tr(lang, "picker_done"))
-                await _send_lesson(frm, lang)
+                await _begin_onboarding(db, session, frm, lang)
                 return
 
         # Typed a language name ("english", "i want tamil") → switch + resume.
-        # Skipped mid-assignment, where free text is the answer being graded.
-        if reply_id is None and session.stage != "assignment":
+        # Skipped where free text is expected as an answer.
+        if reply_id is None and session.stage not in ("assignment", "ask_profile", "ask_goal"):
             detected = _detect_language(text)
             if detected:
                 session.language = detected
@@ -519,6 +590,53 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if reply_id == "menu" or low in ("menu", "language", "lang", "change language", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
             await db.commit()
             await _send_language_picker(frm)
+            return
+
+        # ── Onboarding: profile question answered ────────────────────────────
+        if session.stage == "ask_profile":
+            status, label = None, None
+            if reply_id in STATUS_MAP:
+                status = STATUS_MAP[reply_id]
+                label = STATUS_PITCH[status]
+            elif text and reply_id is None:
+                status = text.strip()[:50]
+                label = status
+            if not status:
+                await db.commit()
+                await _send_profile_question(frm, lang)
+                return
+            session.current_status = status
+            await db.commit()
+            # Personalized "why this course is for you", then ask their goal
+            pitch = await generate_pitch(lang, label)
+            if pitch:
+                await send_text(frm, pitch)
+            await _send_goal_question(frm, lang)
+            session.stage = "ask_goal"
+            await db.commit()
+            return
+
+        # ── Onboarding: goal answered → save everything, offer the free lesson ─
+        if session.stage == "ask_goal":
+            goal = GOAL_MAP.get(reply_id) if reply_id in GOAL_MAP else (text or "").strip()
+            if not goal:
+                await db.commit()
+                await _send_goal_question(frm, lang)
+                return
+            session.goal = goal[:1000]
+            session.stage = "onboarded"
+            await db.commit()
+            print(f"✓ WhatsApp onboarded {frm}: lang={lang} status={session.current_status} goal={goal[:60]!r}")
+            await send_text(frm, ob(lang, "saved"))
+            await send_buttons(frm, ob(lang, "start_prompt"),
+                               [("start_lesson", ob(lang, "start_btn"))])
+            return
+
+        # Start the (free) lesson from the onboarding CTA
+        if reply_id == "start_lesson":
+            session.stage = "lesson"
+            await db.commit()
+            await _send_lesson(frm, lang)
             return
 
         # Start / retake quiz

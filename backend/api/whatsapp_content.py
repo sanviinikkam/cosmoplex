@@ -278,3 +278,171 @@ CONTENT = {
 
 def tr(lang: str, key: str) -> str:
     return CONTENT.get(lang, CONTENT["en"]).get(key, CONTENT["en"][key])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pre-sale onboarding funnel
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Cloudinary public ID of the intro video. Leave "" to skip the video step.
+INTRO_VIDEO_ID = ""
+
+# Human-readable English name per language code (for the AI pitch prompt).
+LANG_NAME = {"en": "English", "hi": "Hindi", "mr": "Marathi",
+             "te": "Telugu", "ta": "Tamil", "kn": "Kannada"}
+
+# Short course facts fed to the AI when it writes the personalized pitch.
+COURSE_FACTS = (
+    "Cosmoplex AI School is an AI-literacy course for Indian freshers, taught in "
+    "6 Indian languages. It covers: what AI/ML/Generative AI really are, the 10 AI "
+    "words everyone should know, how to write good prompts, using tools like ChatGPT "
+    "and Gemini, spotting AI mistakes (hallucinations), and hands-on real-world "
+    "assignments. Each lesson has a short video, a quiz, and an assignment graded by "
+    "AI, ending in a shareable certificate. It is practical, mobile-first, and "
+    "designed to make you employable and confident with AI."
+)
+
+ONBOARD = {
+    "en": {
+        "brief": "🙏 Welcome to *Cosmoplex AI School* — India's AI-literacy course built for freshers, taught in your own language.\n\nIn just a few short lessons you'll learn how AI *actually* works, and how to use it to stand out in your studies and career. Let me show you around 👇",
+        "intro_caption": "🎬 A quick intro to Cosmoplex",
+        "profile_q": "First, tell me a little about you.\n\nWhat best describes you right now?",
+        "profile_opts": [
+            ("prof_student", "🎓 Student"),
+            ("prof_graduate", "🆕 Recent graduate"),
+            ("prof_working", "💼 Working professional"),
+            ("prof_jobseeker", "🔍 Looking for a job"),
+        ],
+        "goal_q": "And what's your *main goal* with AI?\n\nPick one below, or just type your own 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 Land an AI/tech job"),
+            ("goal_grow", "📈 Grow in my job"),
+            ("goal_build", "🛠️ Build my own project"),
+            ("goal_explore", "🧭 Just exploring"),
+        ],
+        "select_btn": "Choose",
+        "saved": "Perfect — noted! 🙌 You're all set.",
+        "start_prompt": "Ready to try your first lesson — completely free? 👇",
+        "start_btn": "🚀 Start Lesson 1",
+        "pitch_wait": "Give me a second… ⏳",
+    },
+    "hi": {
+        "brief": "🙏 *Cosmoplex AI School* में आपका स्वागत है — फ्रेशर्स के लिए बना भारत का AI-लिटरेसी कोर्स, आपकी अपनी भाषा में।\n\nकुछ ही छोटे पाठों में आप सीखेंगे कि AI *असल में* कैसे काम करता है, और इसका उपयोग करके अपनी पढ़ाई और करियर में कैसे आगे बढ़ें। आइए शुरू करें 👇",
+        "intro_caption": "🎬 Cosmoplex का छोटा परिचय",
+        "profile_q": "सबसे पहले, अपने बारे में थोड़ा बताएं।\n\nआप अभी क्या करते हैं?",
+        "profile_opts": [
+            ("prof_student", "🎓 छात्र"),
+            ("prof_graduate", "🆕 हाल का ग्रेजुएट"),
+            ("prof_working", "💼 नौकरी कर रहे हैं"),
+            ("prof_jobseeker", "🔍 नौकरी ढूंढ रहे हैं"),
+        ],
+        "goal_q": "और AI को लेकर आपका *मुख्य लक्ष्य* क्या है?\n\nनीचे से चुनें, या अपना लिखें 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 AI/टेक नौकरी पाना"),
+            ("goal_grow", "📈 नौकरी में आगे बढ़ना"),
+            ("goal_build", "🛠️ अपना प्रोजेक्ट बनाना"),
+            ("goal_explore", "🧭 बस सीख रहा हूँ"),
+        ],
+        "select_btn": "चुनें",
+        "saved": "बढ़िया — नोट कर लिया! 🙌 आप तैयार हैं।",
+        "start_prompt": "अपना पहला पाठ आज़माने के लिए तैयार हैं — बिल्कुल मुफ़्त? 👇",
+        "start_btn": "🚀 पाठ 1 शुरू करें",
+        "pitch_wait": "एक सेकंड… ⏳",
+    },
+    "mr": {
+        "brief": "🙏 *Cosmoplex AI School* मध्ये स्वागत आहे — फ्रेशर्ससाठी बनवलेला भारताचा AI-साक्षरता कोर्स, तुमच्याच भाषेत.\n\nकाही छोट्या धड्यांतच तुम्ही शिकाल की AI *खरंच* कसं काम करतं, आणि त्याचा वापर करून अभ्यास व करिअरमध्ये कसं पुढे जायचं. चला सुरू करूया 👇",
+        "intro_caption": "🎬 Cosmoplex ची छोटी ओळख",
+        "profile_q": "आधी, तुमच्याबद्दल थोडं सांगा.\n\nतुम्ही सध्या काय करता?",
+        "profile_opts": [
+            ("prof_student", "🎓 विद्यार्थी"),
+            ("prof_graduate", "🆕 नुकतेच ग्रॅज्युएट"),
+            ("prof_working", "💼 नोकरी करत आहे"),
+            ("prof_jobseeker", "🔍 नोकरी शोधत आहे"),
+        ],
+        "goal_q": "आणि AI बाबत तुमचं *मुख्य ध्येय* काय आहे?\n\nखालून निवडा, किंवा स्वतःचं लिहा 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 AI/टेक नोकरी मिळवणे"),
+            ("goal_grow", "📈 नोकरीत पुढे जाणे"),
+            ("goal_build", "🛠️ स्वतःचा प्रोजेक्ट बनवणे"),
+            ("goal_explore", "🧭 फक्त शिकत आहे"),
+        ],
+        "select_btn": "निवडा",
+        "saved": "छान — नोंद केली! 🙌 तुम्ही तयार आहात.",
+        "start_prompt": "तुमचा पहिला धडा करून पाहायला तयार आहात — पूर्णपणे मोफत? 👇",
+        "start_btn": "🚀 धडा 1 सुरू करा",
+        "pitch_wait": "एक सेकंद… ⏳",
+    },
+    "te": {
+        "brief": "🙏 *Cosmoplex AI School* కు స్వాగతం — ఫ్రెషర్ల కోసం రూపొందించిన భారత AI-అక్షరాస్యత కోర్సు, మీ సొంత భాషలో.\n\nకొన్ని చిన్న పాఠాల్లోనే AI *నిజంగా* ఎలా పనిచేస్తుందో, దాన్ని వాడి మీ చదువులో, కెరీర్‌లో ఎలా ముందుకు వెళ్లాలో నేర్చుకుంటారు. మొదలుపెడదాం 👇",
+        "intro_caption": "🎬 Cosmoplex గురించి చిన్న పరిచయం",
+        "profile_q": "ముందుగా, మీ గురించి కొంచెం చెప్పండి.\n\nప్రస్తుతం మీరు ఏం చేస్తున్నారు?",
+        "profile_opts": [
+            ("prof_student", "🎓 విద్యార్థి"),
+            ("prof_graduate", "🆕 ఇటీవల గ్రాడ్యుయేట్"),
+            ("prof_working", "💼 ఉద్యోగం చేస్తున్నా"),
+            ("prof_jobseeker", "🔍 ఉద్యోగం వెతుకుతున్నా"),
+        ],
+        "goal_q": "మరి AI తో మీ *ప్రధాన లక్ష్యం* ఏమిటి?\n\nకింద ఒకటి ఎంచుకోండి, లేదా మీదే టైప్ చేయండి 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 AI/టెక్ ఉద్యోగం"),
+            ("goal_grow", "📈 ఉద్యోగంలో ఎదగడం"),
+            ("goal_build", "🛠️ నా ప్రాజెక్ట్ చేయడం"),
+            ("goal_explore", "🧭 అన్వేషిస్తున్నా"),
+        ],
+        "select_btn": "ఎంచుకోండి",
+        "saved": "అద్భుతం — నోట్ చేశాను! 🙌 మీరు సిద్ధం.",
+        "start_prompt": "మీ మొదటి పాఠం ప్రయత్నించడానికి సిద్ధమా — పూర్తిగా ఉచితం? 👇",
+        "start_btn": "🚀 పాఠం 1 మొదలు",
+        "pitch_wait": "ఒక్క సెకను… ⏳",
+    },
+    "ta": {
+        "brief": "🙏 *Cosmoplex AI School* க்கு வரவேற்கிறோம் — ஃப்ரெஷர்களுக்காக உருவாக்கப்பட்ட இந்தியாவின் AI-கல்வித் திறன் பாடநெறி, உங்கள் சொந்த மொழியில்.\n\nசில குறுகிய பாடங்களிலேயே AI *உண்மையில்* எப்படி வேலை செய்கிறது, அதைப் பயன்படுத்தி உங்கள் படிப்பிலும் தொழிலிலும் எப்படி முன்னேறுவது என்பதைக் கற்பீர்கள். தொடங்குவோம் 👇",
+        "intro_caption": "🎬 Cosmoplex பற்றிய சிறிய அறிமுகம்",
+        "profile_q": "முதலில், உங்களைப் பற்றி கொஞ்சம் சொல்லுங்கள்.\n\nதற்போது நீங்கள் என்ன செய்கிறீர்கள்?",
+        "profile_opts": [
+            ("prof_student", "🎓 மாணவர்"),
+            ("prof_graduate", "🆕 சமீபத்திய பட்டதாரி"),
+            ("prof_working", "💼 வேலை செய்கிறேன்"),
+            ("prof_jobseeker", "🔍 வேலை தேடுகிறேன்"),
+        ],
+        "goal_q": "AI உடன் உங்கள் *முக்கிய இலக்கு* என்ன?\n\nகீழே ஒன்றைத் தேர்ந்தெடுங்கள், அல்லது உங்களுடையதை எழுதுங்கள் 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 AI/டெக் வேலை பெற"),
+            ("goal_grow", "📈 வேலையில் முன்னேற"),
+            ("goal_build", "🛠️ சொந்த திட்டம் உருவாக்க"),
+            ("goal_explore", "🧭 வெறுமனே ஆராய்கிறேன்"),
+        ],
+        "select_btn": "தேர்வு",
+        "saved": "அருமை — குறித்துக்கொண்டேன்! 🙌 நீங்கள் தயார்.",
+        "start_prompt": "உங்கள் முதல் பாடத்தை முயற்சிக்கத் தயாரா — முற்றிலும் இலவசம்? 👇",
+        "start_btn": "🚀 பாடம் 1 தொடங்கு",
+        "pitch_wait": "ஒரு நொடி… ⏳",
+    },
+    "kn": {
+        "brief": "🙏 *Cosmoplex AI School* ಗೆ ಸ್ವಾಗತ — ಫ್ರೆಶರ್‌ಗಳಿಗಾಗಿ ರೂಪಿಸಲಾದ ಭಾರತದ AI-ಸಾಕ್ಷರತಾ ಕೋರ್ಸ್, ನಿಮ್ಮದೇ ಭಾಷೆಯಲ್ಲಿ.\n\nಕೆಲವೇ ಚಿಕ್ಕ ಪಾಠಗಳಲ್ಲಿ AI *ನಿಜವಾಗಿ* ಹೇಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ, ಅದನ್ನು ಬಳಸಿ ನಿಮ್ಮ ಓದು ಮತ್ತು ವೃತ್ತಿಯಲ್ಲಿ ಹೇಗೆ ಮುಂದೆ ಹೋಗಬೇಕು ಎಂದು ಕಲಿಯುವಿರಿ. ಆರಂಭಿಸೋಣ 👇",
+        "intro_caption": "🎬 Cosmoplex ಬಗ್ಗೆ ಚಿಕ್ಕ ಪರಿಚಯ",
+        "profile_q": "ಮೊದಲು, ನಿಮ್ಮ ಬಗ್ಗೆ ಸ್ವಲ್ಪ ಹೇಳಿ.\n\nಈಗ ನೀವು ಏನು ಮಾಡುತ್ತಿದ್ದೀರಿ?",
+        "profile_opts": [
+            ("prof_student", "🎓 ವಿದ್ಯಾರ್ಥಿ"),
+            ("prof_graduate", "🆕 ಇತ್ತೀಚಿನ ಪದವೀಧರ"),
+            ("prof_working", "💼 ಕೆಲಸ ಮಾಡುತ್ತಿದ್ದೇನೆ"),
+            ("prof_jobseeker", "🔍 ಕೆಲಸ ಹುಡುಕುತ್ತಿದ್ದೇನೆ"),
+        ],
+        "goal_q": "AI ಜೊತೆ ನಿಮ್ಮ *ಮುಖ್ಯ ಗುರಿ* ಏನು?\n\nಕೆಳಗೆ ಒಂದನ್ನು ಆಯ್ಕೆ ಮಾಡಿ, ಅಥವಾ ನಿಮ್ಮದೇ ಟೈಪ್ ಮಾಡಿ 👇",
+        "goal_opts": [
+            ("goal_job", "🎯 AI/ಟೆಕ್ ಕೆಲಸ ಪಡೆಯಲು"),
+            ("goal_grow", "📈 ಕೆಲಸದಲ್ಲಿ ಬೆಳೆಯಲು"),
+            ("goal_build", "🛠️ ಸ್ವಂತ ಪ್ರಾಜೆಕ್ಟ್ ಮಾಡಲು"),
+            ("goal_explore", "🧭 ಸುಮ್ಮನೆ ಅನ್ವೇಷಿಸುತ್ತಿದ್ದೇನೆ"),
+        ],
+        "select_btn": "ಆಯ್ಕೆ ಮಾಡಿ",
+        "saved": "ಅದ್ಭುತ — ಗಮನಿಸಿದೆ! 🙌 ನೀವು ಸಿದ್ಧ.",
+        "start_prompt": "ನಿಮ್ಮ ಮೊದಲ ಪಾಠ ಪ್ರಯತ್ನಿಸಲು ಸಿದ್ಧವೇ — ಸಂಪೂರ್ಣ ಉಚಿತ? 👇",
+        "start_btn": "🚀 ಪಾಠ 1 ಆರಂಭಿಸಿ",
+        "pitch_wait": "ಒಂದು ಕ್ಷಣ… ⏳",
+    },
+}
+
+
+def ob(lang: str, key: str):
+    return ONBOARD.get(lang, ONBOARD["en"]).get(key, ONBOARD["en"][key])

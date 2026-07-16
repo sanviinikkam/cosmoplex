@@ -31,6 +31,10 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_index INTEGER DEFAULT 0"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_correct INTEGER DEFAULT 0"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS current_status VARCHAR(50)"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS goal TEXT"))
         print("✓ WhatsApp session columns ready")
         # Seed the course on startup. seed() is idempotent — it checks for an
         # existing course and skips if already seeded, so this is safe to run

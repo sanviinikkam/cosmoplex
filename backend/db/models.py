@@ -327,5 +327,7 @@ class WhatsAppSession(Base):
     quiz_index = Column(Integer, default=0)                # current quiz question (0-based)
     quiz_correct = Column(Integer, default=0)              # correct answers so far this attempt
     name = Column(String(255), nullable=True)
+    current_status = Column(String(50), nullable=True)     # onboarding: student | graduate | working | jobseeker
+    goal = Column(Text, nullable=True)                     # onboarding: their stated goal with AI
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
