@@ -86,4 +86,13 @@ async def learn_ws(websocket: WebSocket, learner_id: str):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "environment": settings.environment}
+    from api.whatsapp_content import INTRO_VIDEO_ID
+    return {
+        "status": "ok",
+        "environment": settings.environment,
+        "build": "wa-onboarding-1",
+        "whatsapp": {
+            "onboarding": True,
+            "intro_video": bool(INTRO_VIDEO_ID),
+        },
+    }
