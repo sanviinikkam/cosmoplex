@@ -188,6 +188,7 @@ async def send_video(to: str, public_id: str, caption: str) -> None:
     url = _video_url(public_id)
     data = await _download(url)
     if data:
+        print(f"✓ video fetched {len(data)} bytes for {public_id}")
         media_id = await _upload_media(data)
         if media_id:
             resp = await _post({
@@ -195,14 +196,14 @@ async def send_video(to: str, public_id: str, caption: str) -> None:
                 "video": {"id": media_id, "caption": caption[:1024]},
             })
             if resp is not None and resp.status_code < 400:
+                print(f"✓ video sent by media_id for {public_id}")
                 return
-    # Fallbacks
-    resp = await _post({
-        "messaging_product": "whatsapp", "to": to, "type": "video",
-        "video": {"link": url, "caption": caption[:1024]},
-    })
-    if resp is None or resp.status_code >= 400:
-        await send_text(to, f"{caption}\n\n{url}")
+            print(f"⚠ video send by media_id failed for {public_id}")
+    # Reliable fallback: a clickable link in text. We deliberately do NOT retry
+    # video-by-link here — Meta returns 200 but often silently fails to fetch it,
+    # so the learner would get nothing at all.
+    print(f"⚠ video falling back to text link for {public_id}")
+    await send_text(to, f"{caption}\n\n▶️ {url}")
 
 
 # ── Assignment grading (Claude Haiku, text answer) ───────────────────────────
