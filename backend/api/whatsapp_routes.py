@@ -69,8 +69,15 @@ def _messages_url() -> str:
     return f"{GRAPH}/{settings.graph_api_version}/{settings.whatsapp_phone_number_id}/messages"
 
 
+# Cloudinary transform: shrink the lesson video to a WhatsApp-friendly MP4
+# (H.264/AAC, ~10 MB) so it plays inline. WhatsApp rejects videos over 16 MB;
+# the originals are 60-100 MB.
+VIDEO_TRANSFORM = "w_480,br_400k,vc_h264,ac_aac,q_auto:low"
+
+
 def _video_url(public_id: str) -> str:
-    return f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}/video/upload/{public_id}.mp4"
+    return (f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}"
+            f"/video/upload/{VIDEO_TRANSFORM}/{public_id}.mp4")
 
 
 async def _post(payload: dict) -> httpx.Response | None:
@@ -137,14 +144,64 @@ async def send_list(to: str, header: str, body: str, button: str,
     })
 
 
-async def send_video(to: str, link: str, caption: str) -> None:
-    """Send a video by link; fall back to a clickable link if Meta rejects it."""
+async def _download(url: str) -> bytes | None:
+    try:
+        async with httpx.AsyncClient(timeout=180, follow_redirects=True) as h:
+            r = await h.get(url)
+            if r.status_code < 400:
+                return r.content
+            print(f"⚠ video fetch failed {r.status_code}")
+    except httpx.HTTPError as e:
+        print(f"⚠ video fetch error: {e}")
+    return None
+
+
+async def _upload_media(data: bytes) -> str | None:
+    """Upload video bytes to WhatsApp; returns a reusable media_id."""
+    if not _configured():
+        return None
+    url = f"{GRAPH}/{settings.graph_api_version}/{settings.whatsapp_phone_number_id}/media"
+    try:
+        async with httpx.AsyncClient(timeout=120) as h:
+            r = await h.post(
+                url,
+                headers={"Authorization": f"Bearer {settings.whatsapp_token}"},
+                data={"messaging_product": "whatsapp", "type": "video/mp4"},
+                files={"file": ("lesson.mp4", data, "video/mp4")},
+            )
+            if r.status_code < 400:
+                return r.json().get("id")
+            print(f"⚠ media upload failed {r.status_code}: {r.text[:300]}")
+    except httpx.HTTPError as e:
+        print(f"⚠ media upload error: {e}")
+    return None
+
+
+async def send_video(to: str, public_id: str, caption: str) -> None:
+    """Deliver a lesson video so it plays inline in WhatsApp.
+
+    Downloads the compressed (<16 MB) Cloudinary derivative, uploads it to
+    WhatsApp for a media_id, and sends by id — this avoids Meta's short
+    link-fetch timeout. Falls back to a link, then a text link, if needed.
+    """
+    url = _video_url(public_id)
+    data = await _download(url)
+    if data:
+        media_id = await _upload_media(data)
+        if media_id:
+            resp = await _post({
+                "messaging_product": "whatsapp", "to": to, "type": "video",
+                "video": {"id": media_id, "caption": caption[:1024]},
+            })
+            if resp is not None and resp.status_code < 400:
+                return
+    # Fallbacks
     resp = await _post({
         "messaging_product": "whatsapp", "to": to, "type": "video",
-        "video": {"link": link, "caption": caption[:1024]},
+        "video": {"link": url, "caption": caption[:1024]},
     })
     if resp is None or resp.status_code >= 400:
-        await send_text(to, f"{caption}\n\n{link}")
+        await send_text(to, f"{caption}\n\n{url}")
 
 
 # ── Assignment grading (Claude Haiku, text answer) ───────────────────────────
@@ -339,7 +396,7 @@ async def _send_language_picker(to: str) -> None:
 
 async def _send_lesson(to: str, lang: str) -> None:
     public_id = LESSON_VIDEOS[0].get(lang) or LESSON_VIDEOS[0]["en"]
-    await send_video(to, _video_url(public_id), tr(lang, "lesson_caption").format(n=1))
+    await send_video(to, public_id, tr(lang, "lesson_caption").format(n=1))
     await send_buttons(to, tr(lang, "after_text"),
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
