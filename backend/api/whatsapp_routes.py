@@ -250,16 +250,17 @@ Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
         return 0, "Sorry — I couldn't evaluate that just now. Please send your answer again."
 
 
-async def generate_pitch(lang: str, status_label: str) -> str:
+async def generate_pitch(lang: str, status_label: str, name: str = "friend") -> str:
     """A short, personalized 'why this course is for you' message, in-language."""
     prompt = f"""You are a warm, concise counsellor for Cosmoplex AI School.
 
 Course facts:
 {COURSE_FACTS}
 
-The person you're messaging is: {status_label}.
+The person you're messaging is named {name} and is: {status_label}.
 
 Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short lines max).
+- Address them warmly by their name ({name}) at least once, naturally.
 - Give a quick, concrete taste of what they'll learn (name 2-3 real topics).
 - Give 2 specific reasons it's beneficial and relevant for someone who is {status_label}.
 - Warm and motivating, not salesy. Use *bold* sparingly (WhatsApp uses *single asterisks*).
@@ -461,7 +462,7 @@ async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
     """Greeting + brief + intro video, then the first profile question."""
     session.stage = "welcome"
     await db.commit()
-    await send_text(frm, ob(lang, "brief"))
+    await send_text(frm, ob(lang, "brief").format(name=session.name or "friend"))
     if INTRO_VIDEO_ID:
         await send_video(frm, INTRO_VIDEO_ID, ob(lang, "intro_caption"))
     await _send_profile_question(frm, lang)
@@ -469,10 +470,10 @@ async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
     await db.commit()
 
 
-async def _send_lesson(to: str, lang: str) -> None:
+async def _send_lesson(to: str, lang: str, name: str = "friend") -> None:
     public_id = LESSON_VIDEOS[0].get(lang) or LESSON_VIDEOS[0]["en"]
     await send_video(to, public_id, tr(lang, "lesson_caption").format(n=1))
-    await send_buttons(to, tr(lang, "after_text"),
+    await send_buttons(to, tr(lang, "after_text").format(name=name),
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
@@ -528,7 +529,7 @@ async def _resume_stage(db, session, frm: str, lang: str) -> None:
     else:
         session.stage = "lesson"
         await db.commit()
-        await _send_lesson(frm, lang)
+        await _send_lesson(frm, lang, session.name or "friend")
 
 
 async def _start_quiz(db, session, frm: str, lang: str) -> None:
@@ -561,17 +562,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await _send_language_picker(frm)
             return
 
-        # Language selection from the list → begin the onboarding funnel
+        # Language selection from the list → ask the learner's name next
         if reply_id and reply_id.startswith("lang_"):
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
                 session.language = lang
-                await _begin_onboarding(db, session, frm, lang)
+                session.stage = "ask_name"
+                await db.commit()
+                await send_text(frm, ob(lang, "name_q"))
                 return
 
         # Typed a language name ("english", "i want tamil") → switch + resume.
         # Skipped where free text is expected as an answer.
-        if reply_id is None and session.stage not in ("assignment", "ask_profile", "ask_goal"):
+        if reply_id is None and session.stage not in ("assignment", "ask_profile", "ask_goal", "ask_name"):
             detected = _detect_language(text)
             if detected:
                 session.language = detected
@@ -586,11 +589,24 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             return
 
         lang = session.language
+        nm = (session.name or "").strip() or "friend"
 
         # "Language" button/command → re-show picker anytime
         if reply_id == "menu" or low in ("menu", "language", "lang", "change language", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
             await db.commit()
             await _send_language_picker(frm)
+            return
+
+        # Onboarding: capture the learner's name → then begin the funnel
+        if session.stage == "ask_name":
+            candidate = (text or "").strip()
+            if not candidate:
+                await db.commit()
+                await send_text(frm, ob(lang, "name_q"))
+                return
+            session.name = candidate[:40]
+            await db.commit()
+            await _begin_onboarding(db, session, frm, lang)
             return
 
         # ── Onboarding: profile question answered ────────────────────────────
@@ -609,7 +625,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             session.current_status = status
             await db.commit()
             # Personalized "why this course is for you", then ask their goal
-            pitch = await generate_pitch(lang, label)
+            pitch = await generate_pitch(lang, label, nm)
             if pitch:
                 await send_text(frm, pitch)
             await _send_goal_question(frm, lang)
@@ -628,8 +644,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             session.stage = "onboarded"
             await db.commit()
             print(f"✓ WhatsApp onboarded {frm}: lang={lang} status={session.current_status} goal={goal[:60]!r}")
-            await send_text(frm, ob(lang, "saved"))
-            await send_buttons(frm, ob(lang, "start_prompt"),
+            await send_text(frm, ob(lang, "saved").format(name=nm))
+            await send_buttons(frm, ob(lang, "start_prompt").format(name=nm),
                                [("start_lesson", ob(lang, "start_btn"))])
             return
 
@@ -637,7 +653,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if reply_id == "start_lesson":
             session.stage = "lesson"
             await db.commit()
-            await _send_lesson(frm, lang)
+            await _send_lesson(frm, lang, nm)
             return
 
         # Start / retake quiz
@@ -668,13 +684,13 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                     if score >= QUIZ_PASS:
                         session.stage = "assignment"
                         await db.commit()
-                        await send_text(frm, tr(lang, "score_pass").format(s=score))
+                        await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
                         await _send_assignment(frm, lang)
                     else:
                         session.stage = "quiz_failed"
                         await db.commit()
                         await send_buttons(
-                            frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS),
+                            frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
                             [("retake", tr(lang, "retake_btn"))],
                         )
                 return
@@ -696,11 +712,11 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             if score >= ASSIGN_PASS:
                 session.stage = "done"
                 await db.commit()
-                await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback))
-                await send_text(frm, tr(lang, "done"))
+                await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
+                await send_text(frm, tr(lang, "done").format(name=nm))
             else:
                 await db.commit()
-                await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback))
+                await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
             return
 
         # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
