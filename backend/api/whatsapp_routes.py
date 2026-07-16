@@ -417,6 +417,45 @@ async def _send_assignment(to: str, lang: str) -> None:
     await send_text(to, tr(lang, "assignment_intro").format(q=q))
 
 
+# Free-typed language names → code, so "english" / "i want tamil" switches too.
+LANG_KEYWORDS = {
+    "english": "en", "इंग्लिश": "en", "अंग्रेजी": "en", "angrezi": "en", "इंग्रजी": "en",
+    "hindi": "hi", "हिंदी": "hi", "हिन्दी": "hi",
+    "marathi": "mr", "मराठी": "mr",
+    "telugu": "te", "తెలుగు": "te", "telgu": "te",
+    "tamil": "ta", "தமிழ்": "ta", "tamizh": "ta",
+    "kannada": "kn", "ಕನ್ನಡ": "kn", "kanada": "kn",
+}
+
+
+def _detect_language(text: str | None) -> str | None:
+    """Return a language code if a short message names a language."""
+    if not text:
+        return None
+    low = text.strip().lower()
+    if len(low.split()) > 5:  # long → likely a real question, not a switch
+        return None
+    for kw, code in LANG_KEYWORDS.items():
+        if kw in low:
+            return code
+    return None
+
+
+async def _resume_stage(db, session, frm: str, lang: str) -> None:
+    """Re-render the learner's current step in the (possibly new) language."""
+    st = session.stage
+    if st == "quiz":
+        await db.commit()
+        await _send_quiz_question(frm, lang, session.quiz_index or 0)
+    elif st == "assignment":
+        await db.commit()
+        await _send_assignment(frm, lang)
+    else:
+        session.stage = "lesson"
+        await db.commit()
+        await _send_lesson(frm, lang)
+
+
 async def _start_quiz(db, session, frm: str, lang: str) -> None:
     session.stage = "quiz"
     session.quiz_index = 0
@@ -458,6 +497,16 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 await _send_lesson(frm, lang)
                 return
 
+        # Typed a language name ("english", "i want tamil") → switch + resume.
+        # Skipped mid-assignment, where free text is the answer being graded.
+        if reply_id is None and session.stage != "assignment":
+            detected = _detect_language(text)
+            if detected:
+                session.language = detected
+                await send_text(frm, tr(detected, "picker_done"))
+                await _resume_stage(db, session, frm, detected)
+                return
+
         # No language yet → show picker
         if not session.language:
             await db.commit()
@@ -467,7 +516,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         lang = session.language
 
         # "Language" button/command → re-show picker anytime
-        if reply_id == "menu" or low in ("menu", "language", "lang", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
+        if reply_id == "menu" or low in ("menu", "language", "lang", "change language", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
             await db.commit()
             await _send_language_picker(frm)
             return
