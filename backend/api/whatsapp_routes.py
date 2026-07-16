@@ -14,10 +14,11 @@ Learning flow (state persisted per phone in whatsapp_sessions):
 """
 import json
 import re
+from collections import deque
 
 import anthropic
 import httpx
-from fastapi import APIRouter, Request, Response, Query
+from fastapi import APIRouter, BackgroundTasks, Request, Response, Query
 
 from core.config import settings
 from db.database import async_session_factory
@@ -32,6 +33,23 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 GRAPH = "https://graph.facebook.com"
 NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+
+# De-dupe inbound message IDs. Meta re-delivers a webhook if we don't ACK fast
+# enough; combined with the fast-ACK below this prevents double replies.
+_seen_ids: set[str] = set()
+_seen_order: deque[str] = deque()
+
+
+def _seen_before(mid: str | None) -> bool:
+    if not mid:
+        return False
+    if mid in _seen_ids:
+        return True
+    _seen_ids.add(mid)
+    _seen_order.append(mid)
+    if len(_seen_order) > 500:
+        _seen_ids.discard(_seen_order.popleft())
+    return False
 
 LANGS = {
     "en": "English",
@@ -267,7 +285,10 @@ async def subscribe_app(waba_id: str, key: str):
 
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
-async def receive(request: Request):
+async def receive(request: Request, background_tasks: BackgroundTasks):
+    # ACK Meta immediately, then handle each message in the background. The
+    # Teacher/grading calls can take 10-30s; if we blocked the response Meta
+    # would time out and re-deliver, causing duplicate replies.
     data = await request.json()
     try:
         for entry in data.get("entry", []):
@@ -276,10 +297,12 @@ async def receive(request: Request):
                 contacts = value.get("contacts", [])
                 name = contacts[0].get("profile", {}).get("name") if contacts else None
                 for msg in value.get("messages", []):
+                    if _seen_before(msg.get("id")):
+                        continue
                     frm = msg.get("from")
                     reply_id, text = _extract(msg)
                     if frm and (reply_id or text):
-                        await _handle_message(frm, reply_id, text, name)
+                        background_tasks.add_task(_handle_message, frm, reply_id, text, name)
     except Exception as e:
         print(f"⚠ WhatsApp webhook error: {e}")
     return {"status": "ok"}
@@ -356,6 +379,16 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             session.name = name
 
         low = (text or "").strip().lower()
+
+        # Explicit reset → back to the language picker, fresh state
+        if reply_id is None and low in ("restart", "reset", "start over", "restart course"):
+            session.language = None
+            session.stage = "new"
+            session.quiz_index = 0
+            session.quiz_correct = 0
+            await db.commit()
+            await _send_language_picker(frm)
+            return
 
         # Language selection from the list
         if reply_id and reply_id.startswith("lang_"):
