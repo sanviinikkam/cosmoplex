@@ -385,7 +385,7 @@ Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
         media_type = content_type if content_type.startswith("image/") else "image/jpeg"
         img_b64 = base64.standard_b64encode(data).decode()
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-haiku-4-5",
             max_tokens=512,
             messages=[{
                 "role": "user",
@@ -413,7 +413,7 @@ Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
 
         full_prompt = eval_prompt + f"\n\nLearner's answer (extracted from document):\n{extracted}"
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-haiku-4-5",
             max_tokens=512,
             messages=[{"role": "user", "content": full_prompt}],
         )
