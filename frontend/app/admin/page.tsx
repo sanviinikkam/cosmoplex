@@ -192,31 +192,48 @@ function CourseEditor({ course, run }: { course: AdminCourse; run: (fn: () => Pr
           }}>+ Add module</button>
       </div>
 
-      {course.modules.map((m) => (
-        <div key={m.id} className="bg-white rounded-2xl border border-zinc-200 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <span className="inline-block text-[11px] font-medium uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded px-2 py-0.5 mb-1">
-                Level {m.level}
-              </span>
-              <h3 className="font-semibold">{m.title}</h3>
-              {m.outcome && <p className="text-sm text-zinc-500 mt-0.5">{m.outcome}</p>}
-            </div>
-            <div className="flex gap-3 shrink-0">
-              <button className="text-sm text-zinc-500 hover:text-zinc-800"
-                onClick={async () => {
-                  const title = window.prompt("Module title:", m.title);
-                  if (!title?.trim()) return;
-                  const outcome = window.prompt("Outcome:", m.outcome ?? "") ?? undefined;
-                  const level = parseInt(window.prompt("Level (1-3):", String(m.level)) ?? String(m.level), 10) || m.level;
-                  await run(() => adminApi.updateModule(m.id, { title: title.trim(), outcome, level }));
-                }}>Edit</button>
-              <button className="text-sm text-red-500 hover:text-red-700"
-                onClick={async () => { if (window.confirm("Delete this module?")) await run(() => adminApi.deleteModule(m.id)); }}>Delete</button>
-            </div>
-          </div>
+      {course.modules.map((m) => <ModuleCard key={m.id} m={m} run={run} />)}
+      {course.modules.length === 0 && <p className="text-sm text-zinc-400">No modules yet — add one above.</p>}
+    </div>
+  );
+}
 
-          <div className="mt-4 pl-4 border-l-2 border-zinc-100 flex flex-col gap-4">
+// ── Module (collapsible) ─────────────────────────────────────────────────────
+function ModuleCard({ m, run }: { m: AdminCourse["modules"][number]; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const videoCount = m.sections.reduce((n, s) => n + s.videos.length, 0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+      <div className="flex items-center gap-3 p-4 hover:bg-zinc-50 cursor-pointer" onClick={() => setOpen((o) => !o)}>
+        <span className={`text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+        <div className="flex-1 min-w-0">
+          <span className="inline-block text-[11px] font-medium uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded px-2 py-0.5 mb-1">
+            Level {m.level}
+          </span>
+          <h3 className="font-semibold truncate">{m.title}</h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {m.sections.length} section{m.sections.length === 1 ? "" : "s"} · {videoCount} lesson{videoCount === 1 ? "" : "s"}
+          </p>
+        </div>
+        <div className="flex gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button className="text-sm text-zinc-500 hover:text-zinc-800"
+            onClick={async () => {
+              const title = window.prompt("Module title:", m.title);
+              if (!title?.trim()) return;
+              const outcome = window.prompt("Outcome:", m.outcome ?? "") ?? undefined;
+              const level = parseInt(window.prompt("Level (1-3):", String(m.level)) ?? String(m.level), 10) || m.level;
+              await run(() => adminApi.updateModule(m.id, { title: title.trim(), outcome, level }));
+            }}>Edit</button>
+          <button className="text-sm text-red-500 hover:text-red-700"
+            onClick={async () => { if (window.confirm("Delete this module?")) await run(() => adminApi.deleteModule(m.id)); }}>Delete</button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="px-5 pb-5">
+          {m.outcome && <p className="text-sm text-zinc-500 mb-3">{m.outcome}</p>}
+          <div className="pl-4 border-l-2 border-zinc-100 flex flex-col gap-4">
             {m.sections.map((s) => (
               <div key={s.id}>
                 <div className="flex items-center justify-between gap-3">
@@ -248,18 +265,23 @@ function CourseEditor({ course, run }: { course: AdminCourse; run: (fn: () => Pr
               }}>+ Add section</button>
           </div>
         </div>
-      ))}
-      {course.modules.length === 0 && <p className="text-sm text-zinc-400">No modules yet — add one above.</p>}
+      )}
     </div>
   );
 }
 
 // ── Lesson row (title + base video + per-language variants) ──────────────────────
 function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const langsSet = video.variants.length;
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">🎬 {video.title}</p>
+        <button className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)}>
+          <span className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+          <span className="text-sm font-medium truncate">🎬 {video.title}</span>
+          <span className="text-[11px] text-zinc-400 shrink-0">{langsSet}/6 languages</span>
+        </button>
         <div className="flex gap-3 shrink-0">
           <button className="text-xs text-zinc-500 hover:text-zinc-800"
             onClick={async () => {
@@ -271,6 +293,7 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
         </div>
       </div>
 
+      {open && (<>
       {/* Base video */}
       <div className="mt-2 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-zinc-500">Default video:</span>
@@ -314,6 +337,7 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
         <QuizManager videoId={video.id} />
         <AssignmentManager videoId={video.id} />
       </div>
+      </>)}
     </div>
   );
 }
