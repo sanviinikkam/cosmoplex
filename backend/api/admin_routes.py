@@ -39,6 +39,23 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 SUPPORTED_LANGUAGES = {"en", "hi", "mr", "te", "ta", "kn"}
 
+# Cloudinary IDs that already exist and are used by the learner site / WhatsApp,
+# keyed by lesson title. /admin/sync-videos imports these into the DB so they
+# show up (and become editable) in the portal.
+KNOWN_VIDEO_IDS = {
+    "The 10 AI Words Every Fresher Must Know": {
+        "en": "2.1_English_compressed_s6vhdd",
+        "hi": "2.1_hindi_sixgnf",
+        "mr": "2.1_Marathi_cws5fc",
+        "te": "2.1_Telugu_qloes6",
+        "ta": "2.1_tamil_tl4rf2",
+        "kn": "2.1_Kannada_azgabe",
+    },
+    "When AI Confidently Lies - Hallucination": {
+        "hi": "2.4_hindi_compressed_vxkloy",
+    },
+}
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 class LoginBody(BaseModel):
@@ -376,6 +393,30 @@ async def cloudinary_signature(body: SignatureBody, _: bool = Depends(require_ad
         "folder": folder,
         "uploadUrl": f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/video/upload",
     }
+
+
+@router.post("/sync-videos")
+async def sync_videos(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Import known Cloudinary IDs (used by the learner site / WhatsApp) into the
+    DB as per-language variants, matched by lesson title. Idempotent."""
+    res = await db.execute(select(Video).options(selectinload(Video.language_variants)))
+    videos = res.scalars().all()
+    synced = []
+    for v in videos:
+        mapping = KNOWN_VIDEO_IDS.get(v.title)
+        if not mapping:
+            continue
+        existing = {lv.language: lv for lv in v.language_variants}
+        for lang, pid in mapping.items():
+            if lang in existing:
+                existing[lang].cloudinary_public_id = pid
+            else:
+                db.add(VideoLanguageVariant(video_id=v.id, language=lang, cloudinary_public_id=pid))
+        if not v.cloudinary_public_id and mapping.get("en"):
+            v.cloudinary_public_id = mapping["en"]
+        synced.append({"title": v.title, "languages": sorted(mapping.keys())})
+    await db.commit()
+    return {"synced": synced, "count": len(synced)}
 
 
 async def _tree(course_id: str, db: AsyncSession) -> dict:

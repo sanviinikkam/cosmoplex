@@ -108,6 +108,10 @@ export const adminApi = {
   deleteVariant: (videoId: string, language: string) =>
     adminFetch<{ deleted: boolean }>(`/admin/videos/${videoId}/variant/${language}`, { method: "DELETE" }),
 
+  syncVideos: () =>
+    adminFetch<{ synced: { title: string; languages: string[] }[]; count: number }>(
+      "/admin/sync-videos", { method: "POST" }),
+
   uploadSignature: (folder?: string) =>
     adminFetch<{ timestamp: number; signature: string; apiKey: string; cloudName: string; folder: string; uploadUrl: string }>(
       "/admin/cloudinary/signature", { method: "POST", body: JSON.stringify({ folder: folder ?? null }) }),

@@ -106,7 +106,17 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <h1 className="text-xl font-semibold">Cosmoplex Admin</h1>
           <p className="text-sm text-zinc-500">Manage courses, lessons, and videos</p>
         </div>
-        <button onClick={onLogout} className="text-sm text-zinc-500 hover:text-zinc-800">Log out</button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => run(async () => {
+              const r = await adminApi.syncVideos();
+              window.alert(r.count ? `Synced ${r.count} lesson(s) from Cloudinary.` : "No matching lessons to sync.");
+            })}
+            className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50">
+            ⟳ Sync from Cloudinary
+          </button>
+          <button onClick={onLogout} className="text-sm text-zinc-500 hover:text-zinc-800">Log out</button>
+        </div>
       </header>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
