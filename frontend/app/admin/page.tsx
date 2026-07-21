@@ -110,10 +110,10 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <button
             onClick={() => run(async () => {
               const r = await adminApi.syncVideos();
-              window.alert(r.count ? `Synced ${r.count} lesson(s) from Cloudinary.` : "No matching lessons to sync.");
+              window.alert(`Synced existing content:\n• ${r.videosSynced} lesson video set(s)\n• ${r.quizzesAdded} quiz question(s) added\n• ${r.assignmentsAdded} assignment(s) added`);
             })}
             className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50">
-            ⟳ Sync from Cloudinary
+            ⟳ Sync existing content
           </button>
           <button onClick={onLogout} className="text-sm text-zinc-500 hover:text-zinc-800">Log out</button>
         </div>

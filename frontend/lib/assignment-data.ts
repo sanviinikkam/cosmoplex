@@ -11,7 +11,7 @@ export interface Assignment {
   rubric: string;
 }
 
-const LESSON_ASSIGNMENTS: Record<string, Assignment[]> = {
+export const LESSON_ASSIGNMENTS: Record<string, Assignment[]> = {
   "The 10 AI Words Every Fresher Must Know": [
     {
       id: "a1",

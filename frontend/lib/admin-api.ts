@@ -137,7 +137,7 @@ export const adminApi = {
     adminFetch<{ deleted: boolean }>(`/admin/assignments/${id}`, { method: "DELETE" }),
 
   syncVideos: () =>
-    adminFetch<{ synced: { title: string; languages: string[] }[]; count: number }>(
+    adminFetch<{ videosSynced: number; quizzesAdded: number; assignmentsAdded: number }>(
       "/admin/sync-videos", { method: "POST" }),
 
   uploadSignature: (folder?: string) =>

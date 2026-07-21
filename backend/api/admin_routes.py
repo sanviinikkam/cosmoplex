@@ -19,7 +19,9 @@ Everything except /admin/login requires a valid admin token (require_admin).
   POST   /admin/cloudinary/signature          — signed direct-upload params
 """
 import hashlib
+import json
 import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -520,8 +522,47 @@ async def sync_videos(_: bool = Depends(require_admin), db: AsyncSession = Depen
         if not v.cloudinary_public_id and mapping.get("en"):
             v.cloudinary_public_id = mapping["en"]
         synced.append({"title": v.title, "languages": sorted(mapping.keys())})
+
+    # Import the existing quiz + assignment banks (deduped by English text).
+    quizzes_added = assignments_added = 0
+    legacy_path = Path(__file__).with_name("legacy_content.json")
+    if legacy_path.exists():
+        legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+        by_title = {v.title: v for v in videos}
+
+        for title, quizzes in legacy.get("quizzesByLesson", {}).items():
+            v = by_title.get(title)
+            if not v:
+                continue
+            ex = await db.execute(select(QuizQuestion).where(QuizQuestion.video_id == v.id))
+            existing_q = {q.question.get("en") for q in ex.scalars().all()}
+            base = await _next_order(db, QuizQuestion, QuizQuestion.video_id, v.id)
+            for item in quizzes:
+                if item["question"].get("en") in existing_q:
+                    continue
+                db.add(QuizQuestion(video_id=v.id, question=item["question"], options=item["options"],
+                                    correct_index=item["correct_index"], order_index=base))
+                base += 1
+                quizzes_added += 1
+
+        for title, prompts in legacy.get("assignmentsByLesson", {}).items():
+            v = by_title.get(title)
+            if not v:
+                continue
+            ex = await db.execute(select(AssignmentPrompt).where(AssignmentPrompt.video_id == v.id))
+            existing_a = {a.question.get("en") for a in ex.scalars().all()}
+            base = await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, v.id)
+            for item in prompts:
+                if item["question"].get("en") in existing_a:
+                    continue
+                db.add(AssignmentPrompt(video_id=v.id, question=item["question"],
+                                        rubric=item["rubric"], order_index=base))
+                base += 1
+                assignments_added += 1
+
     await db.commit()
-    return {"synced": synced, "count": len(synced)}
+    return {"videosSynced": len(synced), "quizzesAdded": quizzes_added,
+            "assignmentsAdded": assignments_added}
 
 
 async def _tree(course_id: str, db: AsyncSession) -> dict:
