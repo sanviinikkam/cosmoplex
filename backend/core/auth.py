@@ -3,7 +3,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.database import get_db
@@ -29,6 +29,33 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     )
     to_encode["exp"] = expire
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+
+admin_scheme = HTTPBearer(auto_error=False)
+
+
+def create_admin_token() -> str:
+    return create_access_token({"sub": "admin", "role": "admin"})
+
+
+async def require_admin(
+    creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+) -> bool:
+    """Guard for /admin endpoints — requires a valid admin-scoped JWT."""
+    exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Admin authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if creds is None:
+        raise exc
+    try:
+        payload = jwt.decode(creds.credentials, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise exc
+    if payload.get("role") != "admin":
+        raise exc
+    return True
 
 
 async def get_current_learner(

@@ -22,8 +22,13 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str = "cosmoplex-verify"  # you choose this; must match Meta webhook config
     graph_api_version: str = "v21.0"
     cloudinary_cloud_name: str = "dlpl4inio"  # for building lesson video links sent over WhatsApp
+    cloudinary_api_key: str = ""              # for signed uploads from the admin portal
+    cloudinary_api_secret: str = ""           # kept server-side only; never sent to the browser
 
-    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", mode="before")
+    # Admin portal (hidden /admin) — single shared password
+    admin_password: str = "change-me-admin"
+
+    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "admin_password", mode="before")
     @classmethod
     def _strip_secret(cls, v):
         # Pasted secrets often pick up trailing newlines/spaces, which break
