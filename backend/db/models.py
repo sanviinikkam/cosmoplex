@@ -312,6 +312,33 @@ class VideoProgress(Base):
     video = relationship("Video", back_populates="progress_records")
 
 
+class QuizQuestion(Base):
+    """One MCQ in a lesson's quiz bank. Stored multilingual; the display layer
+    picks a random subset and renders the learner's language."""
+    __tablename__ = "quiz_questions"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    video_id = Column(UUID(as_uuid=False), ForeignKey("videos.id"), nullable=False, index=True)
+    question = Column(JSONB, nullable=False)      # {"en": "...", "hi": "...", ...}
+    options = Column(JSONB, nullable=False)       # {"en": ["a","b","c","d"], ...}
+    correct_index = Column(Integer, nullable=False, default=0)
+    order_index = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AssignmentPrompt(Base):
+    """One assignment in a lesson's assignment bank. One is picked at random
+    when shown. Question is multilingual; rubric guides the AI grader."""
+    __tablename__ = "assignment_prompts"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    video_id = Column(UUID(as_uuid=False), ForeignKey("videos.id"), nullable=False, index=True)
+    question = Column(JSONB, nullable=False)      # {"en": "...", "hi": "...", ...}
+    rubric = Column(Text, nullable=False)         # grading instructions (language-neutral / English)
+    order_index = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class WhatsAppSession(Base):
     """Conversation state for a WhatsApp user, keyed by phone number.
 

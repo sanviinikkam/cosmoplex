@@ -1,3 +1,4 @@
+import random
 from datetime import datetime
 from typing import Optional
 
@@ -12,10 +13,12 @@ from core.auth import get_current_learner
 from core.config import settings
 from db.database import get_db
 from db.models import (
+    AssignmentPrompt,
     Course,
     CourseModule,
     LearnerProfile,
     LessonAssignmentSubmission,
+    QuizQuestion,
     Section,
     Video,
     VideoLanguageVariant,
@@ -317,6 +320,33 @@ async def update_video_progress(
 
     await db.commit()
     return {"completed": prog.completed, "watchedSeconds": prog.watched_seconds}
+
+
+# ── random quiz / assignment from the per-lesson bank ─────────────────────────
+@router.get("/videos/{video_id}/quiz")
+async def get_random_quiz(video_id: str, count: int = 5, db: AsyncSession = Depends(get_db)):
+    """Return up to `count` random quiz questions for a lesson (all languages in
+    the payload; the client renders the learner's language)."""
+    res = await db.execute(select(QuizQuestion).where(QuizQuestion.video_id == video_id))
+    questions = list(res.scalars().all())
+    if not questions:
+        return {"questions": []}
+    chosen = random.sample(questions, min(count, len(questions)))
+    return {"questions": [
+        {"id": q.id, "question": q.question, "options": q.options, "correctIndex": q.correct_index}
+        for q in chosen
+    ]}
+
+
+@router.get("/videos/{video_id}/assignment")
+async def get_random_assignment(video_id: str, db: AsyncSession = Depends(get_db)):
+    """Return one random assignment for a lesson, or null if the bank is empty."""
+    res = await db.execute(select(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id))
+    prompts = list(res.scalars().all())
+    if not prompts:
+        return None
+    a = random.choice(prompts)
+    return {"id": a.id, "question": a.question, "rubric": a.rubric}
 
 
 # ── assignment evaluation ─────────────────────────────────────────────────────

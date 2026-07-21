@@ -19,6 +19,16 @@ export type AdminCourse = {
   thumbnailCloudinaryId: string | null; modules: AdminModule[];
 };
 
+export type QuizItem = {
+  id: string;
+  question: Record<string, string>;
+  options: Record<string, string[]>;
+  correctIndex: number;
+};
+export type QuizPayload = { question: Record<string, string>; options: Record<string, string[]>; correct_index: number };
+export type AssignmentItem = { id: string; question: Record<string, string>; rubric: string };
+export type AssignmentPayload = { question: Record<string, string>; rubric: string };
+
 export const LANGUAGES: { code: string; label: string }[] = [
   { code: "en", label: "English" },
   { code: "hi", label: "हिंदी" },
@@ -107,6 +117,24 @@ export const adminApi = {
     adminFetch<{ ok: boolean }>(`/admin/videos/${videoId}/variant`, { method: "PUT", body: JSON.stringify(b) }),
   deleteVariant: (videoId: string, language: string) =>
     adminFetch<{ deleted: boolean }>(`/admin/videos/${videoId}/variant/${language}`, { method: "DELETE" }),
+
+  listQuizzes: (videoId: string) =>
+    adminFetch<QuizItem[]>(`/admin/videos/${videoId}/quizzes`),
+  createQuiz: (videoId: string, b: QuizPayload) =>
+    adminFetch<QuizItem>(`/admin/videos/${videoId}/quizzes`, { method: "POST", body: JSON.stringify(b) }),
+  updateQuiz: (quizId: string, b: QuizPayload) =>
+    adminFetch<QuizItem>(`/admin/quizzes/${quizId}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteQuiz: (quizId: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/quizzes/${quizId}`, { method: "DELETE" }),
+
+  listAssignments: (videoId: string) =>
+    adminFetch<AssignmentItem[]>(`/admin/videos/${videoId}/assignments`),
+  createAssignment: (videoId: string, b: AssignmentPayload) =>
+    adminFetch<AssignmentItem>(`/admin/videos/${videoId}/assignments`, { method: "POST", body: JSON.stringify(b) }),
+  updateAssignment: (id: string, b: AssignmentPayload) =>
+    adminFetch<AssignmentItem>(`/admin/assignments/${id}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteAssignment: (id: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/assignments/${id}`, { method: "DELETE" }),
 
   syncVideos: () =>
     adminFetch<{ synced: { title: string; languages: string[] }[]; count: number }>(

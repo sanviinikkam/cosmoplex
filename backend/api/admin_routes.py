@@ -33,6 +33,7 @@ from core.config import settings
 from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
+    QuizQuestion, AssignmentPrompt,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -393,6 +394,110 @@ async def cloudinary_signature(body: SignatureBody, _: bool = Depends(require_ad
         "folder": folder,
         "uploadUrl": f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/video/upload",
     }
+
+
+# ── Quiz bank (per lesson) ───────────────────────────────────────────────────
+class QuizBody(BaseModel):
+    question: dict                 # {"en": "...", "hi": "...", ...}
+    options: dict                  # {"en": ["a","b","c","d"], ...}
+    correct_index: int
+
+
+def _quiz_dict(q: QuizQuestion) -> dict:
+    return {"id": q.id, "question": q.question, "options": q.options,
+            "correctIndex": q.correct_index, "orderIndex": q.order_index}
+
+
+@router.get("/videos/{video_id}/quizzes")
+async def list_quizzes(video_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(QuizQuestion).where(QuizQuestion.video_id == video_id).order_by(QuizQuestion.order_index))
+    return [_quiz_dict(q) for q in res.scalars().all()]
+
+
+@router.post("/videos/{video_id}/quizzes")
+async def create_quiz(video_id: str, body: QuizBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if not await db.get(Video, video_id):
+        raise HTTPException(status_code=404, detail="Video not found")
+    if not body.question.get("en"):
+        raise HTTPException(status_code=400, detail="English question is required")
+    order = await _next_order(db, QuizQuestion, QuizQuestion.video_id, video_id)
+    q = QuizQuestion(video_id=video_id, question=body.question, options=body.options,
+                     correct_index=body.correct_index, order_index=order)
+    db.add(q)
+    await db.commit()
+    return _quiz_dict(q)
+
+
+@router.put("/quizzes/{quiz_id}")
+async def update_quiz(quiz_id: str, body: QuizBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    q = await db.get(QuizQuestion, quiz_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+    q.question = body.question
+    q.options = body.options
+    q.correct_index = body.correct_index
+    await db.commit()
+    return _quiz_dict(q)
+
+
+@router.delete("/quizzes/{quiz_id}")
+async def delete_quiz(quiz_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    q = await db.get(QuizQuestion, quiz_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+    await db.delete(q)
+    await db.commit()
+    return {"deleted": True, "id": quiz_id}
+
+
+# ── Assignment bank (per lesson) ─────────────────────────────────────────────
+class AssignmentBody(BaseModel):
+    question: dict                 # {"en": "...", "hi": "...", ...}
+    rubric: str
+
+
+def _assign_dict(a: AssignmentPrompt) -> dict:
+    return {"id": a.id, "question": a.question, "rubric": a.rubric, "orderIndex": a.order_index}
+
+
+@router.get("/videos/{video_id}/assignments")
+async def list_assignments(video_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id).order_by(AssignmentPrompt.order_index))
+    return [_assign_dict(a) for a in res.scalars().all()]
+
+
+@router.post("/videos/{video_id}/assignments")
+async def create_assignment(video_id: str, body: AssignmentBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if not await db.get(Video, video_id):
+        raise HTTPException(status_code=404, detail="Video not found")
+    if not body.question.get("en"):
+        raise HTTPException(status_code=400, detail="English question is required")
+    order = await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
+    a = AssignmentPrompt(video_id=video_id, question=body.question, rubric=body.rubric, order_index=order)
+    db.add(a)
+    await db.commit()
+    return _assign_dict(a)
+
+
+@router.put("/assignments/{assignment_id}")
+async def update_assignment(assignment_id: str, body: AssignmentBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    a = await db.get(AssignmentPrompt, assignment_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    a.question = body.question
+    a.rubric = body.rubric
+    await db.commit()
+    return _assign_dict(a)
+
+
+@router.delete("/assignments/{assignment_id}")
+async def delete_assignment(assignment_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    a = await db.get(AssignmentPrompt, assignment_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    await db.delete(a)
+    await db.commit()
+    return {"deleted": True, "id": assignment_id}
 
 
 @router.post("/sync-videos")

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
-  LANGUAGES, type AdminCourse, type AdminVideo,
+  LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
 } from "@/lib/admin-api";
 
 export default function AdminPage() {
@@ -307,6 +307,186 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
             </div>
           );
         })}
+      </div>
+
+      {/* Quiz + assignment banks */}
+      <div className="mt-3 border-t border-zinc-200 pt-3 flex flex-col gap-2">
+        <QuizManager videoId={video.id} />
+        <AssignmentManager videoId={video.id} />
+      </div>
+    </div>
+  );
+}
+
+// ── Quiz bank manager ────────────────────────────────────────────────────────
+const EMPTY_QUIZ = { question: {} as Record<string, string>, options: {} as Record<string, string[]>, correctIndex: 0 };
+
+function QuizManager({ videoId }: { videoId: string }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<QuizItem[]>([]);
+  const [editing, setEditing] = useState<null | { id?: string; draft: typeof EMPTY_QUIZ }>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try { setItems(await adminApi.listQuizzes(videoId)); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+  }, [videoId]);
+  useEffect(() => { if (open) load(); }, [open, load]);
+
+  async function save(draft: typeof EMPTY_QUIZ, id?: string) {
+    setErr("");
+    if (!draft.question.en?.trim()) { setErr("English question is required"); return; }
+    const payload = { question: draft.question, options: draft.options, correct_index: draft.correctIndex };
+    try {
+      if (id) await adminApi.updateQuiz(id, payload); else await adminApi.createQuiz(videoId, payload);
+      setEditing(null); await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save"); }
+  }
+
+  return (
+    <div className="rounded-lg bg-white border border-zinc-200">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+        <span>📝 Quiz questions {items.length ? `(${items.length})` : ""}</span>
+        <span className="text-zinc-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 flex flex-col gap-2">
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {items.map((q, i) => (
+            <div key={q.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-50 rounded px-2 py-1.5">
+              <span className="truncate">{i + 1}. {q.question.en ?? "(no English)"}</span>
+              <span className="flex gap-2 shrink-0">
+                <button className="text-zinc-500 hover:text-zinc-800" onClick={() => setEditing({ id: q.id, draft: { question: q.question, options: q.options, correctIndex: q.correctIndex } })}>Edit</button>
+                <button className="text-red-500 hover:text-red-700" onClick={async () => { if (window.confirm("Delete this question?")) { await adminApi.deleteQuiz(q.id); load(); } }}>Delete</button>
+              </span>
+            </div>
+          ))}
+          {editing ? (
+            <QuizEditor initial={editing.draft} onCancel={() => setEditing(null)} onSave={(d) => save(d, editing.id)} />
+          ) : (
+            <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+              onClick={() => setEditing({ draft: { question: {}, options: {}, correctIndex: 0 } })}>+ Add question</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuizEditor({ initial, onSave, onCancel }: {
+  initial: typeof EMPTY_QUIZ; onSave: (d: typeof EMPTY_QUIZ) => void; onCancel: () => void;
+}) {
+  const [lang, setLang] = useState("en");
+  const [draft, setDraft] = useState(initial);
+  const opts = draft.options[lang] ?? ["", "", "", ""];
+
+  const setQ = (val: string) => setDraft((d) => ({ ...d, question: { ...d.question, [lang]: val } }));
+  const setOpt = (i: number, val: string) => setDraft((d) => {
+    const cur = [...(d.options[lang] ?? ["", "", "", ""])]; cur[i] = val;
+    return { ...d, options: { ...d.options, [lang]: cur } };
+  });
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-zinc-500">Language:</label>
+        <select value={lang} onChange={(e) => setLang(e.target.value)} className="text-xs border border-zinc-300 rounded px-2 py-1">
+          {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}{l.code === "en" ? " (required)" : ""}</option>)}
+        </select>
+      </div>
+      <input value={draft.question[lang] ?? ""} onChange={(e) => setQ(e.target.value)} placeholder={`Question (${lang})`}
+        className="w-full text-sm border border-zinc-300 rounded px-2 py-1.5" />
+      {[0, 1, 2, 3].map((i) => (
+        <label key={i} className="flex items-center gap-2">
+          <input type="radio" name="correct" checked={draft.correctIndex === i} onChange={() => setDraft((d) => ({ ...d, correctIndex: i }))} />
+          <input value={opts[i] ?? ""} onChange={(e) => setOpt(i, e.target.value)} placeholder={`Option ${i + 1} (${lang})`}
+            className="flex-1 text-sm border border-zinc-300 rounded px-2 py-1" />
+        </label>
+      ))}
+      <p className="text-[11px] text-zinc-500">Radio marks the correct answer (same across languages).</p>
+      <div className="flex gap-2">
+        <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded px-3 py-1" onClick={() => onSave(draft)}>Save</button>
+        <button className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Assignment bank manager ──────────────────────────────────────────────────
+function AssignmentManager({ videoId }: { videoId: string }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<AssignmentItem[]>([]);
+  const [editing, setEditing] = useState<null | { id?: string; question: Record<string, string>; rubric: string }>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try { setItems(await adminApi.listAssignments(videoId)); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+  }, [videoId]);
+  useEffect(() => { if (open) load(); }, [open, load]);
+
+  async function save(question: Record<string, string>, rubric: string, id?: string) {
+    setErr("");
+    if (!question.en?.trim()) { setErr("English question is required"); return; }
+    if (!rubric.trim()) { setErr("Rubric is required"); return; }
+    try {
+      if (id) await adminApi.updateAssignment(id, { question, rubric }); else await adminApi.createAssignment(videoId, { question, rubric });
+      setEditing(null); await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save"); }
+  }
+
+  return (
+    <div className="rounded-lg bg-white border border-zinc-200">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+        <span>📌 Assignments {items.length ? `(${items.length})` : ""}</span>
+        <span className="text-zinc-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 flex flex-col gap-2">
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {items.map((a, i) => (
+            <div key={a.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-50 rounded px-2 py-1.5">
+              <span className="truncate">{i + 1}. {a.question.en ?? "(no English)"}</span>
+              <span className="flex gap-2 shrink-0">
+                <button className="text-zinc-500 hover:text-zinc-800" onClick={() => setEditing({ id: a.id, question: a.question, rubric: a.rubric })}>Edit</button>
+                <button className="text-red-500 hover:text-red-700" onClick={async () => { if (window.confirm("Delete this assignment?")) { await adminApi.deleteAssignment(a.id); load(); } }}>Delete</button>
+              </span>
+            </div>
+          ))}
+          {editing ? (
+            <AssignmentEditor initial={editing} onCancel={() => setEditing(null)} onSave={(q, r) => save(q, r, editing.id)} />
+          ) : (
+            <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+              onClick={() => setEditing({ question: {}, rubric: "" })}>+ Add assignment</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignmentEditor({ initial, onSave, onCancel }: {
+  initial: { question: Record<string, string>; rubric: string };
+  onSave: (question: Record<string, string>, rubric: string) => void; onCancel: () => void;
+}) {
+  const [lang, setLang] = useState("en");
+  const [question, setQuestion] = useState<Record<string, string>>(initial.question);
+  const [rubric, setRubric] = useState(initial.rubric);
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-zinc-500">Language:</label>
+        <select value={lang} onChange={(e) => setLang(e.target.value)} className="text-xs border border-zinc-300 rounded px-2 py-1">
+          {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}{l.code === "en" ? " (required)" : ""}</option>)}
+        </select>
+      </div>
+      <textarea value={question[lang] ?? ""} onChange={(e) => setQuestion((q) => ({ ...q, [lang]: e.target.value }))}
+        placeholder={`Assignment question (${lang})`} rows={3} className="w-full text-sm border border-zinc-300 rounded px-2 py-1.5" />
+      <textarea value={rubric} onChange={(e) => setRubric(e.target.value)}
+        placeholder="Grading rubric (used by the AI grader — English, language-neutral)" rows={4}
+        className="w-full text-sm border border-zinc-300 rounded px-2 py-1.5" />
+      <div className="flex gap-2">
+        <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded px-3 py-1" onClick={() => onSave(question, rubric)}>Save</button>
+        <button className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
