@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str = "cosmoplex-verify"  # you choose this; must match Meta webhook config
     graph_api_version: str = "v21.0"
     cloudinary_cloud_name: str = "dlpl4inio"  # for building lesson video links sent over WhatsApp
+    whatsapp_templates_enabled: bool = False  # flip True once drip templates are approved by Meta
     cloudinary_api_key: str = ""              # for signed uploads from the admin portal
     cloudinary_api_secret: str = ""           # kept server-side only; never sent to the browser
 

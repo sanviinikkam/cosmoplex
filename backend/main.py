@@ -35,6 +35,12 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS current_status VARCHAR(50)"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS goal TEXT"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMP"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_key VARCHAR(40)"))
         print("✓ WhatsApp session columns ready")
         # Seed the course on startup. seed() is idempotent — it checks for an
         # existing course and skips if already seeded, so this is safe to run
@@ -44,7 +50,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠ Database setup/seed issue: {e}")
         print("  Server starting anyway.")
+
+    # Daily WhatsApp drip engine. Runs in-process (works when the backend is
+    # always-on). On the free tier the instance sleeps, so also drive it with a
+    # Render Cron Job hitting GET /whatsapp/run-drip as the reliable path.
+    scheduler = None
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from api.whatsapp_drip import run_drip
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.add_job(run_drip, "cron", hour=4, minute=30, id="daily_drip")  # ~10:00 IST
+        scheduler.start()
+        app.state.scheduler = scheduler
+        print("✓ Drip scheduler started (daily 04:30 UTC)")
+    except Exception as e:
+        print(f"⚠ Drip scheduler not started: {e}")
+
     yield
+
+    if scheduler:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(

@@ -15,6 +15,7 @@ Learning flow (state persisted per phone in whatsapp_sessions):
 import json
 import re
 from collections import deque
+from datetime import datetime
 
 import anthropic
 import httpx
@@ -176,6 +177,19 @@ async def _upload_media(data: bytes) -> str | None:
     except httpx.HTTPError as e:
         print(f"⚠ media upload error: {e}")
     return None
+
+
+async def send_template(to: str, name: str, lang_code: str, body_params: list[str] | None = None) -> httpx.Response | None:
+    """Send a pre-approved WhatsApp template (for messages outside the 24h window)."""
+    template: dict = {"name": name, "language": {"code": lang_code}}
+    if body_params:
+        template["components"] = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in body_params],
+        }]
+    return await _post({
+        "messaging_product": "whatsapp", "to": to, "type": "template", "template": template,
+    })
 
 
 async def send_video(to: str, public_id: str, caption: str) -> None:
@@ -371,6 +385,17 @@ async def subscribe_app(waba_id: str, key: str):
         return {"ok": False, "error": str(e)}
 
 
+# ── Drip engine trigger (call daily via Render Cron Job, or the in-app scheduler) ─
+@router.get("/run-drip")
+async def run_drip_endpoint(key: str, to: str | None = None, force_key: str | None = None):
+    """Run the daily nudge pass. Guarded by the verify token.
+    Optional ?to=<phone>&force_key=<nudge> bypasses idle/dedupe for a test send."""
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+    from api.whatsapp_drip import run_drip
+    return await run_drip(force_to=to, force_key=force_key)
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request, background_tasks: BackgroundTasks):
@@ -549,6 +574,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             db.add(session)
         if name and not session.name:
             session.name = name
+        session.last_active_at = datetime.utcnow()  # for the drip engine's idle check
 
         low = (text or "").strip().lower()
 

@@ -356,5 +356,8 @@ class WhatsAppSession(Base):
     name = Column(String(255), nullable=True)
     current_status = Column(String(50), nullable=True)     # onboarding: student | graduate | working | jobseeker
     goal = Column(Text, nullable=True)                     # onboarding: their stated goal with AI
+    last_active_at = Column(DateTime, default=datetime.utcnow)  # last inbound learner message (drives drip idle)
+    last_nudge_at = Column(DateTime, nullable=True)        # when we last sent a drip nudge
+    last_nudge_key = Column(String(40), nullable=True)     # which nudge we last sent (dedupe)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
