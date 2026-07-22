@@ -671,6 +671,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await db.commit()
             print(f"✓ WhatsApp onboarded {frm}: lang={lang} status={session.current_status} goal={goal[:60]!r}")
             await send_text(frm, ob(lang, "saved").format(name=nm))
+            await send_text(frm, ob(lang, "free_offer").format(name=nm))
             await send_buttons(frm, ob(lang, "start_prompt").format(name=nm),
                                [("start_lesson", ob(lang, "start_btn"))])
             return
