@@ -179,6 +179,74 @@ async def _upload_media(data: bytes) -> str | None:
     return None
 
 
+# Localized fallback when a voice note can't be transcribed.
+VOICE_FAIL = {
+    "en": "🎙️ Sorry, I couldn't quite catch that voice note — could you type it instead?",
+    "hi": "🎙️ माफ़ करें, मैं वह वॉइस नोट समझ नहीं पाया — क्या आप इसे टाइप कर सकते हैं?",
+    "mr": "🎙️ माफ करा, मला तो व्हॉइस नोट नीट समजला नाही — कृपया टाइप करून पाठवाल का?",
+    "te": "🎙️ క్షమించండి, ఆ వాయిస్ నోట్ నాకు సరిగ్గా అర్థం కాలేదు — దయచేసి టైప్ చేయగలరా?",
+    "ta": "🎙️ மன்னிக்கவும், அந்த குரல் குறிப்பு எனக்கு சரியாகப் புரியவில்லை — தயவுசெய்து தட்டச்சு செய்ய முடியுமா?",
+    "kn": "🎙️ ಕ್ಷಮಿಸಿ, ಆ ಧ್ವನಿ ಟಿಪ್ಪಣಿ ನನಗೆ ಸರಿಯಾಗಿ ಅರ್ಥವಾಗಲಿಲ್ಲ — ದಯವಿಟ್ಟು ಟೈಪ್ ಮಾಡಬಹುದೇ?",
+}
+
+
+async def transcribe_audio(media_id: str) -> str | None:
+    """Download a WhatsApp voice note and transcribe it to text via Groq Whisper."""
+    if not settings.groq_api_key:
+        print("⚠ voice: GROQ_API_KEY not set — can't transcribe")
+        return None
+    ver = settings.graph_api_version
+    headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
+    try:
+        async with httpx.AsyncClient(timeout=60) as h:
+            meta = await h.get(f"{GRAPH}/{ver}/{media_id}", headers=headers)
+            if meta.status_code >= 400:
+                print(f"⚠ voice: media lookup failed {meta.status_code}: {meta.text[:200]}")
+                return None
+            url = meta.json().get("url")
+            if not url:
+                return None
+            audio = await h.get(url, headers=headers)
+            if audio.status_code >= 400:
+                print(f"⚠ voice: media download failed {audio.status_code}")
+                return None
+            data = audio.content
+    except httpx.HTTPError as e:
+        print(f"⚠ voice: download error: {e}")
+        return None
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        resp = await client.audio.transcriptions.create(
+            file=("voice.ogg", data),
+            model="whisper-large-v3",
+        )
+        text = (resp.text or "").strip()
+        print(f"✓ voice transcribed ({len(data)} bytes) -> {text[:80]!r}")
+        return text or None
+    except Exception as e:
+        print(f"⚠ voice: transcription error: {e}")
+        return None
+
+
+async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
+    """Transcribe a voice note, then run it through the normal text handler."""
+    text = await transcribe_audio(media_id)
+    if text:
+        await _handle_message(frm, None, text, name)
+        return
+    # Couldn't transcribe → nudge them to type, in their language if we know it.
+    lang = "en"
+    try:
+        async with async_session_factory() as db:
+            s = await db.get(WhatsAppSession, frm)
+            if s and s.language:
+                lang = s.language
+    except Exception:
+        pass
+    await send_text(frm, VOICE_FAIL.get(lang, VOICE_FAIL["en"]))
+
+
 async def send_template(to: str, name: str, lang_code: str, body_params: list[str] | None = None) -> httpx.Response | None:
     """Send a pre-approved WhatsApp template (for messages outside the 24h window)."""
     template: dict = {"name": name, "language": {"code": lang_code}}
@@ -413,8 +481,16 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     if _seen_before(msg.get("id")):
                         continue
                     frm = msg.get("from")
+                    if not frm:
+                        continue
+                    # Voice notes: transcribe, then treat as a typed message.
+                    if msg.get("type") == "audio":
+                        media_id = (msg.get("audio") or {}).get("id")
+                        if media_id:
+                            background_tasks.add_task(_handle_audio, frm, media_id, name)
+                        continue
                     reply_id, text = _extract(msg)
-                    if frm and (reply_id or text):
+                    if reply_id or text:
                         background_tasks.add_task(_handle_message, frm, reply_id, text, name)
     except Exception as e:
         print(f"⚠ WhatsApp webhook error: {e}")
