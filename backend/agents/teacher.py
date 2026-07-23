@@ -35,25 +35,31 @@ async def run_teacher(state: LearnerState, user_message: str) -> str:
     if not module:
         return "Your course is complete. Navigate to the certificate page to download your certificate."
 
-    system = TEACHER_SYSTEM.format(
+    system_text = TEACHER_SYSTEM.format(
         module_content=module["content"],
         target_language=language_name(state.language),
     )
 
-    # Build message history (last 10 turns to control token cost)
-    history = state.messages[-20:]
-    messages = []
-    for m in history:
-        messages.append({
-            "role": m["role"],
-            "content": m["content"],
-        })
+    # WhatsApp chats should be short — cuts the (priciest) output tokens and
+    # reads better on a phone. Web chat keeps the normal length.
+    is_whatsapp = str(state.learner_id).startswith("wa:")
+    if is_whatsapp:
+        system_text += (
+            "\n\nThis is a WhatsApp chat. Keep replies short: under 120 words, "
+            "1-2 short paragraphs, no bullet lists or headers. Warm but concise."
+        )
+
+    # Build message history (last few turns to control token cost)
+    history = state.messages[-10:] if is_whatsapp else state.messages[-20:]
+    messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": user_message})
 
     response = await client.messages.create(
         model="claude-haiku-4-5",  # tutor runs on Haiku — ~3x cheaper than Sonnet, fine for chat
-        max_tokens=600,
-        system=system,
+        max_tokens=350 if is_whatsapp else 600,
+        # Cache the (stable) system prompt + module content so repeat chats bill
+        # the prefix at ~0.1x instead of full price.
+        system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         messages=messages,
     )
     return response.content[0].text.strip()
