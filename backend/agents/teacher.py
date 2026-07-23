@@ -51,7 +51,7 @@ async def run_teacher(state: LearnerState, user_message: str) -> str:
     messages.append({"role": "user", "content": user_message})
 
     response = await client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5",  # tutor runs on Haiku — ~3x cheaper than Sonnet, fine for chat
         max_tokens=600,
         system=system,
         messages=messages,
