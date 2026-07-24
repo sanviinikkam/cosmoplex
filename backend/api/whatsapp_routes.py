@@ -12,6 +12,7 @@ Learning flow (state persisted per phone in whatsapp_sessions):
   5. Answer graded by Claude (75/100 to pass); resubmit on fail.
   6. Pass → lesson complete; free text routes to the Teacher agent.
 """
+import asyncio
 import json
 import re
 from collections import deque
@@ -40,6 +41,9 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 GRAPH = "https://graph.facebook.com"
 NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+# Delay after a lesson video before the "Start quiz" prompt, so the (slower to
+# render) video shows above the prompt on the learner's phone.
+LESSON_BUTTON_DELAY_SEC = 4
 
 # De-dupe inbound message IDs. Meta re-delivers a webhook if we don't ACK fast
 # enough; combined with the fast-ACK below this prevents double replies.
@@ -674,6 +678,10 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
         await send_text(to, tr(lang, "no_more"))
         return
     await send_video(to, lesson["cloud_id"], _lesson_caption(lang, lesson["title"]))
+    # A video takes a moment to transcode/render on the phone; a text sent right
+    # after would appear ABOVE it. Pause so the video lands first, then the
+    # "Start quiz" prompt.
+    await asyncio.sleep(LESSON_BUTTON_DELAY_SEC)
     await send_buttons(to, tr(lang, "after_text").format(name=name),
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 

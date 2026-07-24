@@ -117,7 +117,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "wa-onboarding-1",
+        "build": "wa-lesson-order-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),
