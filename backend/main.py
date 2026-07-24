@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMP"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_key VARCHAR(40)"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS nudge_log JSONB"))
         print("✓ WhatsApp session columns ready")
         # Seed the course on startup. seed() is idempotent — it checks for an
         # existing course and skips if already seeded, so this is safe to run
@@ -117,7 +119,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "wa-lesson-order-1",
+        "build": "wa-drip-freq-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),

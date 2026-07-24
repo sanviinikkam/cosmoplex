@@ -30,6 +30,14 @@ from core.config import settings
 # only an approved template can reach them.)
 WINDOW_HOURS = 24.0
 
+# Pacing (all inside the free 24h window):
+#   MIN_GAP_HOURS   — minimum time between ANY two nudges → caps volume (~3/day).
+#   REPEAT_GAP_HOURS— a SAME nudge waits this long before repeating (once/day).
+#   MAX_PER_KEY     — a given nudge fires at most this many times, ever.
+MIN_GAP_HOURS = 6
+REPEAT_GAP_HOURS = 20
+MAX_PER_KEY = 2
+
 NUDGE_RULES = [
     ("finish_signup",     {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}, 2),
     ("start_lesson",      {"onboarded"},                                             2),
@@ -107,6 +115,13 @@ def _idle_hours(s: WhatsAppSession, now: datetime) -> float:
     return (now - last).total_seconds() / 3600
 
 
+def _parse_iso(v: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat(v) if v else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _pick_nudge(s: WhatsAppSession, now: datetime):
     """Return (nudge_key, idle_hours) for this learner, or None."""
     idle_hours = _idle_hours(s, now)
@@ -141,13 +156,22 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     report["skipped"] += 1
                     continue
                 key = pick[0]
-                # Never send the same nudge twice; at most one nudge per ~20h.
-                if s.last_nudge_key == key:
+                rec = (s.nudge_log or {}).get(key) or {}
+                sent_count = rec.get("n", 0)
+                # This nudge has already been shown the max number of times.
+                if sent_count >= MAX_PER_KEY:
                     report["skipped"] += 1
                     continue
-                if s.last_nudge_at and (now - s.last_nudge_at) < timedelta(hours=20):
+                # Space out ALL nudges so a learner gets at most ~3/day.
+                if s.last_nudge_at and (now - s.last_nudge_at) < timedelta(hours=MIN_GAP_HOURS):
                     report["skipped"] += 1
                     continue
+                # A repeat of the SAME nudge waits longer (at most once/day).
+                if sent_count >= 1:
+                    last_same = _parse_iso(rec.get("at"))
+                    if last_same and (now - last_same) < timedelta(hours=REPEAT_GAP_HOURS):
+                        report["skipped"] += 1
+                        continue
                 # Free-text can't reach a closed 24h window — skip rather than fire
                 # a send Meta will reject. (Templates can, so only gate when off.)
                 if not settings.whatsapp_templates_enabled and _idle_hours(s, now) >= WINDOW_HOURS:
@@ -168,6 +192,11 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     await send_text(s.phone, text)
                 s.last_nudge_at = now
                 s.last_nudge_key = key
+                # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).
+                log = dict(s.nudge_log or {})
+                prev = log.get(key) or {}
+                log[key] = {"n": prev.get("n", 0) + 1, "at": now.isoformat()}
+                s.nudge_log = log
                 report["sent"].append({"phone": "…" + s.phone[-4:], "key": key, "lang": lang})
             except Exception as e:  # never let one bad send kill the run
                 report["errors"].append(f"{s.phone[-4:]}: {e}")

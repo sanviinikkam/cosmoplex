@@ -359,5 +359,6 @@ class WhatsAppSession(Base):
     last_active_at = Column(DateTime, default=datetime.utcnow)  # last inbound learner message (drives drip idle)
     last_nudge_at = Column(DateTime, nullable=True)        # when we last sent a drip nudge
     last_nudge_key = Column(String(40), nullable=True)     # which nudge we last sent (dedupe)
+    nudge_log = Column(JSONB, nullable=True)               # {key: {"n": count, "at": iso}} per-nudge caps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
