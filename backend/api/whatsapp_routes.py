@@ -20,15 +20,20 @@ from datetime import datetime
 import anthropic
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Request, Response, Query
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from db.database import async_session_factory
-from db.models import WhatsAppSession
+from db.models import (
+    WhatsAppSession, Course, CourseModule, Section, Video,
+    QuizQuestion, AssignmentPrompt,
+)
 from agents.base import LearnerState
 from agents.teacher import run_teacher
 from api.whatsapp_content import (
     LESSON_VIDEOS, QUIZ, QUIZ_PASS, ASSIGNMENT, ASSIGN_PASS, CONTENT, tr,
-    INTRO_VIDEO_ID, LANG_NAME, COURSE_FACTS, ONBOARD, ob,
+    INTRO_VIDEO_ID, intro_video_for, LANG_NAME, COURSE_FACTS, ONBOARD, ob,
 )
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -456,8 +461,9 @@ async def subscribe_app(waba_id: str, key: str):
 # ── Drip engine trigger (call daily via Render Cron Job, or the in-app scheduler) ─
 @router.get("/run-drip")
 async def run_drip_endpoint(key: str, to: str | None = None, force_key: str | None = None):
-    """Run the daily nudge pass. Guarded by the verify token.
-    Optional ?to=<phone>&force_key=<nudge> bypasses idle/dedupe for a test send."""
+    """Run the nudge pass (call hourly via Render Cron Job, or the in-app scheduler).
+    Guarded by the verify token. Optional ?to=<phone>&force_key=<nudge> bypasses
+    idle/dedupe for a test send to one number."""
     if key != settings.whatsapp_verify_token:
         return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
     from api.whatsapp_drip import run_drip
@@ -564,22 +570,118 @@ async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
     session.stage = "welcome"
     await db.commit()
     await send_text(frm, ob(lang, "brief").format(name=session.name or "friend"))
-    if INTRO_VIDEO_ID:
-        await send_video(frm, INTRO_VIDEO_ID, ob(lang, "intro_caption"))
+    intro_id = intro_video_for(lang)
+    if intro_id:
+        await send_video(frm, intro_id, ob(lang, "intro_caption"))
     await _send_profile_question(frm, lang)
     session.stage = "ask_profile"
     await db.commit()
 
 
-async def _send_lesson(to: str, lang: str, name: str = "friend") -> None:
-    public_id = LESSON_VIDEOS[0].get(lang) or LESSON_VIDEOS[0]["en"]
-    await send_video(to, public_id, tr(lang, "lesson_caption").format(n=1))
+# ── DB-backed course (single source of truth, shared with the web + admin) ──────
+# WhatsApp used to serve a hardcoded lesson; now it reads the same course tree the
+# web platform and admin portal use, so uploads/edits in the admin portal reflect
+# on both surfaces and Lesson N is the same lesson everywhere.
+
+def _variant_public_id(video: Video, lang: str) -> str | None:
+    """Cloudinary ID for a lang. Same priority as course_routes._pick_cloudinary_id:
+    exact language → 'en' → base video field."""
+    by_lang = {v.language: v.cloudinary_public_id for v in (video.language_variants or [])}
+    return by_lang.get(lang) or by_lang.get("en") or video.cloudinary_public_id
+
+
+async def _db_lessons(db, lang: str) -> list[dict]:
+    """Ordered playable lessons from the DB — the same course the web serves,
+    in the same order (module → section → video, all by order_index).
+    Only lessons that actually have an uploaded video for this learner are
+    included, so nobody gets an empty 'coming soon' lesson over chat."""
+    res = await db.execute(
+        select(Course).order_by(Course.created_at).options(
+            selectinload(Course.modules)
+            .selectinload(CourseModule.sections)
+            .selectinload(Section.videos)
+            .selectinload(Video.language_variants)
+        )
+    )
+    course = res.scalars().first()
+    if not course:
+        return []
+    lessons: list[dict] = []
+    for module in course.modules:            # relationships already order_by order_index
+        for section in module.sections:
+            for video in section.videos:
+                cloud_id = _variant_public_id(video, lang)
+                if cloud_id:
+                    lessons.append({"video_id": video.id, "title": video.title,
+                                    "cloud_id": cloud_id})
+    if not lessons:
+        # DB not populated in this environment — fall back to the built-in lesson
+        # so the flow never dead-ends. (video_id=None → quiz/assignment fall back too.)
+        base = LESSON_VIDEOS[0]
+        cloud_id = base.get(lang) or base.get("en")
+        if cloud_id:
+            lessons.append({"video_id": None,
+                            "title": "The 10 AI Words Every Fresher Must Know",
+                            "cloud_id": cloud_id})
+    return lessons
+
+
+async def _lesson_at(db, lang: str, idx: int) -> dict | None:
+    lessons = await _db_lessons(db, lang)
+    return lessons[idx] if 0 <= idx < len(lessons) else None
+
+
+async def _quiz_items(db, video_id: str | None) -> list[dict]:
+    """This lesson's quiz from the DB bank (deterministic order → stable across
+    the 5-question flow without extra state). Falls back to the built-in quiz
+    for lessons whose bank hasn't been filled in yet."""
+    if video_id:
+        res = await db.execute(
+            select(QuizQuestion).where(QuizQuestion.video_id == video_id)
+            .order_by(QuizQuestion.order_index, QuizQuestion.created_at)
+        )
+        rows = res.scalars().all()
+        if rows:
+            return [{"q": r.question, "opts": r.options, "correct": r.correct_index}
+                    for r in rows[:5]]
+    return [{"q": it["q"], "opts": it["opts"], "correct": it["correct"]} for it in QUIZ]
+
+
+async def _assignment_for(db, video_id: str | None) -> dict:
+    """This lesson's assignment from the DB bank (first by order_index — stable
+    between showing it and grading it). Falls back to the built-in assignment."""
+    if video_id:
+        res = await db.execute(
+            select(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id)
+            .order_by(AssignmentPrompt.order_index, AssignmentPrompt.created_at)
+        )
+        row = res.scalars().first()
+        if row:
+            return {"question": row.question, "rubric": row.rubric}
+    return {"question": ASSIGNMENT["question"], "rubric": ASSIGNMENT["rubric"]}
+
+
+def _lesson_caption(lang: str, title: str) -> str:
+    """Localized 'watch then tap Start quiz' instruction with the real DB title."""
+    full = tr(lang, "lesson_caption")
+    instr = full.split("\n\n", 1)[1] if "\n\n" in full else full
+    return f"📚 {title}\n\n{instr}"
+
+
+async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 0) -> None:
+    lesson = await _lesson_at(db, lang, idx)
+    if lesson is None:
+        await send_text(to, tr(lang, "no_more"))
+        return
+    await send_video(to, lesson["cloud_id"], _lesson_caption(lang, lesson["title"]))
     await send_buttons(to, tr(lang, "after_text").format(name=name),
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
-async def _send_quiz_question(to: str, lang: str, qidx: int) -> None:
-    item = QUIZ[qidx]
+async def _send_quiz_question(to: str, lang: str, qidx: int, items: list[dict]) -> None:
+    if qidx >= len(items):
+        return
+    item = items[qidx]
     q = item["q"].get(lang, item["q"]["en"])
     opts = item["opts"].get(lang, item["opts"]["en"])
     numbered = "\n".join(f"{NUM_EMOJI[i]} {opt}" for i, opt in enumerate(opts))
@@ -589,8 +691,8 @@ async def _send_quiz_question(to: str, lang: str, qidx: int) -> None:
                     rows=rows, section_title=tr(lang, "answer_btn"))
 
 
-async def _send_assignment(to: str, lang: str) -> None:
-    q = ASSIGNMENT["question"].get(lang, ASSIGNMENT["question"]["en"])
+async def _send_assignment(to: str, lang: str, assignment: dict) -> None:
+    q = assignment["question"].get(lang, assignment["question"]["en"])
     await send_text(to, tr(lang, "assignment_intro").format(q=q))
 
 
@@ -618,19 +720,28 @@ def _detect_language(text: str | None) -> str | None:
     return None
 
 
+async def _current_video_id(db, session, lang: str) -> str | None:
+    lesson = await _lesson_at(db, lang, session.lesson_index or 0)
+    return lesson["video_id"] if lesson else None
+
+
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
     """Re-render the learner's current step in the (possibly new) language."""
     st = session.stage
     if st == "quiz":
         await db.commit()
-        await _send_quiz_question(frm, lang, session.quiz_index or 0)
+        vid = await _current_video_id(db, session, lang)
+        items = await _quiz_items(db, vid)
+        await _send_quiz_question(frm, lang, session.quiz_index or 0, items)
     elif st == "assignment":
         await db.commit()
-        await _send_assignment(frm, lang)
+        vid = await _current_video_id(db, session, lang)
+        assignment = await _assignment_for(db, vid)
+        await _send_assignment(frm, lang, assignment)
     else:
         session.stage = "lesson"
         await db.commit()
-        await _send_lesson(frm, lang, session.name or "friend")
+        await _send_lesson(db, frm, lang, session.name or "friend", session.lesson_index or 0)
 
 
 async def _start_quiz(db, session, frm: str, lang: str) -> None:
@@ -638,7 +749,9 @@ async def _start_quiz(db, session, frm: str, lang: str) -> None:
     session.quiz_index = 0
     session.quiz_correct = 0
     await db.commit()
-    await _send_quiz_question(frm, lang, 0)
+    vid = await _current_video_id(db, session, lang)
+    items = await _quiz_items(db, vid)
+    await _send_quiz_question(frm, lang, 0, items)
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
@@ -756,7 +869,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if reply_id == "start_lesson":
             session.stage = "lesson"
             await db.commit()
-            await _send_lesson(frm, lang, nm)
+            await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
             return
 
         # Start / retake quiz
@@ -766,10 +879,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
 
         # In the middle of the quiz
         if session.stage == "quiz":
+            vid = await _current_video_id(db, session, lang)
+            items = await _quiz_items(db, vid)
             if reply_id and reply_id.startswith("ans_"):
                 qidx = session.quiz_index or 0
                 chosen = int(reply_id.split("_", 1)[1])
-                item = QUIZ[qidx]
+                item = items[qidx] if qidx < len(items) else items[-1]
                 if chosen == item["correct"]:
                     session.quiz_correct = (session.quiz_correct or 0) + 1
                     await send_text(frm, tr(lang, "correct"))
@@ -779,16 +894,17 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
 
                 qidx += 1
                 session.quiz_index = qidx
-                if qidx < len(QUIZ):
+                if qidx < len(items):
                     await db.commit()
-                    await _send_quiz_question(frm, lang, qidx)
+                    await _send_quiz_question(frm, lang, qidx, items)
                 else:
                     score = session.quiz_correct or 0
                     if score >= QUIZ_PASS:
                         session.stage = "assignment"
                         await db.commit()
                         await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
-                        await _send_assignment(frm, lang)
+                        assignment = await _assignment_for(db, vid)
+                        await _send_assignment(frm, lang, assignment)
                     else:
                         session.stage = "quiz_failed"
                         await db.commit()
@@ -799,19 +915,21 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 return
             # Nudge: they typed instead of tapping — resend the current question
             await db.commit()
-            await _send_quiz_question(frm, lang, session.quiz_index or 0)
+            await _send_quiz_question(frm, lang, session.quiz_index or 0, items)
             return
 
         # Awaiting an assignment answer
         if session.stage == "assignment":
+            vid = await _current_video_id(db, session, lang)
+            assignment = await _assignment_for(db, vid)
             if not text or len(text.strip()) < 10:
                 await db.commit()
-                await _send_assignment(frm, lang)
+                await _send_assignment(frm, lang, assignment)
                 return
             await db.commit()
             await send_text(frm, tr(lang, "grading"))
-            q = ASSIGNMENT["question"].get(lang, ASSIGNMENT["question"]["en"])
-            score, feedback = await grade_answer(q, ASSIGNMENT["rubric"], text, lang)
+            q = assignment["question"].get(lang, assignment["question"]["en"])
+            score, feedback = await grade_answer(q, assignment["rubric"], text, lang)
             if score >= ASSIGN_PASS:
                 session.stage = "done"
                 await db.commit()

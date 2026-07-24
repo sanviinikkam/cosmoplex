@@ -19,15 +19,24 @@ from db.database import async_session_factory
 from db.models import WhatsAppSession
 from core.config import settings
 
-# ── Which nudge for which stage, and how long idle before it fires ───────────
+# ── Which nudge for which stage, and how many HOURS idle before it fires ─────
 # Checked top-to-bottom; first match wins.
+#
+# Thresholds are in HOURS and kept well under 24 on purpose: a free-form (non-
+# template) WhatsApp message only delivers inside the 24-hour window since the
+# learner's last message. Firing at a few hours idle means the nudge lands while
+# that window is still open, so free-text nudges actually reach people. (Anyone
+# already past 24h idle is skipped in free-text mode — see run_drip — because
+# only an approved template can reach them.)
+WINDOW_HOURS = 24.0
+
 NUDGE_RULES = [
-    ("finish_signup",     {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}, 1),
-    ("start_lesson",      {"onboarded"},                                             1),
-    ("resume_lesson",     {"lesson"},                                                2),
-    ("finish_quiz",       {"quiz", "quiz_failed"},                                   2),
-    ("submit_assignment", {"assignment"},                                            2),
-    ("keep_learning",     {"done"},                                                  3),
+    ("finish_signup",     {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}, 2),
+    ("start_lesson",      {"onboarded"},                                             2),
+    ("resume_lesson",     {"lesson"},                                                3),
+    ("finish_quiz",       {"quiz", "quiz_failed"},                                   3),
+    ("submit_assignment", {"assignment"},                                            3),
+    ("keep_learning",     {"done"},                                                  6),
 ]
 
 # Meta template name per nudge (create + get these approved in WhatsApp Manager)
@@ -93,13 +102,17 @@ NUDGE_TEXT = {
 }
 
 
-def _pick_nudge(s: WhatsAppSession, now: datetime):
-    """Return (nudge_key, idle_days) for this learner, or None."""
+def _idle_hours(s: WhatsAppSession, now: datetime) -> float:
     last = s.last_active_at or s.updated_at or s.created_at or now
-    idle_days = (now - last).total_seconds() / 86400
-    for key, stages, threshold in NUDGE_RULES:
-        if s.stage in stages and idle_days >= threshold:
-            return key, idle_days
+    return (now - last).total_seconds() / 3600
+
+
+def _pick_nudge(s: WhatsAppSession, now: datetime):
+    """Return (nudge_key, idle_hours) for this learner, or None."""
+    idle_hours = _idle_hours(s, now)
+    for key, stages, threshold_hours in NUDGE_RULES:
+        if s.stage in stages and idle_hours >= threshold_hours:
+            return key, idle_hours
     return None
 
 
@@ -133,6 +146,11 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     report["skipped"] += 1
                     continue
                 if s.last_nudge_at and (now - s.last_nudge_at) < timedelta(hours=20):
+                    report["skipped"] += 1
+                    continue
+                # Free-text can't reach a closed 24h window — skip rather than fire
+                # a send Meta will reject. (Templates can, so only gate when off.)
+                if not settings.whatsapp_templates_enabled and _idle_hours(s, now) >= WINDOW_HOURS:
                     report["skipped"] += 1
                     continue
 

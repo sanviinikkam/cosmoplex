@@ -18,8 +18,10 @@ import { useLang } from "@/lib/use-lang";
 const CLOUD_NAME =
   process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "your_cloud_name";
 
-// Maps video title → language → Cloudinary public ID override.
-// Used when a dubbed version exists for a language other than the default.
+// Legacy per-language Cloudinary IDs, used ONLY as a fallback for lessons the
+// backend hasn't stored yet. The DB (edited via the admin portal) is the source
+// of truth — `video.cloudinaryPublicId` already arrives language-resolved from
+// the backend (variant → en → base), so admin uploads reflect here automatically.
 const LANG_VIDEO_OVERRIDES: Record<string, Partial<Record<string, string>>> = {
   "The 10 AI Words Every Fresher Must Know": {
     en: "2.1_English_compressed_s6vhdd",
@@ -33,10 +35,6 @@ const LANG_VIDEO_OVERRIDES: Record<string, Partial<Record<string, string>>> = {
     hi: "2.4_hindi_compressed_vxkloy",
   },
 };
-
-function resolvePublicId(videoTitle: string, defaultId: string, lang: string): string {
-  return LANG_VIDEO_OVERRIDES[videoTitle]?.[lang] ?? defaultId;
-}
 
 function cloudinaryVideoUrl(publicId: string): string {
   return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/${publicId}`;
@@ -92,10 +90,10 @@ export function VideoPlayer({
     [video.id, completed, onCompleted]
   );
 
-  // Resolve public ID here (before effects) so it can be a dependency
-  const resolvedPublicId = video.cloudinaryPublicId
-    ? resolvePublicId(video.title, video.cloudinaryPublicId, lang)
-    : (LANG_VIDEO_OVERRIDES[video.title]?.[lang] ?? null);
+  // DB value (admin portal) wins; fall back to the legacy map only if the
+  // backend hasn't stored an ID for this lesson yet.
+  const resolvedPublicId =
+    video.cloudinaryPublicId ?? LANG_VIDEO_OVERRIDES[video.title]?.[lang] ?? null;
 
   // Reset quiz trigger when navigating to a different video
   useEffect(() => {

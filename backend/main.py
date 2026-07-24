@@ -51,18 +51,20 @@ async def lifespan(app: FastAPI):
         print(f"⚠ Database setup/seed issue: {e}")
         print("  Server starting anyway.")
 
-    # Daily WhatsApp drip engine. Runs in-process (works when the backend is
+    # WhatsApp drip engine. Runs HOURLY so free-text nudges fire while the
+    # learner is still inside WhatsApp's 24h window (idle thresholds are a few
+    # hours — see whatsapp_drip.py). Runs in-process (works when the backend is
     # always-on). On the free tier the instance sleeps, so also drive it with a
-    # Render Cron Job hitting GET /whatsapp/run-drip as the reliable path.
+    # Render Cron Job hitting GET /whatsapp/run-drip hourly as the reliable path.
     scheduler = None
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from api.whatsapp_drip import run_drip
         scheduler = AsyncIOScheduler(timezone="UTC")
-        scheduler.add_job(run_drip, "cron", hour=4, minute=30, id="daily_drip")  # ~10:00 IST
+        scheduler.add_job(run_drip, "cron", minute=0, id="hourly_drip")  # top of every hour
         scheduler.start()
         app.state.scheduler = scheduler
-        print("✓ Drip scheduler started (daily 04:30 UTC)")
+        print("✓ Drip scheduler started (hourly, on the hour, UTC)")
     except Exception as e:
         print(f"⚠ Drip scheduler not started: {e}")
 

@@ -287,6 +287,16 @@ def tr(lang: str, key: str) -> str:
 # Cloudinary public ID of the intro video. Leave "" to skip the video step.
 INTRO_VIDEO_ID = "WhatsApp_Video_2026-07-15_at_10.06.39_AM_a1f6vf"
 
+# Per-language intro videos. A learner gets their language's version if listed
+# here, otherwise the default INTRO_VIDEO_ID above.
+INTRO_VIDEO_OVERRIDES = {
+    "mr": "",   # Marathi intro — fill with the Cloudinary public ID
+}
+
+
+def intro_video_for(lang: str) -> str:
+    return INTRO_VIDEO_OVERRIDES.get(lang) or INTRO_VIDEO_ID
+
 # Human-readable English name per language code (for the AI pitch prompt).
 LANG_NAME = {"en": "English", "hi": "Hindi", "mr": "Marathi",
              "te": "Telugu", "ta": "Tamil", "kn": "Kannada"}
