@@ -71,6 +71,30 @@ async function adminFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Multipart POST (file upload or pasted text). Lets the browser set the
+ *  multipart boundary — so we must NOT send a JSON Content-Type here. */
+async function adminUpload<T>(path: string, input: { file?: File; text?: string }): Promise<T> {
+  const token = getAdminToken();
+  const form = new FormData();
+  if (input.file) form.append("file", input.file);
+  if (input.text) form.append("text", input.text);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (res.status === 401) {
+    clearAdminToken();
+    throw new Error("Session expired — please log in again.");
+  }
+  if (!res.ok) {
+    let detail = await res.text();
+    try { detail = JSON.parse(detail).detail ?? detail; } catch { /* keep text */ }
+    throw new Error(detail || `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const adminApi = {
   login: async (password: string) => {
     const res = await fetch(`${API_BASE}/admin/login`, {
@@ -135,6 +159,11 @@ export const adminApi = {
     adminFetch<AssignmentItem>(`/admin/assignments/${id}`, { method: "PUT", body: JSON.stringify(b) }),
   deleteAssignment: (id: string) =>
     adminFetch<{ deleted: boolean }>(`/admin/assignments/${id}`, { method: "DELETE" }),
+
+  bulkQuizzes: (videoId: string, input: { file?: File; text?: string }) =>
+    adminUpload<{ added: number; items: QuizItem[] }>(`/admin/videos/${videoId}/quizzes/bulk`, input),
+  bulkAssignments: (videoId: string, input: { file?: File; text?: string }) =>
+    adminUpload<{ added: number; items: AssignmentItem[] }>(`/admin/videos/${videoId}/assignments/bulk`, input),
 
   syncVideos: () =>
     adminFetch<{ videosSynced: number; quizzesAdded: number; assignmentsAdded: number }>(

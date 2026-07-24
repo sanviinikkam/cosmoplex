@@ -345,6 +345,66 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
 // ── Quiz bank manager ────────────────────────────────────────────────────────
 const EMPTY_QUIZ = { question: {} as Record<string, string>, options: {} as Record<string, string[]>, correctIndex: 0 };
 
+// Bulk add: upload a .docx/.txt (or paste), AI extracts every question and
+// translates it into all 6 languages, then appends to the lesson's bank.
+function BulkUpload({ kind, onUpload, onDone }: {
+  kind: "quiz" | "assignment";
+  onUpload: (input: { file?: File; text?: string }) => Promise<{ added: number }>;
+  onDone: () => void;
+}) {
+  const [showPaste, setShowPaste] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const noun = kind === "quiz" ? "question(s)" : "assignment(s)";
+
+  async function run(input: { file?: File; text?: string }) {
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      const r = await onUpload(input);
+      setMsg(`✓ Added ${r.added} ${noun} in all languages.`);
+      setText(""); setShowPaste(false);
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Upload failed");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-2.5 flex flex-col gap-2">
+      <p className="text-[11px] text-zinc-600">
+        Bulk add — upload a .docx or .txt (or paste); AI extracts every{" "}
+        {kind === "quiz" ? "MCQ" : "assignment"} and translates it into all 6 languages.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className={`text-xs rounded px-2 py-1 ${busy ? "bg-zinc-200 text-zinc-400 cursor-default" : "bg-sky-600 text-white hover:bg-sky-500 cursor-pointer"}`}>
+          {busy ? "Working…" : "⤴ Upload doc"}
+          <input type="file" accept=".docx,.txt,.md,.csv" className="hidden" disabled={busy}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) run({ file: f }); e.currentTarget.value = ""; }} />
+        </label>
+        <button type="button" disabled={busy} className="text-xs text-sky-700 hover:underline disabled:text-zinc-400"
+          onClick={() => setShowPaste((s) => !s)}>{showPaste ? "hide paste" : "or paste text"}</button>
+      </div>
+      {showPaste && (
+        <div className="flex flex-col gap-1.5">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} disabled={busy}
+            placeholder={kind === "quiz"
+              ? "Paste MCQs, e.g.\n1. What is an LLM?\n  a) ...\n  b) ...  (correct)\n  c) ..."
+              : "Paste assignment prompts (one per line or numbered)."}
+            className="w-full text-xs border border-zinc-300 rounded px-2 py-1.5" />
+          <button type="button" disabled={busy || !text.trim()}
+            className="self-start text-xs bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-200 disabled:text-zinc-400 text-white rounded px-3 py-1"
+            onClick={() => run({ text })}>{busy ? "Working…" : "Extract & add"}</button>
+        </div>
+      )}
+      {busy && <p className="text-[11px] text-zinc-500">Extracting &amp; translating — can take 20–40s for many {noun}.</p>}
+      {msg && <p className="text-[11px] text-emerald-700">{msg}</p>}
+      {err && <p className="text-[11px] text-red-600">{err}</p>}
+    </div>
+  );
+}
+
 function QuizManager({ videoId }: { videoId: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<QuizItem[]>([]);
@@ -387,8 +447,11 @@ function QuizManager({ videoId }: { videoId: string }) {
           {editing ? (
             <QuizEditor initial={editing.draft} onCancel={() => setEditing(null)} onSave={(d) => save(d, editing.id)} />
           ) : (
-            <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
-              onClick={() => setEditing({ draft: { question: {}, options: {}, correctIndex: 0 } })}>+ Add question</button>
+            <>
+              <BulkUpload kind="quiz" onUpload={(i) => adminApi.bulkQuizzes(videoId, i)} onDone={load} />
+              <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+                onClick={() => setEditing({ draft: { question: {}, options: {}, correctIndex: 0 } })}>+ Add question manually</button>
+            </>
           )}
         </div>
       )}
@@ -478,8 +541,11 @@ function AssignmentManager({ videoId }: { videoId: string }) {
           {editing ? (
             <AssignmentEditor initial={editing} onCancel={() => setEditing(null)} onSave={(q, r) => save(q, r, editing.id)} />
           ) : (
-            <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
-              onClick={() => setEditing({ question: {}, rubric: "" })}>+ Add assignment</button>
+            <>
+              <BulkUpload kind="assignment" onUpload={(i) => adminApi.bulkAssignments(videoId, i)} onDone={load} />
+              <button className="self-start text-xs rounded border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+                onClick={() => setEditing({ question: {}, rubric: "" })}>+ Add assignment manually</button>
+            </>
           )}
         </div>
       )}

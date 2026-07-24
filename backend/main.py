@@ -119,7 +119,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "wa-drip-freq-1",
+        "build": "admin-bulk-import-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),

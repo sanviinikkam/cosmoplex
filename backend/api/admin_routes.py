@@ -19,12 +19,13 @@ Everything except /admin/login requires a valid admin token (require_admin).
   POST   /admin/cloudinary/signature          — signed direct-upload params
 """
 import hashlib
+import io
 import json
 import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -500,6 +501,186 @@ async def delete_assignment(assignment_id: str, _: bool = Depends(require_admin)
     await db.delete(a)
     await db.commit()
     return {"deleted": True, "id": assignment_id}
+
+
+# ── Bulk import: upload a doc of questions → Claude extracts + translates ───────
+# Lets an admin drop a .docx/.txt (or paste text) instead of hand-entering each
+# question in 6 languages. Claude pulls out the questions and translates every
+# one into all 6 languages, then they're appended to the lesson's bank.
+BULK_MODEL = "claude-sonnet-4-6"   # quality matters across languages; admin-only, infrequent
+BULK_LANGS = ["en", "hi", "mr", "te", "ta", "kn"]
+
+QUIZ_SYS = """You extract multiple-choice quiz questions from a document and translate them.
+The text may be messy (copied from Word, tables, numbered lists). Find EVERY multiple-choice question.
+For each: the question text, its 2-4 answer options, and which option is correct.
+Translate the question and EVERY option into: English(en), Hindi(hi), Marathi(mr), Telugu(te), Tamil(ta), Kannada(kn). Keep translations faithful and natural for Indian learners; keep technical AI terms recognizable.
+Return ONLY strict JSON (no markdown, no commentary) shaped exactly:
+{"questions":[{"question":{"en":"","hi":"","mr":"","te":"","ta":"","kn":""},"options":{"en":["",""],"hi":["",""],"mr":["",""],"te":["",""],"ta":["",""],"kn":["",""]},"correct_index":0}]}
+Rules:
+- correct_index is 0-based into the options arrays.
+- Every language's options array MUST have the same number of items, in the same order, as English.
+- Detect the correct answer from any marker in the source (*, "Answer:", bold, checkmark). If none, choose the best answer.
+- Do not invent extra questions. Output only the JSON object."""
+
+ASSIGN_SYS = """You extract open-ended assignment questions from a document and translate them.
+Find EVERY assignment/task prompt (written answers, NOT multiple choice).
+Translate each question into: English(en), Hindi(hi), Marathi(mr), Telugu(te), Tamil(ta), Kannada(kn). Faithful and natural.
+For each assignment also produce a short grading "rubric" in ENGLISH (language-neutral) for an AI grader — use the document's grading criteria if given, otherwise write a concise 1-2 sentence rubric from the question.
+Return ONLY strict JSON (no markdown, no commentary) shaped exactly:
+{"assignments":[{"question":{"en":"","hi":"","mr":"","te":"","ta":"","kn":""},"rubric":""}]}
+Output only the JSON object."""
+
+
+def _extract_text(filename: str, data: bytes) -> str:
+    name = (filename or "").lower()
+    if name.endswith(".docx"):
+        try:
+            import docx
+        except ImportError:
+            raise HTTPException(status_code=500,
+                detail="Server can't read .docx (python-docx missing). Paste the text or upload a .txt.")
+        try:
+            doc = docx.Document(io.BytesIO(data))
+            parts = [p.text for p in doc.paragraphs]
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    parts.append("\t".join(c.text for c in row.cells))
+            return "\n".join(parts).strip()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Couldn't read that .docx: {e}")
+    if name.endswith(".doc"):
+        raise HTTPException(status_code=400,
+            detail="Old .doc isn't supported — save as .docx or .txt, or paste the text.")
+    return data.decode("utf-8", errors="ignore").strip()  # txt / csv / md / other
+
+
+async def _claude_json(system: str, user: str, max_tokens: int = 8000) -> dict:
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on the server.")
+    from anthropic import AsyncAnthropic
+    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    try:
+        resp = await client.messages.create(
+            model=BULK_MODEL, max_tokens=max_tokens,
+            system=system, messages=[{"role": "user", "content": user}],
+        )
+        raw = (resp.content[0].text or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {e}")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        i, j = raw.find("{"), raw.rfind("}")   # tolerate stray prose / code fences
+        if i != -1 and j > i:
+            try:
+                return json.loads(raw[i:j + 1])
+            except json.JSONDecodeError:
+                pass
+        raise HTTPException(status_code=422,
+            detail="Couldn't parse questions from that document — it may be too long or unclear. "
+                   "Try fewer questions or a cleaner layout.")
+
+
+def _clean_quiz(items) -> list[dict]:
+    out: list[dict] = []
+    for it in (items or []):
+        q, opts = (it.get("question") or {}), (it.get("options") or {})
+        if not isinstance(q, dict) or not isinstance(opts, dict):
+            continue
+        en_q = (q.get("en") or "").strip()
+        en_opts = opts.get("en")
+        if not en_q or not isinstance(en_opts, list) or len(en_opts) < 2:
+            continue
+        n = len(en_opts)
+        try:
+            ci = max(0, min(int(it.get("correct_index", 0)), n - 1))
+        except (TypeError, ValueError):
+            ci = 0
+        clean_q = {"en": en_q}
+        clean_opts = {"en": [str(o).strip() for o in en_opts]}
+        for lang in BULK_LANGS[1:]:
+            lv_q, lv_o = (q.get(lang) or "").strip(), opts.get(lang)
+            if lv_q and isinstance(lv_o, list) and len(lv_o) == n and all(str(x).strip() for x in lv_o):
+                clean_q[lang] = lv_q
+                clean_opts[lang] = [str(o).strip() for o in lv_o]
+        out.append({"question": clean_q, "options": clean_opts, "correct_index": ci})
+    return out
+
+
+def _clean_assignments(items) -> list[dict]:
+    out: list[dict] = []
+    for it in (items or []):
+        q = it.get("question") or {}
+        if not isinstance(q, dict):
+            continue
+        en_q = (q.get("en") or "").strip()
+        if not en_q:
+            continue
+        rubric = (it.get("rubric") or "").strip() or (
+            "Evaluate whether the answer correctly and clearly addresses the question and "
+            "shows understanding of the concept.")
+        clean_q = {"en": en_q}
+        for lang in BULK_LANGS[1:]:
+            lv = (q.get(lang) or "").strip()
+            if lv:
+                clean_q[lang] = lv
+        out.append({"question": clean_q, "rubric": rubric})
+    return out
+
+
+async def _bulk_content(file: UploadFile | None, text: str | None) -> str:
+    if file is not None:
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        content = _extract_text(file.filename or "", data)
+    else:
+        content = (text or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="No content — upload a .docx/.txt or paste the questions.")
+    return content[:60000]   # guard against a huge doc blowing the token budget
+
+
+@router.post("/videos/{video_id}/quizzes/bulk")
+async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
+                       _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Upload a doc / paste text of MCQs → extract + translate → append to the bank."""
+    if not await db.get(Video, video_id):
+        raise HTTPException(status_code=404, detail="Video not found")
+    content = await _bulk_content(file, text)
+    parsed = await _claude_json(QUIZ_SYS, content)
+    items = _clean_quiz(parsed.get("questions"))
+    if not items:
+        raise HTTPException(status_code=422, detail="No multiple-choice questions found in that document.")
+    order = await _next_order(db, QuizQuestion, QuizQuestion.video_id, video_id)
+    created = [QuizQuestion(video_id=video_id, question=it["question"], options=it["options"],
+                            correct_index=it["correct_index"], order_index=order + i)
+               for i, it in enumerate(items)]
+    for q in created:
+        db.add(q)
+    await db.commit()
+    return {"added": len(created), "items": [_quiz_dict(q) for q in created]}
+
+
+@router.post("/videos/{video_id}/assignments/bulk")
+async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
+                           _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Upload a doc / paste text of assignment prompts → extract + translate → append."""
+    if not await db.get(Video, video_id):
+        raise HTTPException(status_code=404, detail="Video not found")
+    content = await _bulk_content(file, text)
+    parsed = await _claude_json(ASSIGN_SYS, content)
+    items = _clean_assignments(parsed.get("assignments"))
+    if not items:
+        raise HTTPException(status_code=422, detail="No assignment questions found in that document.")
+    order = await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
+    created = [AssignmentPrompt(video_id=video_id, question=it["question"], rubric=it["rubric"],
+                               order_index=order + i)
+               for i, it in enumerate(items)]
+    for a in created:
+        db.add(a)
+    await db.commit()
+    return {"added": len(created), "items": [_assign_dict(a) for a in created]}
 
 
 @router.post("/sync-videos")
