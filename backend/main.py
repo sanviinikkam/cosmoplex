@@ -119,7 +119,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "neon-db-ready-1",
+        "build": "witty-nudges-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),
