@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -42,9 +44,16 @@ class Settings(BaseSettings):
         # Managed hosts (Render/Heroku) hand out "postgres://" or "postgresql://"
         # URLs. SQLAlchemy's async engine needs the asyncpg driver explicitly.
         if v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql+asyncpg://", 1)
-        if v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # Neon/Supabase append libpq params (sslmode, channel_binding) that the
+        # asyncpg driver rejects. Strip them — SSL is handled in database.py.
+        parts = urlsplit(v)
+        if parts.query:
+            kept = [(k, val) for k, val in parse_qsl(parts.query)
+                    if k not in ("sslmode", "channel_binding")]
+            v = urlunsplit(parts._replace(query=urlencode(kept)))
         return v
 
     class Config:

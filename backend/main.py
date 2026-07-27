@@ -119,7 +119,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "admin-bulk-import-1",
+        "build": "neon-db-ready-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),

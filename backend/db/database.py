@@ -1,6 +1,16 @@
+import ssl as _ssl
+from urllib.parse import urlsplit
+
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from .models import Base
 from core.config import settings
+
+# Managed Postgres hosts (Neon, Supabase, Render) require SSL; local dev doesn't.
+# asyncpg wants an SSL context via connect_args, not a URL "sslmode" param.
+_host = (urlsplit(settings.database_url.replace("+asyncpg", "")).hostname or "").lower()
+_connect_args: dict = {}
+if _host not in ("localhost", "127.0.0.1", "", "::1"):
+    _connect_args["ssl"] = _ssl.create_default_context()
 
 engine = create_async_engine(
     settings.database_url,
@@ -8,6 +18,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    connect_args=_connect_args,
 )
 
 async_session_factory = async_sessionmaker(
