@@ -28,7 +28,7 @@ from core.config import settings
 from db.database import async_session_factory
 from db.models import (
     WhatsAppSession, Course, CourseModule, Section, Video,
-    QuizQuestion, AssignmentPrompt, IntroVideo,
+    VideoLanguageVariant, QuizQuestion, AssignmentPrompt, IntroVideo,
 )
 from agents.base import LearnerState
 from agents.teacher import run_teacher
@@ -675,10 +675,53 @@ async def _assignment_for(db, video_id: str | None) -> dict:
 
 
 def _lesson_caption(lang: str, title: str) -> str:
-    """Localized 'watch then tap Start quiz' instruction with the real DB title."""
+    """Localized 'watch then tap Start quiz' instruction with the lesson title."""
     full = tr(lang, "lesson_caption")
     instr = full.split("\n\n", 1)[1] if "\n\n" in full else full
     return f"📚 {title}\n\n{instr}"
+
+
+async def _translate_title(text: str, lang: str) -> str:
+    """Translate a short lesson title into the learner's language (Haiku)."""
+    text = (text or "").strip()
+    if lang == "en" or not text:
+        return text
+    try:
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        msg = await client.messages.create(
+            model="claude-haiku-4-5", max_tokens=120,
+            messages=[{"role": "user", "content": (
+                f"Translate this course lesson title into {LANG_NAME.get(lang, 'English')}. "
+                "Keep technical AI terms recognizable. Return ONLY the translated title — "
+                f"no quotes, no extra text.\n\n{text}")}],
+        )
+        return (msg.content[0].text or "").strip() or text
+    except Exception as e:
+        print(f"⚠ title translate error: {e}")
+        return text
+
+
+async def _localized_title(db, video_id: str | None, english_title: str, lang: str) -> str:
+    """Lesson title in the learner's language. Uses the stored per-language title
+    if present; otherwise translates once and caches it on the language variant."""
+    if lang == "en" or not video_id:
+        return english_title
+    res = await db.execute(
+        select(VideoLanguageVariant).where(
+            VideoLanguageVariant.video_id == video_id,
+            VideoLanguageVariant.language == lang,
+        )
+    )
+    variant = res.scalar_one_or_none()
+    if variant is None:            # no localized video for this lang → keep English
+        return english_title
+    if variant.title:
+        return variant.title
+    translated = await _translate_title(english_title, lang)
+    if translated and translated != english_title:
+        variant.title = translated
+        await db.commit()
+    return translated
 
 
 async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 0) -> None:
@@ -686,7 +729,8 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
     if lesson is None:
         await send_text(to, tr(lang, "no_more"))
         return
-    await send_video(to, lesson["cloud_id"], _lesson_caption(lang, lesson["title"]))
+    title = await _localized_title(db, lesson["video_id"], lesson["title"], lang)
+    await send_video(to, lesson["cloud_id"], _lesson_caption(lang, title))
     # A video takes a moment to transcode/render on the phone; a text sent right
     # after would appear ABOVE it. Pause so the video lands first, then the
     # "Start quiz" prompt.

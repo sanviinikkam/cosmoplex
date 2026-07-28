@@ -269,6 +269,7 @@ class VideoLanguageVariant(Base):
     language = Column(String(10), nullable=False)          # en | hi | mr | ...
     cloudinary_public_id = Column(String(500), nullable=False)
     duration_seconds = Column(Integer, nullable=True)      # override if lang version differs
+    title = Column(String(255), nullable=True)             # localized lesson title (auto-translated, editable)
 
     __table_args__ = (
         UniqueConstraint("video_id", "language", name="uq_video_language_variant"),
