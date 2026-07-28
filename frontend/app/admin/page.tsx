@@ -7,6 +7,45 @@ import {
   type IntroVideoItem,
 } from "@/lib/admin-api";
 
+const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
+function cloudinaryVideoUrl(publicId: string): string {
+  // Downscaled for a quick preview; the original stays untouched.
+  return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/w_640,q_auto/${publicId}.mp4`;
+}
+
+// Modal that plays an uploaded Cloudinary video.
+function VideoPreviewModal({ publicId, onClose }: { publicId: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl p-3 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <span className="text-xs text-zinc-500 truncate">{publicId}</span>
+          <button onClick={onClose} className="text-sm text-zinc-500 hover:text-zinc-800 shrink-0">✕ Close</button>
+        </div>
+        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        <video src={cloudinaryVideoUrl(publicId)} controls autoPlay
+          className="w-full rounded-lg bg-black max-h-[70vh]" />
+        <a href={cloudinaryVideoUrl(publicId)} target="_blank" rel="noreferrer"
+          className="text-xs text-emerald-700 hover:underline mt-2 inline-block">Open in new tab ↗</a>
+      </div>
+    </div>
+  );
+}
+
+// A Cloudinary public ID rendered as a clickable link that previews the video.
+function PreviewableId({ publicId, className }: { publicId: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" title="Click to preview the video" onClick={() => setOpen(true)}
+        className={`text-left text-emerald-700 hover:underline ${className ?? ""}`}>
+        {publicId}
+      </button>
+      {open && <VideoPreviewModal publicId={publicId} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -208,7 +247,9 @@ function IntroVideosManager() {
                         onClick={() => { if (window.confirm(`Remove the ${r.label} intro video?`)) save(() => adminApi.deleteIntroVideo(r.code)); }}>✕</button>
                     )}
                   </div>
-                  <p className="text-[11px] text-zinc-400 truncate mt-0.5">{id ?? "not set"}</p>
+                  {id
+                    ? <PreviewableId publicId={id} className="block text-[11px] truncate mt-0.5 max-w-full" />
+                    : <p className="text-[11px] text-zinc-400 truncate mt-0.5">not set</p>}
                   <UploadButton
                     label={id ? "Replace" : "Upload"} small
                     onUploaded={(pid, dur) =>
@@ -368,7 +409,7 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
       <div className="mt-2 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-zinc-500">Default video:</span>
         {video.baseCloudinaryId
-          ? <code className="text-xs bg-white border border-zinc-200 rounded px-1.5 py-0.5">{video.baseCloudinaryId}</code>
+          ? <PreviewableId publicId={video.baseCloudinaryId} className="text-xs bg-white border border-zinc-200 rounded px-1.5 py-0.5" />
           : <span className="text-xs text-zinc-400">none</span>}
         <UploadButton
           label={video.baseCloudinaryId ? "Replace" : "Upload"}
@@ -390,7 +431,9 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
                     onClick={async () => { if (window.confirm(`Remove ${lang.label} video?`)) await run(() => adminApi.deleteVariant(video.id, lang.code)); }}>✕</button>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 truncate mt-0.5">{variant ? variant.cloudinaryPublicId : "not set"}</p>
+              {variant
+                ? <PreviewableId publicId={variant.cloudinaryPublicId} className="block text-[11px] truncate mt-0.5 max-w-full" />
+                : <p className="text-[11px] text-zinc-400 truncate mt-0.5">not set</p>}
               <UploadButton
                 label={variant ? "Replace" : "Upload"}
                 small
