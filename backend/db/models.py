@@ -362,3 +362,15 @@ class WhatsAppSession(Base):
     nudge_log = Column(JSONB, nullable=True)               # {key: {"n": count, "at": iso}} per-nudge caps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class IntroVideo(Base):
+    """WhatsApp onboarding intro video, managed from the admin portal.
+    language 'default' plays for every learner; a specific language row
+    (en/hi/mr/…) overrides the default for that language."""
+    __tablename__ = "intro_videos"
+
+    language = Column(String(10), primary_key=True)        # 'default' | en | hi | mr | te | ta | kn
+    cloudinary_public_id = Column(String(500), nullable=False)
+    duration_seconds = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

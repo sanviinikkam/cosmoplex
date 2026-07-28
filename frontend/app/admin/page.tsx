@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
+  type IntroVideoItem,
 } from "@/lib/admin-api";
 
 export default function AdminPage() {
@@ -121,6 +122,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
+      <IntroVideosManager />
+
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar */}
         <aside className="bg-white rounded-2xl border border-zinc-200 p-3 h-fit">
@@ -153,6 +156,73 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+// ── WhatsApp intro videos (onboarding) ───────────────────────────────────────
+function IntroVideosManager() {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<IntroVideoItem[]>([]);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try { setItems(await adminApi.listIntroVideos()); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+  }, []);
+  useEffect(() => { if (open) load(); }, [open, load]);
+
+  async function save(fn: () => Promise<unknown>) {
+    setErr("");
+    try { await fn(); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+  }
+
+  const rows = [{ code: "default", label: "Default — plays for every language" }, ...LANGUAGES];
+  const idFor = (code: string) => items.find((i) => i.language === code)?.cloudinaryPublicId ?? null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 mb-6">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
+        <div>
+          <h2 className="font-semibold">🎬 WhatsApp intro video</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            The onboarding video shown when someone first messages you on WhatsApp. Set a default,
+            and optionally a per-language version.
+          </p>
+        </div>
+        <span className="text-zinc-400 shrink-0 ml-3">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5">
+          {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {rows.map((r) => {
+              const id = idFor(r.code);
+              return (
+                <div key={r.code} className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{r.label}</span>
+                    {id && (
+                      <button className="text-[11px] text-red-500 hover:text-red-700"
+                        onClick={() => { if (window.confirm(`Remove the ${r.label} intro video?`)) save(() => adminApi.deleteIntroVideo(r.code)); }}>✕</button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-zinc-400 truncate mt-0.5">{id ?? "not set"}</p>
+                  <UploadButton
+                    label={id ? "Replace" : "Upload"} small
+                    onUploaded={(pid, dur) =>
+                      save(() => adminApi.setIntroVideo(r.code, { cloudinary_public_id: pid, duration_seconds: dur }))}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-zinc-400 mt-2">
+            A specific language overrides the default for that language. Uploads are compressed automatically when sent over WhatsApp.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

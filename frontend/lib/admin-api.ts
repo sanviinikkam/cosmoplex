@@ -28,6 +28,7 @@ export type QuizItem = {
 export type QuizPayload = { question: Record<string, string>; options: Record<string, string[]>; correct_index: number };
 export type AssignmentItem = { id: string; question: Record<string, string>; rubric: string };
 export type AssignmentPayload = { question: Record<string, string>; rubric: string };
+export type IntroVideoItem = { language: string; cloudinaryPublicId: string; durationSeconds: number | null };
 
 export const LANGUAGES: { code: string; label: string }[] = [
   { code: "en", label: "English" },
@@ -164,6 +165,13 @@ export const adminApi = {
     adminUpload<{ added: number; items: QuizItem[] }>(`/admin/videos/${videoId}/quizzes/bulk`, input),
   bulkAssignments: (videoId: string, input: { file?: File; text?: string }) =>
     adminUpload<{ added: number; items: AssignmentItem[] }>(`/admin/videos/${videoId}/assignments/bulk`, input),
+
+  listIntroVideos: () =>
+    adminFetch<IntroVideoItem[]>("/admin/intro-videos"),
+  setIntroVideo: (language: string, b: { cloudinary_public_id: string; duration_seconds?: number | null }) =>
+    adminFetch<IntroVideoItem>(`/admin/intro-videos/${language}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteIntroVideo: (language: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/intro-videos/${language}`, { method: "DELETE" }),
 
   syncVideos: () =>
     adminFetch<{ videosSynced: number; quizzesAdded: number; assignmentsAdded: number }>(

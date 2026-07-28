@@ -36,7 +36,7 @@ from core.config import settings
 from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
-    QuizQuestion, AssignmentPrompt,
+    QuizQuestion, AssignmentPrompt, IntroVideo,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -501,6 +501,53 @@ async def delete_assignment(assignment_id: str, _: bool = Depends(require_admin)
     await db.delete(a)
     await db.commit()
     return {"deleted": True, "id": assignment_id}
+
+
+# ── WhatsApp intro videos (onboarding) ─────────────────────────────────────────
+INTRO_LANGUAGES = {"default"} | SUPPORTED_LANGUAGES
+
+
+class IntroVideoBody(BaseModel):
+    cloudinary_public_id: str
+    duration_seconds: Optional[int] = None
+
+
+def _intro_dict(iv: IntroVideo) -> dict:
+    return {"language": iv.language, "cloudinaryPublicId": iv.cloudinary_public_id,
+            "durationSeconds": iv.duration_seconds}
+
+
+@router.get("/intro-videos")
+async def list_intro_videos(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(IntroVideo))
+    return [_intro_dict(iv) for iv in res.scalars().all()]
+
+
+@router.put("/intro-videos/{language}")
+async def set_intro_video(language: str, body: IntroVideoBody,
+                          _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if language not in INTRO_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {sorted(INTRO_LANGUAGES)}")
+    if not body.cloudinary_public_id.strip():
+        raise HTTPException(status_code=400, detail="cloudinary_public_id is required")
+    iv = await db.get(IntroVideo, language)
+    if iv is None:
+        iv = IntroVideo(language=language)
+        db.add(iv)
+    iv.cloudinary_public_id = body.cloudinary_public_id.strip()
+    iv.duration_seconds = body.duration_seconds
+    await db.commit()
+    return _intro_dict(iv)
+
+
+@router.delete("/intro-videos/{language}")
+async def delete_intro_video(language: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    iv = await db.get(IntroVideo, language)
+    if not iv:
+        raise HTTPException(status_code=404, detail="Intro video not set for this language")
+    await db.delete(iv)
+    await db.commit()
+    return {"deleted": True, "language": language}
 
 
 # ── Bulk import: upload a doc of questions → Claude extracts + translates ───────

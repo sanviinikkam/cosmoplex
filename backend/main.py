@@ -44,6 +44,18 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS nudge_log JSONB"))
         print("✓ WhatsApp session columns ready")
+        # Seed the current hardcoded intro video as the 'default' so the admin
+        # portal reflects reality (idempotent — only inserts if the table is empty).
+        from sqlalchemy import select as _select
+        from db.database import async_session_factory
+        from db.models import IntroVideo
+        from api.whatsapp_content import INTRO_VIDEO_ID
+        async with async_session_factory() as _db:
+            existing = (await _db.execute(_select(IntroVideo))).scalars().first()
+            if existing is None and INTRO_VIDEO_ID:
+                _db.add(IntroVideo(language="default", cloudinary_public_id=INTRO_VIDEO_ID))
+                await _db.commit()
+                print("✓ Seeded default intro video")
         # Seed the course on startup. seed() is idempotent — it checks for an
         # existing course and skips if already seeded, so this is safe to run
         # on every boot (and works around free-tier hosts having no shell).
@@ -119,7 +131,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "witty-nudges-1",
+        "build": "intro-video-admin-1",
         "whatsapp": {
             "onboarding": True,
             "intro_video": bool(INTRO_VIDEO_ID),

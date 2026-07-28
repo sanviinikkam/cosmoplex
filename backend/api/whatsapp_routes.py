@@ -28,7 +28,7 @@ from core.config import settings
 from db.database import async_session_factory
 from db.models import (
     WhatsAppSession, Course, CourseModule, Section, Video,
-    QuizQuestion, AssignmentPrompt,
+    QuizQuestion, AssignmentPrompt, IntroVideo,
 )
 from agents.base import LearnerState
 from agents.teacher import run_teacher
@@ -569,12 +569,21 @@ async def _send_goal_question(to: str, lang: str) -> None:
                     button=ob(lang, "select_btn"), rows=rows, section_title=ob(lang, "select_btn"))
 
 
+async def _intro_video_for(db, lang: str) -> str:
+    """Intro video for this language, from the admin-managed DB. A specific
+    language row wins over 'default'; falls back to the built-in intro if the
+    admin hasn't set one."""
+    res = await db.execute(select(IntroVideo).where(IntroVideo.language.in_([lang, "default"])))
+    rows = {iv.language: iv.cloudinary_public_id for iv in res.scalars().all()}
+    return rows.get(lang) or rows.get("default") or intro_video_for(lang)
+
+
 async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
     """Greeting + brief + intro video, then the first profile question."""
     session.stage = "welcome"
     await db.commit()
     await send_text(frm, ob(lang, "brief").format(name=session.name or "friend"))
-    intro_id = intro_video_for(lang)
+    intro_id = await _intro_video_for(db, lang)
     if intro_id:
         await send_video(frm, intro_id, ob(lang, "intro_caption"))
     await _send_profile_question(frm, lang)
