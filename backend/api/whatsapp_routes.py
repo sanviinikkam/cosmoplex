@@ -922,8 +922,23 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             print(f"✓ WhatsApp onboarded {frm}: lang={lang} status={session.current_status} goal={goal[:60]!r}")
             await send_text(frm, ob(lang, "saved").format(name=nm))
             await send_text(frm, ob(lang, "free_offer").format(name=nm))
-            await send_buttons(frm, ob(lang, "start_prompt").format(name=nm),
-                               [("start_lesson", ob(lang, "start_btn"))])
+            await send_buttons(frm, ob(lang, "signup_prompt").format(name=nm),
+                               [("signup", ob(lang, "signup_btn"))])
+            return
+
+        # Sign-up: tapped "Sign up" → reconfirm their WhatsApp number
+        if reply_id == "signup":
+            await db.commit()
+            number = "+" + frm
+            await send_buttons(frm, ob(lang, "confirm_number").format(number=number),
+                               [("confirm_number", ob(lang, "confirm_btn"))])
+            return
+
+        # Sign-up: number confirmed → ask if they're ready to start the course
+        if reply_id == "confirm_number":
+            await db.commit()
+            await send_buttons(frm, ob(lang, "ready_prompt").format(name=nm),
+                               [("start_lesson", ob(lang, "ready_btn"))])
             return
 
         # Start the (free) lesson from the onboarding CTA
