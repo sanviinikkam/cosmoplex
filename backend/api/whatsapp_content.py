@@ -140,10 +140,10 @@ Score out of 100:
 - Coverage (20 pts): Did they define exactly 5 terms?
 - Clarity (10 pts): Are the explanations simple and understandable?
 
-On fail (score < 75): identify the specific term(s) that are off and give a brief analogy-based hint. Do not ask for a full redo — just the one gap.""",
+On fail (score < 60): identify the specific term(s) that are off and give a brief analogy-based hint. Do not ask for a full redo — just the one gap.""",
 }
 
-ASSIGN_PASS = 75  # of 100
+ASSIGN_PASS = 60  # of 100
 
 # ── Localized UI strings ─────────────────────────────────────────────────────
 CONTENT = {

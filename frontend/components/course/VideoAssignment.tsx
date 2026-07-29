@@ -30,7 +30,7 @@ type Phase = "upload" | "evaluating" | "result";
 
 const ACCEPTED = ".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx";
 const MAX_MB = 10;
-const PASS_MARK = 75; // out of 100 — learner must reach this to continue
+const PASS_MARK = 60; // out of 100 — learner must reach this to continue
 
 const ui = {
   en: {

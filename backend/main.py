@@ -153,7 +153,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "free-offer-copy-1",
+        "build": "assign-pass-60",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
