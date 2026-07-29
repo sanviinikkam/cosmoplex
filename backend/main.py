@@ -153,7 +153,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "video-diag-1",
+        "build": "nudges-no-food-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

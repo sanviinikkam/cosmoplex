@@ -60,7 +60,7 @@ NUDGE_TEMPLATE = {
 # Free-form fallback text (used while templates aren't approved), per language.
 NUDGE_TEXT = {
     "finish_signup": {
-        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on the house 🎓 slide back in?",
+        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?",
         "hi": "{name}, aapne humein 'seen' pe chhod diya 👀 aapka AI glow-up bas ek reply door hai — aur pehla lesson bilkul free 🎓 wapas aao na?",
         "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?",
         "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?",
@@ -68,12 +68,12 @@ NUDGE_TEXT = {
         "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?",
     },
     "start_lesson": {
-        "en": "{name}, your first lesson is sitting here going cold 🎬 2 mins = 10 AI words to casually drop at chai breaks ☕ shall we?",
-        "hi": "{name}, aapka pehla lesson yahin pada-pada thanda ho raha hai 🎬 2 min = 10 AI words jo chai break pe casually jhaad sako ☕ chalein?",
-        "mr": "{name}, तुमचा पहिला धडा इथेच पडून थंड होतोय 🎬 2 मिनिटं = चहाच्या ब्रेकला casually टाकता येतील असे 10 AI शब्द ☕ सुरू करूया?",
-        "te": "{name}, మీ మొదటి పాఠం ఇక్కడే పడి చల్లారిపోతోంది 🎬 2 నిమిషాలు = టీ బ్రేక్‌లో casualగా చెప్పే 10 AI పదాలు ☕ మొదలుపెడదామా?",
-        "ta": "{name}, உங்க முதல் பாடம் இங்கயே கிடந்து ஆறிடுச்சு 🎬 2 நிமிஷம் = டீ பிரேக்ல casual-ஆ சொல்ற 10 AI வார்த்தைகள் ☕ ஆரம்பிக்கலாமா?",
-        "kn": "{name}, ನಿಮ್ಮ ಮೊದಲ ಪಾಠ ಇಲ್ಲೇ ಬಿದ್ದು ತಣ್ಣಗಾಗ್ತಿದೆ 🎬 2 ನಿಮಿಷ = ಟೀ ಬ್ರೇಕ್‌ನಲ್ಲಿ casual ಆಗಿ ಹೇಳೋ 10 AI ಪದಗಳು ☕ ಶುರುಮಾಡೋಣ್ವಾ?",
+        "en": "{name}, your first lesson is just sitting here waiting 🎬 2 mins and you'll have 10 AI words to casually drop in any conversation 💬 shall we?",
+        "hi": "{name}, aapka pehla lesson yahin baitha wait kar raha hai 🎬 2 min mein 10 AI words jo kisi bhi baat-cheet mein casually daal sako 💬 chalein?",
+        "mr": "{name}, तुमचा पहिला धडा इथेच वाट बघत बसलाय 🎬 2 मिनिटांत 10 AI शब्द जे कोणत्याही गप्पांमध्ये सहज टाकता येतील 💬 सुरू करूया?",
+        "te": "{name}, మీ మొదటి పాఠం ఇక్కడే వేచి ఉంది 🎬 2 నిమిషాల్లో ఏ సంభాషణలోనైనా casualగా చెప్పగలిగే 10 AI పదాలు 💬 మొదలుపెడదామా?",
+        "ta": "{name}, உங்க முதல் பாடம் இங்கயே காத்திருக்கு 🎬 2 நிமிஷத்துல எந்த பேச்சிலயும் casual-ஆ சொல்ற 10 AI வார்த்தைகள் 💬 ஆரம்பிக்கலாமா?",
+        "kn": "{name}, ನಿಮ್ಮ ಮೊದಲ ಪಾಠ ಇಲ್ಲೇ ಕಾಯ್ತಾ ಇದೆ 🎬 2 ನಿಮಿಷದಲ್ಲಿ ಯಾವ ಮಾತುಕತೆಯಲ್ಲೂ casual ಆಗಿ ಹೇಳಬಹುದಾದ 10 AI ಪದಗಳು 💬 ಶುರುಮಾಡೋಣ್ವಾ?",
     },
     "resume_lesson": {
         "en": "{name}, you paused mid-lesson like it's a web-series cliffhanger 😅 the quiz is right there — finish the last few mins? 💪",
@@ -92,15 +92,15 @@ NUDGE_TEXT = {
         "kn": "{name}, ಒಂದೇ quiz ದಾಟಿದ್ರೆ ನೀವು 'certified smart' 🧠 ವಾಪಸ್ ಬಂದು ಅದನ್ನ ಸ್ವಲ್ಪ ಸೋಲಿಸಿ ✅",
     },
     "submit_assignment": {
-        "en": "{name}, your assignment is waiting like the last samosa nobody's claiming 🥟 type your answer, I'll grade it, we end on a high 🎯",
-        "hi": "{name}, aapka assignment wait kar raha hai jaise wo last samosa jise koi claim nahi kar raha 🥟 apna answer type karo, main grade karta hoon, zabardast ending karte hain 🎯",
-        "mr": "{name}, तुमचं assignment वाट बघतंय जसं तो शेवटचा समोसा ज्याला कोणी claim करत नाही 🥟 उत्तर type करा, मी तपासतो, दणक्यात शेवट करूया 🎯",
-        "te": "{name}, మీ assignment ఎవరూ claim చేయని చివరి సమోసా లా wait చేస్తోంది 🥟 మీ సమాధానం type చేయండి, నేను grade చేస్తా, అదిరిపోయేలా ముగిద్దాం 🎯",
-        "ta": "{name}, உங்க assignment யாரும் claim பண்ணாத கடைசி சமோசா மாதிரி wait பண்ணுது 🥟 பதில type பண்ணுங்க, நான் grade பண்றேன், அசத்தலா முடிப்போம் 🎯",
-        "kn": "{name}, ನಿಮ್ಮ assignment ಯಾರೂ claim ಮಾಡದ ಕೊನೆ ಸಮೋಸ ತರ wait ಮಾಡ್ತಿದೆ 🥟 ನಿಮ್ಮ ಉತ್ತರ type ಮಾಡಿ, ನಾನು grade ಮಾಡ್ತೀನಿ, ಜೋರಾಗಿ ಮುಗಿಸೋಣ 🎯",
+        "en": "{name}, your assignment is sitting there tapping its foot ✍️ type your answer, I'll grade it, we end on a high 🎯",
+        "hi": "{name}, aapka assignment wahin baitha aapka intezaar kar raha hai ✍️ apna answer type karo, main grade karta hoon, zabardast ending karte hain 🎯",
+        "mr": "{name}, तुमचं assignment तिथेच तुमची वाट बघत बसलंय ✍️ उत्तर type करा, मी तपासतो, दणक्यात शेवट करूया 🎯",
+        "te": "{name}, మీ assignment అక్కడే మీ కోసం ఎదురుచూస్తోంది ✍️ మీ సమాధానం type చేయండి, నేను grade చేస్తా, అదిరిపోయేలా ముగిద్దాం 🎯",
+        "ta": "{name}, உங்க assignment அங்கயே உங்களுக்காக காத்திருக்கு ✍️ பதில type பண்ணுங்க, நான் grade பண்றேன், அசத்தலா முடிப்போம் 🎯",
+        "kn": "{name}, ನಿಮ್ಮ assignment ಅಲ್ಲೇ ನಿಮಗಾಗಿ ಕಾಯ್ತಿದೆ ✍️ ನಿಮ್ಮ ಉತ್ತರ type ಮಾಡಿ, ನಾನು grade ಮಾಡ್ತೀನಿ, ಜೋರಾಗಿ ಮುಗಿಸೋಣ 🎯",
     },
     "keep_learning": {
-        "en": "{name}, you finished Lesson 1 like a snack 😎 more coming soon — got AI questions? my DMs are always open 🌟",
+        "en": "{name}, you finished Lesson 1 like a pro 😎 more coming soon — got AI questions? my DMs are always open 🌟",
         "hi": "{name}, Lesson 1 ko chutki mein nipta diya 😎 aur lessons aa rahe hain — AI ka koi sawaal ho toh DM khula hai 🌟",
         "mr": "{name}, धडा 1 चुटकीसरशी संपवला 😎 अजून धडे येतायत — AI बद्दल काही प्रश्न? DM नेहमी खुला आहे 🌟",
         "te": "{name}, పాఠం 1ని చిటికెలో ముగించారు 😎 ఇంకా పాఠాలు వస్తున్నాయి — AI గురించి ఏ doubt అయినా? నా DM ఎప్పుడూ open 🌟",
