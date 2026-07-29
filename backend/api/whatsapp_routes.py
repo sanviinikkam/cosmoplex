@@ -474,6 +474,36 @@ async def run_drip_endpoint(key: str, to: str | None = None, force_key: str | No
     return await run_drip(force_to=to, force_key=force_key)
 
 
+@router.get("/diag")
+async def diag_video(key: str, lang: str = "hi"):
+    """Diagnose the intro + lesson video pipeline for a language: what ID resolves,
+    whether it downloads from Cloudinary, and whether it uploads to WhatsApp media."""
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden")
+    out: dict = {"lang": lang, "configured": _configured()}
+    async with async_session_factory() as db:
+        try:
+            intro_id = await _intro_video_for(db, lang)
+            out["intro_id"] = intro_id
+            data = await _download(_video_url(intro_id)) if intro_id else None
+            out["intro_download_bytes"] = len(data) if data else 0
+            if data:
+                out["intro_upload_ok"] = bool(await _upload_media(data))
+        except Exception as e:
+            out["intro_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        try:
+            lesson = await _lesson_at(db, lang, 0)
+            out["lesson"] = {"title": lesson["title"], "cloud_id": lesson["cloud_id"]} if lesson else None
+            if lesson:
+                data = await _download(_video_url(lesson["cloud_id"]))
+                out["lesson_download_bytes"] = len(data) if data else 0
+                if data:
+                    out["lesson_upload_ok"] = bool(await _upload_media(data))
+        except Exception as e:
+            out["lesson_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return out
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request, background_tasks: BackgroundTasks):
