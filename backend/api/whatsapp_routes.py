@@ -784,7 +784,8 @@ async def _send_quiz_question(to: str, lang: str, qidx: int, items: list[dict]) 
 
 async def _send_assignment(to: str, lang: str, assignment: dict) -> None:
     q = assignment["question"].get(lang, assignment["question"]["en"])
-    await send_text(to, tr(lang, "assignment_intro").format(q=q))
+    await send_buttons(to, tr(lang, "assignment_intro").format(q=q),
+                       [("submit_assignment", tr(lang, "submit_btn"))])
 
 
 # Free-typed language names → code, so "english" / "i want tamil" switches too.
@@ -1007,6 +1008,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                     score = session.quiz_correct or 0
                     if score >= QUIZ_PASS:
                         session.stage = "assignment"
+                        session.assignment_draft = None   # fresh answer buffer
                         await db.commit()
                         await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
                         assignment = await _assignment_for(db, vid)
@@ -1024,26 +1026,44 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await _send_quiz_question(frm, lang, session.quiz_index or 0, items)
             return
 
-        # Awaiting an assignment answer
+        # Assignment: collect answer across multiple messages (text or voice),
+        # grade only when they tap Submit.
         if session.stage == "assignment":
+            # Submit → grade the accumulated draft
+            if reply_id == "submit_assignment":
+                draft = (session.assignment_draft or "").strip()
+                if len(draft) < 10:
+                    await db.commit()
+                    await send_buttons(frm, tr(lang, "submit_empty"),
+                                       [("submit_assignment", tr(lang, "submit_btn"))])
+                    return
+                vid = await _current_video_id(db, session, lang)
+                assignment = await _assignment_for(db, vid)
+                await send_text(frm, tr(lang, "grading"))
+                q = assignment["question"].get(lang, assignment["question"]["en"])
+                score, feedback = await grade_answer(q, assignment["rubric"], draft, lang)
+                session.assignment_draft = None
+                if score >= ASSIGN_PASS:
+                    session.stage = "done"
+                    await db.commit()
+                    await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
+                    await send_text(frm, tr(lang, "done").format(name=nm))
+                else:
+                    await db.commit()   # stays in "assignment" so they can redo + resubmit
+                    await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
+                return
+            # A typed/voice message → append to the draft, don't grade yet
+            if text and text.strip():
+                session.assignment_draft = ((session.assignment_draft or "") + "\n" + text.strip()).strip()[:8000]
+                await db.commit()
+                await send_buttons(frm, tr(lang, "answer_added"),
+                                   [("submit_assignment", tr(lang, "submit_btn"))])
+                return
+            # Anything else → re-show the assignment + Submit button
             vid = await _current_video_id(db, session, lang)
             assignment = await _assignment_for(db, vid)
-            if not text or len(text.strip()) < 10:
-                await db.commit()
-                await _send_assignment(frm, lang, assignment)
-                return
             await db.commit()
-            await send_text(frm, tr(lang, "grading"))
-            q = assignment["question"].get(lang, assignment["question"]["en"])
-            score, feedback = await grade_answer(q, assignment["rubric"], text, lang)
-            if score >= ASSIGN_PASS:
-                session.stage = "done"
-                await db.commit()
-                await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
-                await send_text(frm, tr(lang, "done").format(name=nm))
-            else:
-                await db.commit()
-                await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
+            await _send_assignment(frm, lang, assignment)
             return
 
         # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
