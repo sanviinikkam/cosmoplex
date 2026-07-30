@@ -791,6 +791,20 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     return False
 
 
+async def _teacher_answer(session, frm: str, lang: str, text: str | None) -> None:
+    """Answer a free-text question via the Teacher agent."""
+    state = LearnerState(
+        learner_id=f"wa:{frm}",
+        name=session.name or "there",
+        language=lang,
+        current_module_id="m1",
+        messages=[{"role": "user", "content": text or ""}],
+        last_agent="teacher",
+    )
+    reply = await run_teacher(state, text or "")
+    await send_text(frm, reply)
+
+
 def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
     """Reorder a question's options so the correct answer isn't always in the same
     slot. The shuffle is DETERMINISTIC per (learner, question) — seeded with a
@@ -1022,6 +1036,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
             return
 
+        # Between lessons: "Start next lesson" → advance + deliver it
+        if reply_id == "next_lesson":
+            await _advance_lesson(db, session, frm, lang, nm)
+            return
+
+        # Between lessons: "I have a doubt" → clarify previous lesson first
+        if reply_id == "ask_doubt":
+            session.stage = "clarify"
+            await db.commit()
+            await send_buttons(frm, tr(lang, "clarify_prompt").format(name=nm),
+                               [("next_lesson", tr(lang, "start_next_btn"))])
+            return
+
         # Start / retake quiz
         if reply_id in ("quiz", "retake"):
             await _start_quiz(db, session, frm, lang)
@@ -1089,7 +1116,22 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 session.assignment_draft = None
                 if score >= ASSIGN_PASS:
                     await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
-                    await _advance_lesson(db, session, frm, lang, nm)
+                    lessons = await _db_lessons(db, lang)
+                    cur = session.lesson_index or 0
+                    if cur + 1 < len(lessons):
+                        nxt = lessons[cur + 1]
+                        nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
+                        session.stage = "between_lessons"
+                        await db.commit()
+                        await send_buttons(
+                            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
+                            [("next_lesson", tr(lang, "start_next_btn")),
+                             ("ask_doubt", tr(lang, "doubt_btn"))],
+                        )
+                    else:
+                        session.stage = "done"
+                        await db.commit()
+                        await send_text(frm, tr(lang, "done").format(name=nm))
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
                     await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
@@ -1108,6 +1150,16 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await _send_assignment(frm, lang, assignment)
             return
 
+        # Between lessons / clarifying: answer the doubt via the Teacher, then keep
+        # offering the "next lesson" button so they can continue when ready.
+        if session.stage in ("between_lessons", "clarify"):
+            session.stage = "clarify"
+            await db.commit()
+            await _teacher_answer(session, frm, lang, text)
+            await send_buttons(frm, tr(lang, "clarify_more"),
+                               [("next_lesson", tr(lang, "start_next_btn"))])
+            return
+
         # Finished the current lesson but more lessons exist (e.g. older sessions,
         # or lessons added later) → continue automatically instead of chatting.
         if session.stage == "done":
@@ -1118,13 +1170,4 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
 
         # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
         await db.commit()
-        state = LearnerState(
-            learner_id=f"wa:{frm}",
-            name=session.name or "there",
-            language=lang,
-            current_module_id="m1",
-            messages=[{"role": "user", "content": text or ""}],
-            last_agent="teacher",
-        )
-        reply = await run_teacher(state, text or "")
-        await send_text(frm, reply)
+        await _teacher_answer(session, frm, lang, text)
