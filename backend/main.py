@@ -155,7 +155,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "offer-499-1",
+        "build": "quiz-shuffle-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

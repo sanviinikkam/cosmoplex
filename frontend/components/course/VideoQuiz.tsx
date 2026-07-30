@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { CheckCircle, XCircle, ArrowRight, Trophy, Clock, ArrowClockwise } from "@phosphor-icons/react";
 import type { MCQ } from "@/lib/quiz-data";
 import { qText, qOptions } from "@/lib/quiz-data";
@@ -122,6 +122,22 @@ export function VideoQuiz({ questions, lang, onFinish }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [answers, setAnswers] = useState<number[]>([]);
   const [timeLeft, setTimeLeft] = useState(QUIZ_DURATION);
+
+  // Shuffle each question's option ORDER so the correct answer isn't always in
+  // the same slot. We only reorder what's shown; clicks map back to the original
+  // index, so grading (against correctIndex) is unchanged. Computed once per set.
+  const optionOrders = useMemo(
+    () =>
+      questions.map((qq) => {
+        const order = Array.from({ length: qOptions(qq, "en").length }, (_, i) => i);
+        for (let i = order.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [order[i], order[j]] = [order[j], order[i]];
+        }
+        return order;
+      }),
+    [questions]
+  );
 
   // Countdown ticks once per second while the quiz is active
   useEffect(() => {
@@ -322,9 +338,10 @@ export function VideoQuiz({ questions, lang, onFinish }: Props) {
         {/* Question */}
         <p className="text-zinc-900 font-medium leading-snug">{qText(q, lang)}</p>
 
-        {/* Options */}
+        {/* Options (shuffled display order; logic stays on original indices) */}
         <div className="grid gap-2.5">
-          {opts.map((opt, idx) => {
+          {(optionOrders[current] ?? opts.map((_, i) => i)).map((idx, slot) => {
+            const opt = opts[idx];
             let style = "border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700";
             if (selected !== null) {
               if (idx === q.correctIndex) {
@@ -346,7 +363,7 @@ export function VideoQuiz({ questions, lang, onFinish }: Props) {
               >
                 <span className="inline-flex items-center gap-3">
                   <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center shrink-0 text-xs font-mono">
-                    {String.fromCharCode(65 + idx)}
+                    {String.fromCharCode(65 + slot)}
                   </span>
                   {opt}
                 </span>

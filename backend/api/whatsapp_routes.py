@@ -13,7 +13,9 @@ Learning flow (state persisted per phone in whatsapp_sessions):
   6. Pass → lesson complete; free text routes to the Teacher agent.
 """
 import asyncio
+import hashlib
 import json
+import random
 import re
 from collections import deque
 from datetime import datetime
@@ -769,10 +771,31 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
+def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
+    """Reorder a question's options so the correct answer isn't always in the same
+    slot. The shuffle is DETERMINISTIC per (learner, question) — seeded with a
+    stable hash — so the order shown matches the order used when grading, even
+    across separate webhook calls / server processes."""
+    en_opts = item["opts"].get("en") or []
+    n = len(en_opts)
+    if n < 2:
+        return item
+    seed = int(hashlib.md5(f"{phone}:{qidx}".encode()).hexdigest(), 16)
+    order = list(range(n))
+    random.Random(seed).shuffle(order)
+    new_opts = {lg: [o[i] for i in order] for lg, o in item["opts"].items()
+                if isinstance(o, list) and len(o) == n}
+    try:
+        new_correct = order.index(int(item["correct"]))
+    except (ValueError, TypeError):
+        new_correct = 0
+    return {"q": item["q"], "opts": new_opts, "correct": new_correct}
+
+
 async def _send_quiz_question(to: str, lang: str, qidx: int, items: list[dict]) -> None:
     if qidx >= len(items):
         return
-    item = items[qidx]
+    item = _shuffle_options(items[qidx], to, qidx)
     q = item["q"].get(lang, item["q"]["en"])
     opts = item["opts"].get(lang, item["opts"]["en"])
     numbered = "\n".join(f"{NUM_EMOJI[i]} {opt}" for i, opt in enumerate(opts))
@@ -991,7 +1014,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             if reply_id and reply_id.startswith("ans_"):
                 qidx = session.quiz_index or 0
                 chosen = int(reply_id.split("_", 1)[1])
-                item = items[qidx] if qidx < len(items) else items[-1]
+                base = items[qidx] if qidx < len(items) else items[-1]
+                item = _shuffle_options(base, frm, qidx)   # same order the learner saw
                 if chosen == item["correct"]:
                     session.quiz_correct = (session.quiz_correct or 0) + 1
                     await send_text(frm, tr(lang, "correct"))
