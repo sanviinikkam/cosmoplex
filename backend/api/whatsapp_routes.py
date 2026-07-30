@@ -771,6 +771,26 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
+async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
+    """After finishing the current lesson, move to the next and auto-deliver it.
+    Returns True if a next lesson was sent, False if the course is complete."""
+    lessons = await _db_lessons(db, lang)
+    cur = session.lesson_index or 0
+    if cur + 1 < len(lessons):
+        session.lesson_index = cur + 1
+        session.quiz_index = 0
+        session.quiz_correct = 0
+        session.stage = "lesson"
+        await db.commit()
+        await send_text(frm, tr(lang, "next_prompt").format(name=nm))
+        await _send_lesson(db, frm, lang, nm, cur + 1)
+        return True
+    session.stage = "done"
+    await db.commit()
+    await send_text(frm, tr(lang, "done").format(name=nm))
+    return False
+
+
 def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
     """Reorder a question's options so the correct answer isn't always in the same
     slot. The shuffle is DETERMINISTIC per (learner, question) — seeded with a
@@ -1069,20 +1089,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 session.assignment_draft = None
                 if score >= ASSIGN_PASS:
                     await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
-                    # Advance to the next lesson (if any).
-                    session.lesson_index = (session.lesson_index or 0) + 1
-                    session.quiz_index = 0
-                    session.quiz_correct = 0
-                    lessons = await _db_lessons(db, lang)
-                    if session.lesson_index < len(lessons):
-                        session.stage = "lesson"
-                        await db.commit()
-                        await send_buttons(frm, tr(lang, "next_prompt").format(name=nm),
-                                           [("start_lesson", tr(lang, "next_btn"))])
-                    else:
-                        session.stage = "done"
-                        await db.commit()
-                        await send_text(frm, tr(lang, "done").format(name=nm))
+                    await _advance_lesson(db, session, frm, lang, nm)
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
                     await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
@@ -1100,6 +1107,14 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await db.commit()
             await _send_assignment(frm, lang, assignment)
             return
+
+        # Finished the current lesson but more lessons exist (e.g. older sessions,
+        # or lessons added later) → continue automatically instead of chatting.
+        if session.stage == "done":
+            lessons = await _db_lessons(db, lang)
+            if (session.lesson_index or 0) + 1 < len(lessons):
+                await _advance_lesson(db, session, frm, lang, nm)
+                return
 
         # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
         await db.commit()
