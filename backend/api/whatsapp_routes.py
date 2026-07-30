@@ -1068,10 +1068,21 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 score, feedback = await grade_answer(q, assignment["rubric"], draft, lang)
                 session.assignment_draft = None
                 if score >= ASSIGN_PASS:
-                    session.stage = "done"
-                    await db.commit()
                     await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
-                    await send_text(frm, tr(lang, "done").format(name=nm))
+                    # Advance to the next lesson (if any).
+                    session.lesson_index = (session.lesson_index or 0) + 1
+                    session.quiz_index = 0
+                    session.quiz_correct = 0
+                    lessons = await _db_lessons(db, lang)
+                    if session.lesson_index < len(lessons):
+                        session.stage = "lesson"
+                        await db.commit()
+                        await send_buttons(frm, tr(lang, "next_prompt").format(name=nm),
+                                           [("start_lesson", tr(lang, "next_btn"))])
+                    else:
+                        session.stage = "done"
+                        await db.commit()
+                        await send_text(frm, tr(lang, "done").format(name=nm))
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
                     await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
