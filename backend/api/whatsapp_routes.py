@@ -477,32 +477,27 @@ async def run_drip_endpoint(key: str, to: str | None = None, force_key: str | No
 
 
 @router.get("/diag")
-async def diag_video(key: str, lang: str = "hi"):
-    """Diagnose the intro + lesson video pipeline for a language: what ID resolves,
-    whether it downloads from Cloudinary, and whether it uploads to WhatsApp media."""
+async def diag_video(key: str, lang: str = "hi", idx: int = 0):
+    """Diagnose the lesson pipeline for a language: how many lessons resolve, their
+    titles/order, and whether the lesson at `idx` downloads + uploads to WhatsApp."""
     if key != settings.whatsapp_verify_token:
         return Response(status_code=403, content="forbidden")
-    out: dict = {"lang": lang, "configured": _configured()}
+    out: dict = {"lang": lang, "configured": _configured(), "idx": idx}
     async with async_session_factory() as db:
         try:
-            intro_id = await _intro_video_for(db, lang)
-            out["intro_id"] = intro_id
-            data = await _download(_video_url(intro_id)) if intro_id else None
-            out["intro_download_bytes"] = len(data) if data else 0
-            if data:
-                out["intro_upload_ok"] = bool(await _upload_media(data))
-        except Exception as e:
-            out["intro_error"] = f"{type(e).__name__}: {str(e)[:200]}"
-        try:
-            lesson = await _lesson_at(db, lang, 0)
-            out["lesson"] = {"title": lesson["title"], "cloud_id": lesson["cloud_id"]} if lesson else None
-            if lesson:
-                data = await _download(_video_url(lesson["cloud_id"]))
-                out["lesson_download_bytes"] = len(data) if data else 0
+            lessons = await _db_lessons(db, lang)
+            out["lesson_count"] = len(lessons)
+            out["lessons"] = [{"i": i, "title": l["title"], "cloud_id": l["cloud_id"]}
+                              for i, l in enumerate(lessons)]
+            if 0 <= idx < len(lessons):
+                data = await _download(_video_url(lessons[idx]["cloud_id"]))
+                out["download_bytes"] = len(data) if data else 0
                 if data:
-                    out["lesson_upload_ok"] = bool(await _upload_media(data))
+                    out["upload_ok"] = bool(await _upload_media(data))
+            else:
+                out["note"] = f"no lesson at index {idx}"
         except Exception as e:
-            out["lesson_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            out["error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return out
 
 
