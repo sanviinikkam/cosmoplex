@@ -159,7 +159,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "quiz-admin-replace-1",
+        "build": "quiz-deterministic-parse-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -727,6 +727,78 @@ async def _extract_items(system: str, content: str, key: str) -> list[dict]:
     return merged
 
 
+# ── Deterministic MCQ parsing (no AI guessing) + translation-only step ──────────
+_Q_RE = re.compile(r"^(?:Q\s*)?\d+\s*[.)\:]\s*(.+)$")
+_OPT_RE = re.compile(r"^\(?([a-eA-E])[.)]\s*(.+)$")
+_CORRECT_RE = re.compile(r"✓|✔|\bcorrect\b", re.I)
+
+TRANSLATE_SYS = """You translate multiple-choice quiz questions from English into 5 Indian languages.
+Input: a JSON array of questions, each {"q":"<english>","options":["<en>", ...]}.
+Translate each question and EACH option into Hindi(hi), Marathi(mr), Telugu(te), Tamil(ta), Kannada(kn).
+Faithful, natural for Indian learners; keep technical AI terms recognizable. Do NOT change the English.
+Return ONLY strict JSON: {"translations":[{"q":{"hi":"","mr":"","te":"","ta":"","kn":""},"options":{"hi":["",...],"mr":[...],"te":[...],"ta":[...],"kn":[...]}}]}
+The array MUST be the same length and order as the input; each options array MUST have the same number of items, in the same order. Do not add, drop, or reorder anything."""
+
+
+def _parse_mcq(text: str) -> list[dict]:
+    """Parse numbered MCQs (question + a/b/c/d options; correct marked with ✓ or
+    'Correct') deterministically — reliable, no AI interpretation. Returns English
+    items {q, options, correct_index}. Empty if the doc isn't in this structure."""
+    out: list[dict] = []
+    cur: dict | None = None
+    for raw in text.split("\n"):
+        s = raw.strip()
+        if not s:
+            continue
+        opt = _OPT_RE.match(s)
+        q = _Q_RE.match(s) if not opt else None
+        if q:
+            if cur and len(cur["options"]) >= 2:
+                out.append(cur)
+            qt = re.sub(r"\s*\[[A-Za-z]\]\s*$", "", q.group(1)).strip()  # drop [B]/[I]/[A] difficulty tags
+            cur = {"q": qt, "options": [], "correct_index": 0}
+        elif opt and cur is not None:
+            body = opt.group(2)
+            is_correct = bool(_CORRECT_RE.search(body))
+            body = re.sub(r"\s*[✓✔].*$", "", body)                 # strip "✓ Correct"
+            body = re.sub(r"\s*[-—]?\s*\bcorrect\b\s*$", "", body, flags=re.I).strip()
+            cur["options"].append(body)
+            if is_correct:
+                cur["correct_index"] = len(cur["options"]) - 1
+    if cur and len(cur["options"]) >= 2:
+        out.append(cur)
+    return out
+
+
+async def _translate_quiz(english: list[dict]) -> list[dict]:
+    """Translate parsed English MCQs into all languages (AI does ONLY translation).
+    English + correct answer are authoritative; a failed batch just leaves those
+    items English-only."""
+    batches = [english[i:i + 6] for i in range(0, len(english), 6)]
+    results = await asyncio.gather(
+        *[_claude_json(TRANSLATE_SYS,
+                       json.dumps([{"q": it["q"], "options": it["options"]} for it in b], ensure_ascii=False))
+          for b in batches],
+        return_exceptions=True,
+    )
+    final: list[dict] = []
+    for b, r in zip(batches, results):
+        trs = (r.get("translations") if isinstance(r, dict) else None) or []
+        for i, en in enumerate(b):
+            n = len(en["options"])
+            question = {"en": en["q"]}
+            options = {"en": [str(o).strip() for o in en["options"]]}
+            tr = trs[i] if i < len(trs) else {}
+            tq, topts = (tr.get("q") or {}), (tr.get("options") or {})
+            for lang in ("hi", "mr", "te", "ta", "kn"):
+                lq, lo = (tq.get(lang) or "").strip(), topts.get(lang)
+                if lq and isinstance(lo, list) and len(lo) == n and all(str(x).strip() for x in lo):
+                    question[lang] = lq
+                    options[lang] = [str(x).strip() for x in lo]
+            final.append({"question": question, "options": options, "correct_index": en["correct_index"]})
+    return final
+
+
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                        replace: bool = Form(False),
@@ -736,7 +808,13 @@ async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
-    items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
+    parsed = _parse_mcq(content)
+    if parsed:
+        # Deterministic extraction (exact count/options/answer) + AI translation only.
+        items = _clean_quiz(await _translate_quiz(parsed))
+    else:
+        # Unstructured doc → let the AI find the questions too.
+        items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
     if not items:
         raise HTTPException(status_code=422, detail="No multiple-choice questions found in that document.")
     if replace:
