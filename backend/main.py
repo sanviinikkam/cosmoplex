@@ -155,7 +155,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "diag-idx-1",
+        "build": "bulk-import-batched-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

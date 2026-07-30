@@ -18,9 +18,11 @@ Everything except /admin/login requires a valid admin token (require_admin).
   DELETE /admin/videos/{id}/variant/{lang}
   POST   /admin/cloudinary/signature          — signed direct-upload params
 """
+import asyncio
 import hashlib
 import io
 import json
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -688,6 +690,42 @@ async def _bulk_content(file: UploadFile | None, text: str | None) -> str:
     return content[:60000]   # guard against a huge doc blowing the token budget
 
 
+def _chunk_questions(text: str, per_chunk: int = 5) -> list[str]:
+    """Split a questions doc into batches of ~per_chunk numbered items. Each batch
+    is extracted + translated into 6 languages in its own Claude call, keeping the
+    output within the token limit (translating 20 questions at once overflows and
+    truncates the JSON). Falls back to one chunk if items can't be detected."""
+    lines = text.split("\n")
+    starts = [i for i, l in enumerate(lines) if re.match(r"\s*(?:Q\s*)?\d+\s*[.)\:]", l)]
+    if len(starts) < 2:
+        return [text]
+    header = "\n".join(lines[:starts[0]]).strip()
+    blocks = ["\n".join(lines[starts[k]: (starts[k + 1] if k + 1 < len(starts) else len(lines))])
+              for k in range(len(starts))]
+    chunks = []
+    for k in range(0, len(blocks), per_chunk):
+        body = "\n".join(blocks[k:k + per_chunk])
+        chunks.append((header + "\n\n" + body) if header else body)
+    return chunks
+
+
+async def _extract_items(system: str, content: str, key: str) -> list[dict]:
+    """Extract + translate across batches (run in parallel) and merge the raw item
+    lists under `key` ('questions' | 'assignments')."""
+    chunks = _chunk_questions(content)
+    results = await asyncio.gather(*[_claude_json(system, ch) for ch in chunks],
+                                   return_exceptions=True)
+    merged: list[dict] = []
+    for r in results:
+        if isinstance(r, dict):
+            merged.extend(r.get(key) or [])
+    if not merged:
+        raise HTTPException(status_code=422,
+            detail="Couldn't parse questions from that document — try a cleaner layout, "
+                   "or split it into a couple of smaller uploads.")
+    return merged
+
+
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                        _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
@@ -695,8 +733,7 @@ async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
-    parsed = await _claude_json(QUIZ_SYS, content)
-    items = _clean_quiz(parsed.get("questions"))
+    items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
     if not items:
         raise HTTPException(status_code=422, detail="No multiple-choice questions found in that document.")
     order = await _next_order(db, QuizQuestion, QuizQuestion.video_id, video_id)
@@ -716,8 +753,7 @@ async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), 
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
-    parsed = await _claude_json(ASSIGN_SYS, content)
-    items = _clean_assignments(parsed.get("assignments"))
+    items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
     if not items:
         raise HTTPException(status_code=422, detail="No assignment questions found in that document.")
     order = await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
