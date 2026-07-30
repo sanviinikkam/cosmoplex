@@ -462,11 +462,12 @@ const EMPTY_QUIZ = { question: {} as Record<string, string>, options: {} as Reco
 // translates it into all 6 languages, then appends to the lesson's bank.
 function BulkUpload({ kind, onUpload, onDone }: {
   kind: "quiz" | "assignment";
-  onUpload: (input: { file?: File; text?: string }) => Promise<{ added: number }>;
+  onUpload: (input: { file?: File; text?: string; replace?: boolean }) => Promise<{ added: number }>;
   onDone: () => void;
 }) {
   const [showPaste, setShowPaste] = useState(false);
   const [text, setText] = useState("");
+  const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -475,8 +476,8 @@ function BulkUpload({ kind, onUpload, onDone }: {
   async function run(input: { file?: File; text?: string }) {
     setBusy(true); setErr(""); setMsg("");
     try {
-      const r = await onUpload(input);
-      setMsg(`✓ Added ${r.added} ${noun} in all languages.`);
+      const r = await onUpload({ ...input, replace });
+      setMsg(`✓ ${replace ? "Replaced with" : "Added"} ${r.added} ${noun} in all languages.`);
       setText(""); setShowPaste(false);
       onDone();
     } catch (e) {
@@ -499,6 +500,10 @@ function BulkUpload({ kind, onUpload, onDone }: {
         <button type="button" disabled={busy} className="text-xs text-sky-700 hover:underline disabled:text-zinc-400"
           onClick={() => setShowPaste((s) => !s)}>{showPaste ? "hide paste" : "or paste text"}</button>
       </div>
+      <label className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+        <input type="checkbox" checked={replace} disabled={busy} onChange={(e) => setReplace(e.target.checked)} />
+        Replace existing {noun} for this lesson (clears the current bank first)
+      </label>
       {showPaste && (
         <div className="flex flex-col gap-1.5">
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} disabled={busy}
@@ -548,15 +553,29 @@ function QuizManager({ videoId }: { videoId: string }) {
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           {err && <p className="text-xs text-red-600">{err}</p>}
-          {items.map((q, i) => (
-            <div key={q.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-50 rounded px-2 py-1.5">
-              <span className="truncate">{i + 1}. {q.question.en ?? "(no English)"}</span>
-              <span className="flex gap-2 shrink-0">
-                <button className="text-zinc-500 hover:text-zinc-800" onClick={() => setEditing({ id: q.id, draft: { question: q.question, options: q.options, correctIndex: q.correctIndex } })}>Edit</button>
-                <button className="text-red-500 hover:text-red-700" onClick={async () => { if (window.confirm("Delete this question?")) { await adminApi.deleteQuiz(q.id); load(); } }}>Delete</button>
-              </span>
-            </div>
-          ))}
+          {items.map((q, i) => {
+            const opts = q.options?.en ?? Object.values(q.options ?? {})[0] ?? [];
+            return (
+              <div key={q.id} className="text-xs bg-zinc-50 rounded px-2 py-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="min-w-0">{i + 1}. {q.question.en ?? "(no English)"}</span>
+                  <span className="flex gap-2 shrink-0">
+                    <button className="text-zinc-500 hover:text-zinc-800" onClick={() => setEditing({ id: q.id, draft: { question: q.question, options: q.options, correctIndex: q.correctIndex } })}>Edit</button>
+                    <button className="text-red-500 hover:text-red-700" onClick={async () => { if (window.confirm("Delete this question?")) { await adminApi.deleteQuiz(q.id); load(); } }}>Delete</button>
+                  </span>
+                </div>
+                {opts.length > 0 && (
+                  <ul className="mt-1 ml-4 flex flex-col gap-0.5 text-[11px]">
+                    {opts.map((o, idx) => (
+                      <li key={idx} className={idx === q.correctIndex ? "text-emerald-700 font-medium" : "text-zinc-500"}>
+                        {String.fromCharCode(97 + idx)}) {o}{idx === q.correctIndex ? "  ✓" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
           {editing ? (
             <QuizEditor initial={editing.draft} onCancel={() => setEditing(null)} onSave={(d) => save(d, editing.id)} />
           ) : (

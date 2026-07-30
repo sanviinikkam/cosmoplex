@@ -566,9 +566,10 @@ Translate the question and EVERY option into: English(en), Hindi(hi), Marathi(mr
 Return ONLY strict JSON (no markdown, no commentary) shaped exactly:
 {"questions":[{"question":{"en":"","hi":"","mr":"","te":"","ta":"","kn":""},"options":{"en":["",""],"hi":["",""],"mr":["",""],"te":["",""],"ta":["",""],"kn":["",""]},"correct_index":0}]}
 Rules:
+- Extract EVERY question present — do NOT skip, merge, renumber, summarise, or deduplicate any. If the text has 20 questions, return all 20.
 - correct_index is 0-based into the options arrays.
 - Every language's options array MUST have the same number of items, in the same order, as English.
-- Detect the correct answer from any marker in the source (*, "Answer:", bold, checkmark). If none, choose the best answer.
+- Detect the correct answer from any marker in the source (*, "Answer:", "✓", "Correct", "[B]", bold). If none, choose the best answer.
 - Do not invent extra questions. Output only the JSON object."""
 
 ASSIGN_SYS = """You extract open-ended assignment questions from a document and translate them.
@@ -728,42 +729,50 @@ async def _extract_items(system: str, content: str, key: str) -> list[dict]:
 
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
+                       replace: bool = Form(False),
                        _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    """Upload a doc / paste text of MCQs → extract + translate → append to the bank."""
+    """Upload a doc / paste text of MCQs → extract + translate. Appends by default;
+    `replace=true` clears this lesson's existing quiz bank first (clean re-import)."""
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
     items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
     if not items:
         raise HTTPException(status_code=422, detail="No multiple-choice questions found in that document.")
-    order = await _next_order(db, QuizQuestion, QuizQuestion.video_id, video_id)
+    if replace:
+        await db.execute(delete(QuizQuestion).where(QuizQuestion.video_id == video_id))
+    order = 0 if replace else await _next_order(db, QuizQuestion, QuizQuestion.video_id, video_id)
     created = [QuizQuestion(video_id=video_id, question=it["question"], options=it["options"],
                             correct_index=it["correct_index"], order_index=order + i)
                for i, it in enumerate(items)]
     for q in created:
         db.add(q)
     await db.commit()
-    return {"added": len(created), "items": [_quiz_dict(q) for q in created]}
+    return {"added": len(created), "replaced": replace, "items": [_quiz_dict(q) for q in created]}
 
 
 @router.post("/videos/{video_id}/assignments/bulk")
 async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
+                           replace: bool = Form(False),
                            _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    """Upload a doc / paste text of assignment prompts → extract + translate → append."""
+    """Upload a doc / paste text of assignment prompts → extract + translate. Appends
+    by default; `replace=true` clears this lesson's existing assignment bank first."""
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
     items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
     if not items:
         raise HTTPException(status_code=422, detail="No assignment questions found in that document.")
-    order = await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
+    if replace:
+        await db.execute(delete(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id))
+    order = 0 if replace else await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
     created = [AssignmentPrompt(video_id=video_id, question=it["question"], rubric=it["rubric"],
                                order_index=order + i)
                for i, it in enumerate(items)]
     for a in created:
         db.add(a)
     await db.commit()
-    return {"added": len(created), "items": [_assign_dict(a) for a in created]}
+    return {"added": len(created), "replaced": replace, "items": [_assign_dict(a) for a in created]}
 
 
 @router.post("/sync-videos")
