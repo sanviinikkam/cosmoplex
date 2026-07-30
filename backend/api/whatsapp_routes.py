@@ -671,10 +671,12 @@ async def _lesson_at(db, lang: str, idx: int) -> dict | None:
     return lessons[idx] if 0 <= idx < len(lessons) else None
 
 
-async def _quiz_items(db, video_id: str | None) -> list[dict]:
-    """This lesson's quiz from the DB bank (deterministic order → stable across
-    the 5-question flow without extra state). Falls back to the built-in quiz
-    for lessons whose bank hasn't been filled in yet."""
+QUIZ_PER_ATTEMPT = 5   # how many questions we ask per quiz
+
+
+async def _all_quiz(db, video_id: str | None) -> list[dict]:
+    """The lesson's FULL quiz bank (all 20), each with a stable id. Falls back to
+    the built-in quiz for lessons whose bank hasn't been filled in yet."""
     if video_id:
         res = await db.execute(
             select(QuizQuestion).where(QuizQuestion.video_id == video_id)
@@ -682,9 +684,34 @@ async def _quiz_items(db, video_id: str | None) -> list[dict]:
         )
         rows = res.scalars().all()
         if rows:
-            return [{"q": r.question, "opts": r.options, "correct": r.correct_index}
-                    for r in rows[:5]]
-    return [{"q": it["q"], "opts": it["opts"], "correct": it["correct"]} for it in QUIZ]
+            return [{"id": r.id, "q": r.question, "opts": r.options, "correct": r.correct_index}
+                    for r in rows]
+    return [{"id": f"builtin-{i}", "q": it["q"], "opts": it["opts"], "correct": it["correct"]}
+            for i, it in enumerate(QUIZ)]
+
+
+async def _select_quiz(db, session, video_id: str | None) -> list[dict]:
+    """Pick a fresh random set of questions the learner hasn't seen this lesson.
+    When the pool is exhausted, reset and start over. Stores the picked set on the
+    session so the multi-message flow stays consistent, and records them as seen."""
+    bank = await _all_quiz(db, video_id)
+    seen = set(json.loads(session.quiz_seen or "[]"))
+    pool = [q for q in bank if q["id"] not in seen]
+    if len(pool) < QUIZ_PER_ATTEMPT:      # not enough fresh ones left → start the pool over
+        seen = set()
+        pool = bank
+    picked = random.sample(pool, min(QUIZ_PER_ATTEMPT, len(pool)))
+    session.quiz_seen = json.dumps(list(seen | {q["id"] for q in picked}))
+    session.quiz_current = json.dumps(picked)
+    return picked
+
+
+def _current_quiz(session) -> list[dict]:
+    """The set chosen for the current attempt (stored on the session)."""
+    try:
+        return json.loads(session.quiz_current or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 async def _assignment_for(db, video_id: str | None) -> dict:
@@ -766,6 +793,14 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
                        [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
 
 
+def _reset_quiz_state(session) -> None:
+    """Clear per-lesson quiz progress + the no-repeat 'seen' pool (new lesson)."""
+    session.quiz_index = 0
+    session.quiz_correct = 0
+    session.quiz_current = None
+    session.quiz_seen = None
+
+
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     """After finishing the current lesson, move to the next and auto-deliver it.
     Returns True if a next lesson was sent, False if the course is complete."""
@@ -773,8 +808,7 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     cur = session.lesson_index or 0
     if cur + 1 < len(lessons):
         session.lesson_index = cur + 1
-        session.quiz_index = 0
-        session.quiz_correct = 0
+        _reset_quiz_state(session)          # fresh quiz pool for the new lesson
         session.stage = "lesson"
         await db.commit()
         await send_text(frm, tr(lang, "next_prompt").format(name=nm))
@@ -784,6 +818,32 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     await db.commit()
     await send_text(frm, tr(lang, "done").format(name=nm))
     return False
+
+
+async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> None:
+    """The post-lesson menu: continue to the next lesson, practice another quiz
+    (a fresh non-repeating set), or ask a doubt."""
+    lessons = await _db_lessons(db, lang)
+    cur = session.lesson_index or 0
+    if cur + 1 < len(lessons):
+        nxt = lessons[cur + 1]
+        nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
+        session.stage = "between_lessons"
+        await db.commit()
+        await send_buttons(
+            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
+            [("next_lesson", tr(lang, "start_next_btn")),
+             ("practice_quiz", tr(lang, "practice_btn")),
+             ("ask_doubt", tr(lang, "doubt_btn"))],
+        )
+    else:
+        session.stage = "done"
+        await db.commit()
+        await send_buttons(
+            frm, tr(lang, "done_choice").format(name=nm),
+            [("practice_quiz", tr(lang, "practice_btn")),
+             ("ask_doubt", tr(lang, "doubt_btn"))],
+        )
 
 
 async def _teacher_answer(session, frm: str, lang: str, text: str | None) -> None:
@@ -872,11 +932,9 @@ async def _current_video_id(db, session, lang: str) -> str | None:
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
     """Re-render the learner's current step in the (possibly new) language."""
     st = session.stage
-    if st == "quiz":
+    if st in ("quiz", "practice"):
         await db.commit()
-        vid = await _current_video_id(db, session, lang)
-        items = await _quiz_items(db, vid)
-        await _send_quiz_question(frm, lang, session.quiz_index or 0, items)
+        await _send_quiz_question(frm, lang, session.quiz_index or 0, _current_quiz(session))
     elif st == "assignment":
         await db.commit()
         vid = await _current_video_id(db, session, lang)
@@ -888,13 +946,13 @@ async def _resume_stage(db, session, frm: str, lang: str) -> None:
         await _send_lesson(db, frm, lang, session.name or "friend", session.lesson_index or 0)
 
 
-async def _start_quiz(db, session, frm: str, lang: str) -> None:
-    session.stage = "quiz"
+async def _start_quiz(db, session, frm: str, lang: str, practice: bool = False) -> None:
+    session.stage = "practice" if practice else "quiz"
     session.quiz_index = 0
     session.quiz_correct = 0
-    await db.commit()
     vid = await _current_video_id(db, session, lang)
-    items = await _quiz_items(db, vid)
+    items = await _select_quiz(db, session, vid)   # fresh non-repeating random set
+    await db.commit()
     await _send_quiz_question(frm, lang, 0, items)
 
 
@@ -1044,15 +1102,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                                [("next_lesson", tr(lang, "start_next_btn"))])
             return
 
-        # Start / retake quiz
+        # Start / retake the graded quiz, or a practice quiz (fresh non-repeating set)
         if reply_id in ("quiz", "retake"):
             await _start_quiz(db, session, frm, lang)
             return
+        if reply_id == "practice_quiz":
+            await _start_quiz(db, session, frm, lang, practice=True)
+            return
 
-        # In the middle of the quiz
-        if session.stage == "quiz":
-            vid = await _current_video_id(db, session, lang)
-            items = await _quiz_items(db, vid)
+        # In the middle of a quiz (graded) or practice quiz
+        if session.stage in ("quiz", "practice"):
+            practice = session.stage == "practice"
+            items = _current_quiz(session)
             if reply_id and reply_id.startswith("ans_"):
                 qidx = session.quiz_index or 0
                 chosen = int(reply_id.split("_", 1)[1])
@@ -1070,22 +1131,27 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 if qidx < len(items):
                     await db.commit()
                     await _send_quiz_question(frm, lang, qidx, items)
+                    return
+                score = session.quiz_correct or 0
+                if practice:
+                    # Practice doesn't gate progress — show the score, back to the menu
+                    await send_text(frm, tr(lang, "practice_result").format(s=score, n=len(items), name=nm))
+                    await _send_between_choice(db, session, frm, lang, nm)
+                elif score >= QUIZ_PASS:
+                    session.stage = "assignment"
+                    session.assignment_draft = None
+                    await db.commit()
+                    await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
+                    vid = await _current_video_id(db, session, lang)
+                    assignment = await _assignment_for(db, vid)
+                    await _send_assignment(frm, lang, assignment)
                 else:
-                    score = session.quiz_correct or 0
-                    if score >= QUIZ_PASS:
-                        session.stage = "assignment"
-                        session.assignment_draft = None   # fresh answer buffer
-                        await db.commit()
-                        await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
-                        assignment = await _assignment_for(db, vid)
-                        await _send_assignment(frm, lang, assignment)
-                    else:
-                        session.stage = "quiz_failed"
-                        await db.commit()
-                        await send_buttons(
-                            frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
-                            [("retake", tr(lang, "retake_btn"))],
-                        )
+                    session.stage = "quiz_failed"
+                    await db.commit()
+                    await send_buttons(
+                        frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
+                        [("retake", tr(lang, "retake_btn"))],
+                    )
                 return
             # Nudge: they typed instead of tapping — resend the current question
             await db.commit()
@@ -1111,22 +1177,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 session.assignment_draft = None
                 if score >= ASSIGN_PASS:
                     await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
-                    lessons = await _db_lessons(db, lang)
-                    cur = session.lesson_index or 0
-                    if cur + 1 < len(lessons):
-                        nxt = lessons[cur + 1]
-                        nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
-                        session.stage = "between_lessons"
-                        await db.commit()
-                        await send_buttons(
-                            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
-                            [("next_lesson", tr(lang, "start_next_btn")),
-                             ("ask_doubt", tr(lang, "doubt_btn"))],
-                        )
-                    else:
-                        session.stage = "done"
-                        await db.commit()
-                        await send_text(frm, tr(lang, "done").format(name=nm))
+                    await _send_between_choice(db, session, frm, lang, nm)
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
                     await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))

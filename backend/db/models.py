@@ -354,6 +354,8 @@ class WhatsAppSession(Base):
     lesson_index = Column(Integer, default=0)              # position in the lesson list
     quiz_index = Column(Integer, default=0)                # current quiz question (0-based)
     quiz_correct = Column(Integer, default=0)              # correct answers so far this attempt
+    quiz_current = Column(Text, nullable=True)             # JSON: the 5 questions in the current attempt
+    quiz_seen = Column(Text, nullable=True)                # JSON: question ids already asked this lesson (no-repeat)
     name = Column(String(255), nullable=True)
     current_status = Column(String(50), nullable=True)     # onboarding: student | graduate | working | jobseeker
     goal = Column(Text, nullable=True)                     # onboarding: their stated goal with AI
