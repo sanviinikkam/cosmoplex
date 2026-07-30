@@ -1160,6 +1160,13 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                                [("next_lesson", tr(lang, "start_next_btn"))])
             return
 
+        # On the video lesson (e.g. paused, or asking for the video) → re-deliver
+        # the lesson video + Start-quiz buttons rather than dropping into chat.
+        if session.stage == "lesson":
+            await db.commit()
+            await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+            return
+
         # Finished the current lesson but more lessons exist (e.g. older sessions,
         # or lessons added later) → continue automatically instead of chatting.
         if session.stage == "done":
@@ -1168,6 +1175,6 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 await _advance_lesson(db, session, frm, lang, nm)
                 return
 
-        # Otherwise (stage lesson/done/quiz_failed with free text) → Teacher agent
+        # Otherwise (stage done/quiz_failed with free text) → Teacher agent
         await db.commit()
         await _teacher_answer(session, frm, lang, text)

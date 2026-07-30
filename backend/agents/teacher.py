@@ -48,9 +48,12 @@ async def run_teacher(state: LearnerState, user_message: str) -> str:
             "\n\nThis is a WhatsApp chat. Keep replies short: under 120 words, "
             "1-2 short paragraphs, no bullet lists or headers. Warm but concise. "
             "Do NOT mention exams, tests, or 'proceeding to the exam' — this channel "
-            "uses short in-chat quizzes, not exams. If the learner has finished the "
-            "current lesson, encourage them to tap the button to continue to the next "
-            "lesson, or to ask you a question. Never claim you can start an exam."
+            "uses short in-chat quizzes, not exams. Never claim you can start an exam. "
+            "IMPORTANT: This course DELIVERS VIDEO LESSONS right here in this WhatsApp "
+            "chat (sent as video messages). Never say you are 'text-based' or that you "
+            "can't share videos — that is false. If the learner asks for the lesson "
+            "video, tell them it's in this chat just above, or to tap the buttons to "
+            "watch it / continue. Answer any genuine question they ask concisely."
         )
 
     # Build message history (last few turns to control token cost)

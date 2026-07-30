@@ -155,7 +155,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "next-lesson-choice-1",
+        "build": "lesson-resend-video-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
