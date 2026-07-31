@@ -799,6 +799,59 @@ async def _translate_quiz(english: list[dict]) -> list[dict]:
     return final
 
 
+TRANSLATE_ASSIGN_SYS = """You translate open-ended assignment prompts from English into 5 Indian languages.
+Input: a JSON array of {"q":"<english prompt>"}.
+Translate each prompt into Hindi(hi), Marathi(mr), Telugu(te), Tamil(ta), Kannada(kn). Faithful, natural for Indian learners; keep technical AI terms recognizable. Do NOT change the English.
+Return ONLY strict JSON: {"translations":[{"q":{"hi":"","mr":"","te":"","ta":"","kn":""}}]}
+The array MUST be the same length and order as the input. Do not add, drop, or reorder anything."""
+
+DEFAULT_RUBRIC = ("Evaluate whether the answer correctly and clearly addresses the prompt and shows "
+                  "genuine understanding of the concept, explained in the learner's own words.")
+
+
+def _parse_assignments(text: str) -> list[dict]:
+    """Parse numbered assignment prompts (1., 2., Q1) …) deterministically. A prompt
+    may span multiple lines (joined). Returns English items {q}. Empty if not numbered."""
+    lines = text.split("\n")
+    starts = [i for i, l in enumerate(lines) if re.match(r"^\s*(?:Q\s*)?\d+\s*[.)\:]\s*\S", l)]
+    if not starts:
+        return []
+    out: list[dict] = []
+    for k in range(len(starts)):
+        s = starts[k]
+        e = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        block = " ".join(x.strip() for x in lines[s:e] if x.strip())
+        block = re.sub(r"^\s*(?:Q\s*)?\d+\s*[.)\:]\s*", "", block).strip()
+        block = re.sub(r"\s*\[[^\]]{1,20}\]\s*$", "", block).strip()   # drop trailing [tags]
+        if len(block) >= 8:
+            out.append({"q": block})
+    return out
+
+
+async def _translate_assignments(english: list[dict]) -> list[dict]:
+    """Translate parsed English prompts into all languages (AI does ONLY translation).
+    A failed batch leaves those items English-only. Attaches a default rubric."""
+    batches = [english[i:i + 8] for i in range(0, len(english), 8)]
+    results = await asyncio.gather(
+        *[_claude_json(TRANSLATE_ASSIGN_SYS, json.dumps([{"q": it["q"]} for it in b], ensure_ascii=False))
+          for b in batches],
+        return_exceptions=True,
+    )
+    final: list[dict] = []
+    for b, r in zip(batches, results):
+        trs = (r.get("translations") if isinstance(r, dict) else None) or []
+        for i, en in enumerate(b):
+            question = {"en": en["q"]}
+            tr = trs[i] if i < len(trs) else {}
+            tq = tr.get("q") or {}
+            for lang in ("hi", "mr", "te", "ta", "kn"):
+                lq = (tq.get(lang) or "").strip()
+                if lq:
+                    question[lang] = lq
+            final.append({"question": question, "rubric": DEFAULT_RUBRIC})
+    return final
+
+
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                        replace: bool = Form(False),
@@ -838,9 +891,16 @@ async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), 
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     content = await _bulk_content(file, text)
-    items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
+    parsed = _parse_assignments(content)
+    if parsed:
+        # Deterministic extraction of the prompts + AI translation only.
+        items = _clean_assignments(await _translate_assignments(parsed))
+    else:
+        # Unstructured doc → let the AI find the prompts too.
+        items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
     if not items:
-        raise HTTPException(status_code=422, detail="No assignment questions found in that document.")
+        raise HTTPException(status_code=422,
+                            detail="No assignment prompts found — number each prompt (1., 2., …) or paste them, one per line.")
     if replace:
         await db.execute(delete(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id))
     order = 0 if replace else await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)
