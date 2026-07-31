@@ -303,14 +303,17 @@ function CourseEditor({ course, run }: { course: AdminCourse; run: (fn: () => Pr
           }}>+ Add module</button>
       </div>
 
-      {course.modules.map((m) => <ModuleCard key={m.id} m={m} run={run} />)}
+      {course.modules.map((m, i) => <ModuleCard key={m.id} m={m} moduleNo={i + 1} run={run} />)}
       {course.modules.length === 0 && <p className="text-sm text-zinc-400">No modules yet — add one above.</p>}
     </div>
   );
 }
 
 // ── Module (collapsible) ─────────────────────────────────────────────────────
-function ModuleCard({ m, run }: { m: AdminCourse["modules"][number]; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+function ModuleCard({ m, moduleNo, run }: { m: AdminCourse["modules"][number]; moduleNo: number; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  // 1-based lesson number within the module (running across its sections)
+  const lessonNum = new Map<string, number>();
+  m.sections.forEach((s) => s.videos.forEach((v) => lessonNum.set(v.id, lessonNum.size + 1)));
   const [open, setOpen] = useState(false);
   const videoCount = m.sections.reduce((n, s) => n + s.videos.length, 0);
 
@@ -360,7 +363,7 @@ function ModuleCard({ m, run }: { m: AdminCourse["modules"][number]; run: (fn: (
                   </div>
                 </div>
                 <div className="mt-2 flex flex-col gap-2">
-                  {s.videos.map((v) => <LessonRow key={v.id} video={v} run={run} />)}
+                  {s.videos.map((v) => <LessonRow key={v.id} video={v} num={`${moduleNo}.${lessonNum.get(v.id)}`} run={run} />)}
                   <button className="self-start text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50"
                     onClick={async () => {
                       const title = window.prompt("Lesson title:");
@@ -382,7 +385,7 @@ function ModuleCard({ m, run }: { m: AdminCourse["modules"][number]; run: (fn: (
 }
 
 // ── Lesson row (title + base video + per-language variants) ──────────────────────
-function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+function LessonRow({ video, num, run }: { video: AdminVideo; num: string; run: (fn: () => Promise<unknown>) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const langsSet = video.variants.length;
   return (
@@ -390,6 +393,7 @@ function LessonRow({ video, run }: { video: AdminVideo; run: (fn: () => Promise<
       <div className="flex items-center justify-between gap-3">
         <button className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)}>
           <span className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+          <span className="text-xs font-semibold text-emerald-700 shrink-0">{num}</span>
           <span className="text-sm font-medium truncate">🎬 {video.title}</span>
           <span className="text-[11px] text-zinc-400 shrink-0">{langsSet}/6 languages</span>
         </button>
