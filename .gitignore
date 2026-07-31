@@ -28,6 +28,9 @@ dist/
 *.tsbuildinfo
 next-env.d.ts
 
+# ── Generated (regenerate with `graphify update .`) ───────────────
+graphify-out/
+
 # ── Editor / OS ──────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
