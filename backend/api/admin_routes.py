@@ -591,18 +591,7 @@ def _extract_text(filename: str, data: bytes) -> str:
                 detail="Server can't read .docx (python-docx missing). Paste the text or upload a .txt.")
         try:
             doc = docx.Document(io.BytesIO(data))
-            parts = []
-            list_counters: dict[str, int] = {}   # numId -> running count, for reconstructing "1. " etc.
-            for p in doc.paragraphs:
-                num_id = _word_list_numid(p)
-                if num_id is not None and not re.match(r"^\s*(?:Q\s*)?\d+\s*[.)\:]", p.text):
-                    # Word's own numbered/bulleted list — the "1." is a rendered marker,
-                    # NOT part of p.text, so reconstruct it as literal text or the
-                    # deterministic parser (and even the AI) can't see the numbering.
-                    list_counters[num_id] = list_counters.get(num_id, 0) + 1
-                    parts.append(f"{list_counters[num_id]}. {p.text}")
-                else:
-                    parts.append(p.text)
+            parts = [p.text for p in doc.paragraphs]
             for tbl in doc.tables:
                 for row in tbl.rows:
                     parts.append("\t".join(c.text for c in row.cells))
