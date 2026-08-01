@@ -591,7 +591,18 @@ def _extract_text(filename: str, data: bytes) -> str:
                 detail="Server can't read .docx (python-docx missing). Paste the text or upload a .txt.")
         try:
             doc = docx.Document(io.BytesIO(data))
-            parts = [p.text for p in doc.paragraphs]
+            parts = []
+            list_counters: dict[str, int] = {}   # numId -> running count, for reconstructing "1. " etc.
+            for p in doc.paragraphs:
+                num_id = _word_list_numid(p)
+                if num_id is not None and not re.match(r"^\s*(?:Q\s*)?\d+\s*[.)\:]", p.text):
+                    # Word's own numbered/bulleted list — the "1." is a rendered marker,
+                    # NOT part of p.text, so reconstruct it as literal text or the
+                    # deterministic parser (and even the AI) can't see the numbering.
+                    list_counters[num_id] = list_counters.get(num_id, 0) + 1
+                    parts.append(f"{list_counters[num_id]}. {p.text}")
+                else:
+                    parts.append(p.text)
             for tbl in doc.tables:
                 for row in tbl.rows:
                     parts.append("\t".join(c.text for c in row.cells))
@@ -828,9 +839,86 @@ def _parse_assignments(text: str) -> list[dict]:
     return out
 
 
+_TASK_TITLE_RE = re.compile(r"^[A-Za-z]?\d+\s*[—–\-]\s*(.+)$")
+
+
+def _iter_docx_blocks(doc):
+    """Yield ('p', Paragraph) / ('tbl', Table) in TRUE document order (python-docx's
+    doc.paragraphs / doc.tables are separate flat lists that lose interleaving)."""
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
+    for child in doc.element.body.iterchildren():
+        tag = child.tag.split("}")[-1]
+        if tag == "p":
+            yield ("p", Paragraph(child, doc))
+        elif tag == "tbl":
+            yield ("tbl", Table(child, doc))
+
+
+def _table_is_rubric(t) -> bool:
+    if not t.rows:
+        return False
+    header = [c.text.strip().lower() for c in t.rows[0].cells]
+    return any("submit" in h for h in header) and any("pass" in h for h in header)
+
+
+def _parse_task_assigner_pack(data: bytes) -> list[dict]:
+    """Deterministic parser for the 'Task Assigner content pack' template: a title
+    line like 'A1 — Spot It In Your Field', a short label ('Task Assigner message:'),
+    the prompt paragraph, then Covers/Format + Submit/Pass/Fail-nudge tables (in any
+    order, possibly interleaved). Builds a real grading rubric from the Pass/Fail-nudge
+    cells instead of a generic placeholder. Returns [] if the doc isn't this template."""
+    try:
+        import docx
+    except ImportError:
+        return []
+    try:
+        doc = docx.Document(io.BytesIO(data))
+        blocks = list(_iter_docx_blocks(doc))
+    except Exception:
+        return []
+
+    title_idx = [i for i, (k, o) in enumerate(blocks) if k == "p" and _TASK_TITLE_RE.match(o.text.strip())]
+    if len(title_idx) < 2:      # need at least 2 to be confident this is the template, not a stray line
+        return []
+
+    out: list[dict] = []
+    for ti, start in enumerate(title_idx):
+        end = title_idx[ti + 1] if ti + 1 < len(title_idx) else len(blocks)
+        span = blocks[start + 1:end]
+
+        # The prompt is the longest paragraph in the span — labels/headers are short.
+        para_texts = [o.text.strip() for k, o in span if k == "p" and o.text.strip()]
+        prompt = max(para_texts, key=len) if para_texts else None
+        if not prompt or len(prompt) < 8:
+            continue
+
+        pass_txt = fail_txt = None
+        for k, o in span:
+            if k == "tbl" and _table_is_rubric(o):
+                header = [c.text.strip().lower() for c in o.rows[0].cells]
+                data_row = o.rows[1].cells if len(o.rows) > 1 else None
+                if data_row:
+                    for hi, h in enumerate(header):
+                        if "pass" in h:
+                            pass_txt = data_row[hi].text.strip()
+                        elif "fail" in h:
+                            fail_txt = data_row[hi].text.strip()
+                break
+
+        rubric = None
+        if pass_txt and fail_txt:
+            rubric = f"Pass if: {pass_txt}. If not met, note: {fail_txt}"
+        elif pass_txt:
+            rubric = f"Pass if: {pass_txt}"
+        out.append({"q": prompt, "rubric": rubric})
+    return out
+
+
 async def _translate_assignments(english: list[dict]) -> list[dict]:
     """Translate parsed English prompts into all languages (AI does ONLY translation).
-    A failed batch leaves those items English-only. Attaches a default rubric."""
+    A failed batch leaves those items English-only. Uses each item's own `rubric` if
+    given (e.g. built from a doc's Pass/Fail table); otherwise a sensible default."""
     batches = [english[i:i + 8] for i in range(0, len(english), 8)]
     results = await asyncio.gather(
         *[_claude_json(TRANSLATE_ASSIGN_SYS, json.dumps([{"q": it["q"]} for it in b], ensure_ascii=False))
@@ -848,7 +936,7 @@ async def _translate_assignments(english: list[dict]) -> list[dict]:
                 lq = (tq.get(lang) or "").strip()
                 if lq:
                     question[lang] = lq
-            final.append({"question": question, "rubric": DEFAULT_RUBRIC})
+            final.append({"question": question, "rubric": (en.get("rubric") or "").strip() or DEFAULT_RUBRIC})
     return final
 
 
@@ -890,17 +978,36 @@ async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), 
     by default; `replace=true` clears this lesson's existing assignment bank first."""
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
-    content = await _bulk_content(file, text)
-    parsed = _parse_assignments(content)
+
+    parsed: list[dict] = []
+    if file is not None:
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        if (file.filename or "").lower().endswith(".docx"):
+            # Try the structured "Task Assigner pack" template first (title + label +
+            # prompt + Covers/Format + Submit/Pass/Fail-nudge tables) — builds a real
+            # rubric from the doc instead of a generic placeholder.
+            parsed = _parse_task_assigner_pack(raw)
+        content = _extract_text(file.filename or "", raw)
+    else:
+        content = (text or "").strip()
+    if not content and not parsed:
+        raise HTTPException(status_code=400, detail="No content — upload a .docx/.txt or paste the questions.")
+    content = content[:60000]
+
+    if not parsed:
+        parsed = _parse_assignments(content)
     if parsed:
-        # Deterministic extraction of the prompts + AI translation only.
+        # Deterministic extraction of the prompts (+ rubric, if the doc had one) + AI translation only.
         items = _clean_assignments(await _translate_assignments(parsed))
     else:
         # Unstructured doc → let the AI find the prompts too.
         items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
     if not items:
         raise HTTPException(status_code=422,
-                            detail="No assignment prompts found — number each prompt (1., 2., …) or paste them, one per line.")
+                            detail="No assignment prompts found — number each prompt (1., 2., …), use the "
+                                   "Task Assigner template, or paste them one per line.")
     if replace:
         await db.execute(delete(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id))
     order = 0 if replace else await _next_order(db, AssignmentPrompt, AssignmentPrompt.video_id, video_id)

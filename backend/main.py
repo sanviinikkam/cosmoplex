@@ -159,7 +159,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "assign-deterministic-parse-1",
+        "build": "task-assigner-pack-parse-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
