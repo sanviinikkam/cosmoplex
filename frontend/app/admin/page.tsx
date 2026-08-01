@@ -46,6 +46,16 @@ function PreviewableId({ publicId, className }: { publicId: string; className?: 
   );
 }
 
+// Small spinner used everywhere something is loading/saving, so it's never silent.
+function Spinner({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-label="Loading">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -94,7 +104,8 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button disabled={busy || !password}
-          className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium py-2.5 transition-colors">
+          className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium py-2.5 transition-colors inline-flex items-center justify-center gap-2">
+          {busy && <Spinner className="w-4 h-4" />}
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
@@ -107,6 +118,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [courses, setCourses] = useState<AdminCourse[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -125,9 +137,10 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   async function run(fn: () => Promise<unknown>) {
-    setError("");
+    setError(""); setSaving(true);
     try { await fn(); await refresh(); }
     catch (err) { setError(err instanceof Error ? err.message : "Something went wrong"); }
+    finally { setSaving(false); }
   }
 
   async function newCourse() {
@@ -147,13 +160,19 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <p className="text-sm text-zinc-500">Manage courses, lessons, and videos</p>
         </div>
         <div className="flex items-center gap-4">
+          {saving && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
+              <Spinner className="w-3.5 h-3.5" /> Saving…
+            </span>
+          )}
           <button
+            disabled={saving}
             onClick={() => run(async () => {
               const r = await adminApi.syncVideos();
               window.alert(`Synced existing content:\n• ${r.videosSynced} lesson video set(s)\n• ${r.quizzesAdded} quiz question(s) added\n• ${r.assignmentsAdded} assignment(s) added`);
             })}
-            className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50">
-            ⟳ Sync existing content
+            className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-50 inline-flex items-center gap-1.5">
+            {saving ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Sync existing content
           </button>
           <button onClick={onLogout} className="text-sm text-zinc-500 hover:text-zinc-800">Log out</button>
         </div>
@@ -170,7 +189,11 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             className="w-full mb-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2 transition-colors">
             + New course
           </button>
-          {loading ? <p className="text-sm text-zinc-400 px-2 py-4">Loading…</p> : (
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-zinc-400 px-2 py-4">
+              <Spinner className="w-4 h-4" /> Loading courses…
+            </div>
+          ) : (
             <ul className="flex flex-col gap-1">
               {courses.map((c) => (
                 <li key={c.id}>
@@ -203,18 +226,23 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 function IntroVideosManager() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<IntroVideoItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
     try { setItems(await adminApi.listIntroVideos()); }
     catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+    finally { setLoading(false); }
   }, []);
   useEffect(() => { if (open) load(); }, [open, load]);
 
+  const [saving, setSaving] = useState(false);
   async function save(fn: () => Promise<unknown>) {
-    setErr("");
+    setErr(""); setSaving(true);
     try { await fn(); await load(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
   }
 
   const rows = [{ code: "default", label: "Default — plays for every language" }, ...LANGUAGES];
@@ -235,8 +263,18 @@ function IntroVideosManager() {
       {open && (
         <div className="px-5 pb-5">
           {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+          {saving && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 mb-2">
+              <Spinner className="w-3.5 h-3.5" /> Saving…
+            </div>
+          )}
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-3">
+              <Spinner className="w-4 h-4" /> Loading intro videos…
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {rows.map((r) => {
+            {!loading && rows.map((r) => {
               const id = idFor(r.code);
               return (
                 <div key={r.code} className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
@@ -496,7 +534,8 @@ function BulkUpload({ kind, onUpload, onDone }: {
         {kind === "quiz" ? "MCQ" : "assignment"} and translates it into all 6 languages.
       </p>
       <div className="flex flex-wrap items-center gap-3">
-        <label className={`text-xs rounded px-2 py-1 ${busy ? "bg-zinc-200 text-zinc-400 cursor-default" : "bg-sky-600 text-white hover:bg-sky-500 cursor-pointer"}`}>
+        <label className={`inline-flex items-center gap-1.5 text-xs rounded px-2 py-1 ${busy ? "bg-zinc-200 text-zinc-400 cursor-default" : "bg-sky-600 text-white hover:bg-sky-500 cursor-pointer"}`}>
+          {busy && <Spinner className="w-3.5 h-3.5" />}
           {busy ? "Working…" : "⤴ Upload doc"}
           <input type="file" accept=".docx,.txt,.md,.csv" className="hidden" disabled={busy}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) run({ file: f }); e.currentTarget.value = ""; }} />
@@ -516,11 +555,15 @@ function BulkUpload({ kind, onUpload, onDone }: {
               : "Paste assignment prompts (one per line or numbered)."}
             className="w-full text-xs border border-zinc-300 rounded px-2 py-1.5" />
           <button type="button" disabled={busy || !text.trim()}
-            className="self-start text-xs bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-200 disabled:text-zinc-400 text-white rounded px-3 py-1"
-            onClick={() => run({ text })}>{busy ? "Working…" : "Extract & add"}</button>
+            className="self-start inline-flex items-center gap-1.5 text-xs bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-200 disabled:text-zinc-400 text-white rounded px-3 py-1"
+            onClick={() => run({ text })}>{busy && <Spinner className="w-3.5 h-3.5" />}{busy ? "Working…" : "Extract & add"}</button>
         </div>
       )}
-      {busy && <p className="text-[11px] text-zinc-500">Extracting &amp; translating — can take 20–40s for many {noun}.</p>}
+      {busy && (
+        <p className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+          <Spinner className="w-3 h-3" /> Extracting &amp; translating — can take 20–40s for many {noun}.
+        </p>
+      )}
       {msg && <p className="text-[11px] text-emerald-700">{msg}</p>}
       {err && <p className="text-[11px] text-red-600">{err}</p>}
     </div>
@@ -530,11 +573,14 @@ function BulkUpload({ kind, onUpload, onDone }: {
 function QuizManager({ videoId }: { videoId: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<QuizItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<null | { id?: string; draft: typeof EMPTY_QUIZ }>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
     try { setItems(await adminApi.listQuizzes(videoId)); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+    finally { setLoading(false); }
   }, [videoId]);
   useEffect(() => { if (open) load(); }, [open, load]);
 
@@ -557,7 +603,12 @@ function QuizManager({ videoId }: { videoId: string }) {
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           {err && <p className="text-xs text-red-600">{err}</p>}
-          {items.map((q, i) => {
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+              <Spinner className="w-4 h-4" /> Loading quiz questions…
+            </div>
+          )}
+          {!loading && items.map((q, i) => {
             const opts = q.options?.en ?? Object.values(q.options ?? {})[0] ?? [];
             return (
               <div key={q.id} className="text-xs bg-zinc-50 rounded px-2 py-1.5">
@@ -638,11 +689,14 @@ function QuizEditor({ initial, onSave, onCancel }: {
 function AssignmentManager({ videoId }: { videoId: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<AssignmentItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<null | { id?: string; question: Record<string, string>; rubric: string }>(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
     try { setItems(await adminApi.listAssignments(videoId)); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+    finally { setLoading(false); }
   }, [videoId]);
   useEffect(() => { if (open) load(); }, [open, load]);
 
@@ -665,7 +719,12 @@ function AssignmentManager({ videoId }: { videoId: string }) {
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           {err && <p className="text-xs text-red-600">{err}</p>}
-          {items.map((a, i) => (
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+              <Spinner className="w-4 h-4" /> Loading assignments…
+            </div>
+          )}
+          {!loading && items.map((a, i) => (
             <div key={a.id} className="flex items-center justify-between gap-2 text-xs bg-zinc-50 rounded px-2 py-1.5">
               <span className="truncate">{i + 1}. {a.question.en ?? "(no English)"}</span>
               <span className="flex gap-2 shrink-0">
@@ -748,8 +807,9 @@ function UploadButton({ label, onUploaded, small }: {
     : "text-xs rounded-md bg-zinc-800 hover:bg-zinc-700 text-white px-2 py-0.5 cursor-pointer";
 
   return (
-    <span className="inline-flex items-center gap-1">
-      <label className={cls}>
+    <span className="inline-flex items-center gap-1.5">
+      <label className={`${cls} inline-flex items-center gap-1.5`}>
+        {pct !== null && <Spinner className="w-3 h-3" />}
         {pct !== null ? `Uploading ${pct}%` : label}
         <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={onFile} disabled={pct !== null} />
       </label>
