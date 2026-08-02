@@ -12,6 +12,7 @@ export type AdminVideo = {
 export type AdminSection = { id: string; title: string; orderIndex: number; videos: AdminVideo[] };
 export type AdminModule = {
   id: string; title: string; outcome: string | null; orderIndex: number; level: number;
+  hasContentDoc: boolean; contentDocPreview: string;
   sections: AdminSection[];
 };
 export type AdminCourse = {
@@ -124,6 +125,13 @@ export const adminApi = {
     adminFetch<AdminCourse>(`/admin/modules/${id}`, { method: "PUT", body: JSON.stringify(b) }),
   deleteModule: (id: string) =>
     adminFetch<AdminCourse>(`/admin/modules/${id}`, { method: "DELETE" }),
+
+  getModuleContentDoc: (moduleId: string) =>
+    adminFetch<{ moduleId: string; contentDoc: string }>(`/admin/modules/${moduleId}/content-doc`),
+  uploadModuleContentDoc: (moduleId: string, input: { file?: File; text?: string }) =>
+    adminUpload<{ moduleId: string; length: number }>(`/admin/modules/${moduleId}/content-doc`, input),
+  deleteModuleContentDoc: (moduleId: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/modules/${moduleId}/content-doc`, { method: "DELETE" }),
 
   createSection: (b: { module_id: string; title: string }) =>
     adminFetch<AdminCourse>("/admin/sections", { method: "POST", body: JSON.stringify(b) }),

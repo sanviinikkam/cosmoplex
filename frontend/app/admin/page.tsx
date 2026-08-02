@@ -385,6 +385,7 @@ function ModuleCard({ m, moduleNo, run }: { m: AdminCourse["modules"][number]; m
       {open && (
         <div className="px-5 pb-5">
           {m.outcome && <p className="text-sm text-zinc-500 mb-3">{m.outcome}</p>}
+          <ModuleContentDoc moduleId={m.id} hasDoc={m.hasContentDoc} preview={m.contentDocPreview} onChanged={() => run(async () => {})} />
           <div className="pl-4 border-l-2 border-zinc-100 flex flex-col gap-4">
             {m.sections.map((s) => (
               <div key={s.id}>
@@ -416,6 +417,107 @@ function ModuleCard({ m, moduleNo, run }: { m: AdminCourse["modules"][number]; m
                 if (title?.trim()) await run(() => adminApi.createSection({ module_id: m.id, title: title.trim() }));
               }}>+ Add section</button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Module content doc (detailed sub-lesson content — the Teacher agent's
+// knowledge source for this module) ───────────────────────────────────────────
+function ModuleContentDoc({ moduleId, hasDoc, preview, onChanged }: {
+  moduleId: string; hasDoc: boolean; preview: string; onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fullText, setFullText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function loadFull() {
+    setLoading(true);
+    try { setFullText((await adminApi.getModuleContentDoc(moduleId)).contentDoc); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+    finally { setLoading(false); }
+  }
+
+  async function doUpload(input: { file?: File; text?: string }) {
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      const r = await adminApi.uploadModuleContentDoc(moduleId, input);
+      setMsg(`✓ Saved (${r.length.toLocaleString()} characters).`);
+      setPasteText(""); setShowPaste(false);
+      onChanged();
+      if (open) await loadFull();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Upload failed"); }
+    finally { setBusy(false); }
+  }
+
+  async function doDelete() {
+    if (!window.confirm("Remove this module's content doc? The Teacher agent will lose this knowledge source.")) return;
+    setBusy(true); setErr("");
+    try { await adminApi.deleteModuleContentDoc(moduleId); setFullText(""); onChanged(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Delete failed"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 mb-4">
+      <button type="button" className="w-full flex items-center justify-between px-3 py-2 text-left"
+        onClick={() => { const next = !open; setOpen(next); if (next && fullText === null) loadFull(); }}>
+        <span className="text-sm font-medium">
+          📄 Module content doc {hasDoc ? <span className="text-emerald-700">(uploaded)</span> : <span className="text-zinc-400">(not set)</span>}
+        </span>
+        <span className="text-zinc-400 text-xs">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 flex flex-col gap-2">
+          <p className="text-[11px] text-zinc-600">
+            Detailed content for every sub-lesson in this module — this is what the Teacher agent uses to
+            answer learner questions for this module. Uploading replaces the existing doc.
+          </p>
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
+              <Spinner className="w-4 h-4" /> Loading…
+            </div>
+          )}
+          {!loading && fullText !== null && (
+            fullText ? (
+              <textarea readOnly value={fullText} rows={8}
+                className="w-full text-xs font-mono border border-zinc-300 rounded px-2 py-1.5 bg-white" />
+            ) : (
+              <p className="text-xs text-zinc-400">{preview || "No content doc set for this module yet."}</p>
+            )
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className={`inline-flex items-center gap-1.5 text-xs rounded px-2 py-1 ${busy ? "bg-zinc-200 text-zinc-400 cursor-default" : "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer"}`}>
+              {busy && <Spinner className="w-3.5 h-3.5" />}
+              {busy ? "Working…" : (hasDoc || fullText ? "⤴ Replace doc" : "⤴ Upload doc")}
+              <input type="file" accept=".docx,.txt,.md,.csv" className="hidden" disabled={busy}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) doUpload({ file: f }); e.currentTarget.value = ""; }} />
+            </label>
+            <button type="button" disabled={busy} className="text-xs text-indigo-700 hover:underline disabled:text-zinc-400"
+              onClick={() => setShowPaste((s) => !s)}>{showPaste ? "hide paste" : "or paste text"}</button>
+            {(hasDoc || fullText) && (
+              <button type="button" disabled={busy} onClick={doDelete}
+                className="text-xs text-red-500 hover:text-red-700 disabled:text-zinc-400">Clear doc</button>
+            )}
+          </div>
+          {showPaste && (
+            <div className="flex flex-col gap-1.5">
+              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={6} disabled={busy}
+                placeholder="Paste the detailed content for every sub-lesson in this module…"
+                className="w-full text-xs border border-zinc-300 rounded px-2 py-1.5" />
+              <button type="button" disabled={busy || !pasteText.trim()}
+                className="self-start text-xs bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-200 disabled:text-zinc-400 text-white rounded px-3 py-1"
+                onClick={() => doUpload({ text: pasteText })}>{busy ? "Working…" : "Save"}</button>
+            </div>
+          )}
+          {msg && <p className="text-[11px] text-emerald-700">{msg}</p>}
+          {err && <p className="text-[11px] text-red-600">{err}</p>}
         </div>
       )}
     </div>

@@ -217,6 +217,7 @@ class CourseModule(Base):
     outcome = Column(Text, nullable=True)
     order_index = Column(Integer, nullable=False)
     level = Column(Integer, nullable=False, default=1)   # 1=Beginner 2=Intermediate 3=Advanced
+    content_doc = Column(Text, nullable=True)   # detailed sub-lesson content (admin-uploaded); Teacher agent's knowledge source
 
     course = relationship("Course", back_populates="modules")
     sections = relationship(

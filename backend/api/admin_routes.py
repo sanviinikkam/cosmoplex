@@ -101,6 +101,8 @@ def _course_tree(c: Course) -> dict:
             {
                 "id": m.id, "title": m.title, "outcome": m.outcome,
                 "orderIndex": m.order_index, "level": m.level,
+                "hasContentDoc": bool(m.content_doc),
+                "contentDocPreview": (m.content_doc or "")[:200],
                 "sections": [
                     {
                         "id": s.id, "title": s.title, "orderIndex": s.order_index,
@@ -230,6 +232,52 @@ async def delete_module(module_id: str, _: bool = Depends(require_admin), db: As
     await db.execute(delete(CourseModule).where(CourseModule.id == module_id))
     await db.commit()
     return await _tree(course_id, db)
+
+
+# ── Module content doc (the Teacher agent's knowledge source per module) ────────
+class ContentDocBody(BaseModel):
+    text: str
+
+
+@router.get("/modules/{module_id}/content-doc")
+async def get_module_content_doc(module_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    m = await db.get(CourseModule, module_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return {"moduleId": module_id, "contentDoc": m.content_doc or ""}
+
+
+@router.post("/modules/{module_id}/content-doc")
+async def upload_module_content_doc(module_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
+                                    _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Upload (or paste) the detailed sub-lesson content for a module — this
+    becomes the Teacher agent's knowledge source for that module. Replaces
+    whatever was there before (one doc per module)."""
+    m = await db.get(CourseModule, module_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Module not found")
+    if file is not None:
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        content = _extract_text(file.filename or "", raw)
+    else:
+        content = (text or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="No content — upload a .docx/.txt or paste the text.")
+    m.content_doc = content[:200000]   # generous cap; guards against a runaway paste
+    await db.commit()
+    return {"moduleId": module_id, "length": len(m.content_doc)}
+
+
+@router.delete("/modules/{module_id}/content-doc")
+async def delete_module_content_doc(module_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    m = await db.get(CourseModule, module_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Module not found")
+    m.content_doc = None
+    await db.commit()
+    return {"deleted": True, "moduleId": module_id}
 
 
 # ── Sections ────────────────────────────────────────────────────────────────────
