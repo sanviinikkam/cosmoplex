@@ -159,7 +159,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "security-abuse-hardening-1",
+        "build": "signup-email-domain-check-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

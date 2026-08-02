@@ -6,6 +6,7 @@ from sqlalchemy import select
 from db.database import get_db
 from db.models import LearnerProfile
 from core.auth import hash_password, verify_password, create_access_token
+from core.email_check import domain_can_receive_mail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,6 +38,12 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
+        )
+
+    if not await domain_can_receive_mail(body.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That email address doesn't look valid — please check for a typo (e.g. gmail.com, not gmial.com).",
         )
 
     learner = LearnerProfile(

@@ -13,8 +13,9 @@ export async function apiFetch<T>(
       : { "Content-Type": "application/json", ...options?.headers },
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API error ${res.status}: ${body}`);
+    let detail = await res.text();
+    try { detail = JSON.parse(detail).detail ?? detail; } catch { /* keep raw text */ }
+    throw new Error(detail || `Request failed (${res.status})`);
   }
   return res.json() as Promise<T>;
 }
