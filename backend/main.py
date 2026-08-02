@@ -161,7 +161,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "module-content-doc-1",
+        "build": "progress-aware-teacher-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

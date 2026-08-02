@@ -29,20 +29,55 @@ Style guidelines:
 - If asked about something outside this module, address it briefly and redirect to the module
 """
 
+# Used once real per-learner progress + admin-uploaded content docs are available
+# (state.use_real_knowledge). Replaces the static placeholder curriculum above.
+REAL_KNOWLEDGE_TEACHER_SYSTEM = """You are the Teacher agent for an AI literacy course. You answer learner
+questions using ONLY the KNOWLEDGE below — it reflects exactly what this learner has actually been taught
+so far, based on the lessons they've completed.
+
+KNOWLEDGE (what the learner has covered so far):
+{knowledge}
+
+NOT YET COVERED (topics/lessons the learner hasn't reached yet — do NOT teach or explain these):
+{not_yet_covered}
+
+Rules:
+- Answer using ONLY the KNOWLEDGE above. Never use outside/general AI knowledge to fill gaps — if it's not
+  in KNOWLEDGE, treat it as not yet taught.
+- If the learner asks about something that matches an entry in NOT YET COVERED (or anything else the
+  KNOWLEDGE doesn't cover), do NOT explain or answer it. Instead: tell them warmly that this is covered in
+  an upcoming lesson (name the specific lesson/module from the list if it matches one), that they'll
+  understand it much better once they get there, and that they're welcome to come back and ask you again
+  after they reach it.
+- If KNOWLEDGE is empty (the learner hasn't completed anything yet, or no content has been uploaded for
+  their current lesson), say so briefly and encourage them to complete their current lesson first — don't
+  invent content.
+- ALWAYS respond in {target_language}, even if the learner writes in a different language.
+- Keep replies concise (under ~200 words), warm, no filler phrases, no markdown headers.
+"""
+
 
 async def run_teacher(state: LearnerState, user_message: str) -> str:
-    module = MODULE_MAP.get(state.current_module_id)
-    if not module:
-        return "Your course is complete. Navigate to the certificate page to download your certificate."
+    is_whatsapp = str(state.learner_id).startswith("wa:")
 
-    system_text = TEACHER_SYSTEM.format(
-        module_content=module["content"],
-        target_language=language_name(state.language),
-    )
+    if state.use_real_knowledge:
+        not_yet = "\n".join(f"- {t}" for t in state.not_yet_covered) or "(none)"
+        system_text = REAL_KNOWLEDGE_TEACHER_SYSTEM.format(
+            knowledge=state.knowledge_text or "(empty — nothing completed yet)",
+            not_yet_covered=not_yet,
+            target_language=language_name(state.language),
+        )
+    else:
+        module = MODULE_MAP.get(state.current_module_id)
+        if not module:
+            return "Your course is complete. Navigate to the certificate page to download your certificate."
+        system_text = TEACHER_SYSTEM.format(
+            module_content=module["content"],
+            target_language=language_name(state.language),
+        )
 
     # WhatsApp chats should be short — cuts the (priciest) output tokens and
     # reads better on a phone. Web chat keeps the normal length.
-    is_whatsapp = str(state.learner_id).startswith("wa:")
     if is_whatsapp:
         system_text += (
             "\n\nThis is a WhatsApp chat. Keep replies short: under 120 words, "

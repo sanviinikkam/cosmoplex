@@ -209,3 +209,10 @@ class LearnerState:
     last_agent: Optional[str] = None
     exam_in_progress: Optional[dict] = None
     task_in_progress: Optional[dict] = None
+    # Real, progress-scoped knowledge for the Teacher agent (see agents/progress.py).
+    # When use_real_knowledge is True, run_teacher uses knowledge_text/not_yet_covered
+    # instead of the static MODULE_MAP placeholder content — set by the caller once
+    # it has computed the learner's actual progress against the real course.
+    use_real_knowledge: bool = False
+    knowledge_text: str = ""
+    not_yet_covered: list = field(default_factory=list)

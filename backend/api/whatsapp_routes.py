@@ -37,6 +37,7 @@ from db.models import (
     VideoLanguageVariant, QuizQuestion, AssignmentPrompt, IntroVideo,
 )
 from agents.base import LearnerState
+from agents.progress import build_teacher_context
 from agents.teacher import run_teacher
 from api.whatsapp_content import (
     LESSON_VIDEOS, QUIZ, QUIZ_PASS, ASSIGNMENT, ASSIGN_PASS, CONTENT, tr,
@@ -505,6 +506,32 @@ async def diag_video(key: str, lang: str = "hi", idx: int = 0):
     return out
 
 
+@router.get("/diag-teacher")
+async def diag_teacher_context(key: str, lang: str = "en", completed: int = 0):
+    """Diagnose the Teacher agent's progress-scoped knowledge for a language,
+    simulating `completed` lessons done. Read-only — builds the same context
+    _teacher_answer would, without sending anything or calling the AI."""
+    if key != settings.whatsapp_verify_token:
+        return Response(status_code=403, content="forbidden")
+    out: dict = {"lang": lang, "completed": completed}
+    async with async_session_factory() as db:
+        try:
+            lessons = await _db_lessons(db, lang)
+            out["lesson_count"] = len(lessons)
+            out["lesson_titles"] = [l["title"] for l in lessons]
+            out["module_titles_in_order"] = [l["module_title"] for l in lessons]
+            out["modules_with_content_doc"] = [l["module_title"] for l in lessons if l.get("content_doc")]
+            completed_ids = {l["video_id"] for l in lessons[:completed] if l["video_id"]}
+            ctx = build_teacher_context(lessons, lambda l: l["video_id"] in completed_ids)
+            out["knowledge_text_length"] = len(ctx["knowledge_text"])
+            out["knowledge_text_preview"] = ctx["knowledge_text"][:500]
+            out["not_yet_covered"] = ctx["not_yet_covered"]
+            out["has_any_progress"] = ctx["has_any_progress"]
+        except Exception as e:
+            out["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    return out
+
+
 async def _send_rate_limit_notice(frm: str) -> None:
     """Politely tell a flooding/fast sender to slow down, in their known language
     if we have one. Only called at most once per cooldown (see should_notify)."""
@@ -694,7 +721,8 @@ async def _db_lessons(db, lang: str) -> list[dict]:
                 cloud_id = _variant_public_id(video, lang)
                 if cloud_id:
                     lessons.append({"video_id": video.id, "title": video.title,
-                                    "cloud_id": cloud_id})
+                                    "cloud_id": cloud_id, "module_id": module.id,
+                                    "module_title": module.title, "content_doc": module.content_doc})
     if not lessons:
         # DB not populated in this environment — fall back to the built-in lesson
         # so the flow never dead-ends. (video_id=None → quiz/assignment fall back too.)
@@ -703,7 +731,8 @@ async def _db_lessons(db, lang: str) -> list[dict]:
         if cloud_id:
             lessons.append({"video_id": None,
                             "title": "The 10 AI Words Every Fresher Must Know",
-                            "cloud_id": cloud_id})
+                            "cloud_id": cloud_id, "module_id": None,
+                            "module_title": None, "content_doc": None})
     return lessons
 
 
@@ -887,14 +916,24 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         )
 
 
-async def _teacher_answer(session, frm: str, lang: str, text: str | None) -> None:
-    """Answer a free-text question via the Teacher agent."""
+async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) -> None:
+    """Answer a free-text question via the Teacher agent, scoped to exactly what
+    this learner has actually completed (admin-uploaded module content docs)."""
     if is_abusive(text):
         await send_text(frm, tr(lang, "abusive_input"))
         return
     if not allow_ai_call():
         await send_text(frm, tr(lang, "ai_busy"))
         return
+
+    lessons = await _db_lessons(db, lang)
+    idx = session.lesson_index or 0
+    # Between lessons / just finished the course → the current lesson itself is done too.
+    current_lesson_done = session.stage in ("between_lessons", "clarify", "done")
+    completed_up_to = min(idx + 1 if current_lesson_done else idx, len(lessons))
+    completed_ids = {l["video_id"] for l in lessons[:completed_up_to] if l["video_id"]}
+    ctx = build_teacher_context(lessons, lambda l: l["video_id"] in completed_ids)
+
     state = LearnerState(
         learner_id=f"wa:{frm}",
         name=session.name or "there",
@@ -902,6 +941,9 @@ async def _teacher_answer(session, frm: str, lang: str, text: str | None) -> Non
         current_module_id="m1",
         messages=[{"role": "user", "content": text or ""}],
         last_agent="teacher",
+        use_real_knowledge=True,
+        knowledge_text=ctx["knowledge_text"],
+        not_yet_covered=ctx["not_yet_covered"],
     )
     reply = await run_teacher(state, text or "")
     await send_text(frm, reply)
@@ -1258,7 +1300,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if session.stage in ("between_lessons", "clarify"):
             session.stage = "clarify"
             await db.commit()
-            await _teacher_answer(session, frm, lang, text)
+            await _teacher_answer(db, session, frm, lang, text)
             await send_buttons(frm, tr(lang, "clarify_more"),
                                [("next_lesson", tr(lang, "start_next_btn"))])
             return
@@ -1280,4 +1322,4 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
 
         # Otherwise (stage done/quiz_failed with free text) → Teacher agent
         await db.commit()
-        await _teacher_answer(session, frm, lang, text)
+        await _teacher_answer(db, session, frm, lang, text)

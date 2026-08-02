@@ -9,16 +9,45 @@ from fastapi import WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from db.database import async_session_factory
-from db.models import LearnerProfile, AgentEvent
+from db.models import LearnerProfile, AgentEvent, Course, CourseModule, Section, Video, VideoProgress
 from agents.base import LearnerState
 from agents.orchestrator import route_message
+from agents.progress import ordered_lessons_from_course, build_teacher_context
 from agents.teacher import run_teacher
 from agents.examiner import run_examiner
 from agents.illustrator import run_illustrator
 from agents.task_assigner import run_task_assigner
 from agents.certifier import run_certifier
 from core.config import settings
+
+
+async def _real_teacher_context(db: AsyncSession, learner_id: str) -> dict:
+    """Real, progress-scoped knowledge for the web Teacher chat — same admin-
+    uploaded module content docs + completion logic as WhatsApp (agents/progress.py),
+    driven by this learner's actual VideoProgress instead of a WhatsApp lesson_index."""
+    res = await db.execute(
+        select(Course).order_by(Course.created_at).options(
+            selectinload(Course.modules)
+            .selectinload(CourseModule.sections)
+            .selectinload(Section.videos)
+        )
+    )
+    course = res.scalars().first()
+    if not course:
+        return {"knowledge_text": "", "not_yet_covered": []}
+    ordered_lessons = ordered_lessons_from_course(course)
+
+    prog_res = await db.execute(
+        select(VideoProgress.video_id).where(
+            VideoProgress.learner_id == learner_id, VideoProgress.completed == True  # noqa: E712
+        )
+    )
+    completed_ids = {row[0] for row in prog_res.all()}
+
+    ctx = build_teacher_context(ordered_lessons, lambda l: l["video_id"] in completed_ids)
+    return ctx
 
 
 async def _get_learner_from_token(token: str, db: AsyncSession):
@@ -108,6 +137,10 @@ async def handle_learn_websocket(websocket: WebSocket, learner_id: str):
                 response_text = ""
 
                 if agent_name == "teacher":
+                    ctx = await _real_teacher_context(db, learner.id)
+                    state.use_real_knowledge = True
+                    state.knowledge_text = ctx["knowledge_text"]
+                    state.not_yet_covered = ctx["not_yet_covered"]
                     response_text = await run_teacher(state, user_content)
 
                 elif agent_name == "examiner":
@@ -128,6 +161,10 @@ async def handle_learn_websocket(websocket: WebSocket, learner_id: str):
                         image_url = cert_url  # reuse field for cert URL
 
                 else:
+                    ctx = await _real_teacher_context(db, learner.id)
+                    state.use_real_knowledge = True
+                    state.knowledge_text = ctx["knowledge_text"]
+                    state.not_yet_covered = ctx["not_yet_covered"]
                     response_text = await run_teacher(state, user_content)
 
                 # Add assistant message to state
