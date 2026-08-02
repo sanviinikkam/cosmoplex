@@ -14,6 +14,7 @@ Learning flow (state persisted per phone in whatsapp_sessions):
 """
 import asyncio
 import hashlib
+import hmac
 import json
 import random
 import re
@@ -27,6 +28,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
+from core.moderation import is_abusive
+from core.rate_limit import check_rate_limit, should_notify
+from core.spend_guard import allow_ai_call
 from db.database import async_session_factory
 from db.models import (
     WhatsAppSession, Course, CourseModule, Section, Video,
@@ -242,7 +246,7 @@ async def transcribe_audio(media_id: str) -> str | None:
 
 async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
     """Transcribe a voice note, then run it through the normal text handler."""
-    text = await transcribe_audio(media_id)
+    text = await transcribe_audio(media_id) if allow_ai_call() else None
     if text:
         await _handle_message(frm, None, text, name)
         return
@@ -501,13 +505,44 @@ async def diag_video(key: str, lang: str = "hi", idx: int = 0):
     return out
 
 
+async def _send_rate_limit_notice(frm: str) -> None:
+    """Politely tell a flooding/fast sender to slow down, in their known language
+    if we have one. Only called at most once per cooldown (see should_notify)."""
+    lang = "en"
+    try:
+        async with async_session_factory() as db:
+            s = await db.get(WhatsAppSession, frm)
+            if s and s.language:
+                lang = s.language
+    except Exception:
+        pass
+    await send_text(frm, tr(lang, "rate_limited"))
+
+
+def _verify_webhook_signature(raw_body: bytes, header_sig: str | None) -> bool:
+    """Verify Meta's X-Hub-Signature-256 (HMAC-SHA256 of the raw body, keyed
+    with the Meta App Secret) so a spoofed POST can't burn AI/voice spend.
+    Skipped (returns True) if WHATSAPP_APP_SECRET isn't configured, so existing
+    setups don't break — but this should be set before real go-live."""
+    if not settings.whatsapp_app_secret:
+        return True
+    if not header_sig or not header_sig.startswith("sha256="):
+        return False
+    expected = hmac.new(settings.whatsapp_app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header_sig.split("=", 1)[1])
+
+
 # ── Inbound messages ─────────────────────────────────────────────────────────
 @router.post("/webhook")
 async def receive(request: Request, background_tasks: BackgroundTasks):
     # ACK Meta immediately, then handle each message in the background. The
     # Teacher/grading calls can take 10-30s; if we blocked the response Meta
     # would time out and re-deliver, causing duplicate replies.
-    data = await request.json()
+    raw_body = await request.body()
+    if not _verify_webhook_signature(raw_body, request.headers.get("x-hub-signature-256")):
+        print("⚠ WhatsApp webhook: signature verification failed — rejecting")
+        return Response(status_code=403, content="invalid signature")
+    data = json.loads(raw_body)
     try:
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
@@ -519,6 +554,12 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                         continue
                     frm = msg.get("from")
                     if not frm:
+                        continue
+                    # Per-phone rate limit — bounds flood/cost abuse before any AI
+                    # or DB work is even queued. Generous limits, real users never hit it.
+                    if check_rate_limit(frm):
+                        if should_notify(frm):
+                            background_tasks.add_task(_send_rate_limit_notice, frm)
                         continue
                     # Voice notes: transcribe, then treat as a typed message.
                     if msg.get("type") == "audio":
@@ -848,6 +889,12 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
 
 async def _teacher_answer(session, frm: str, lang: str, text: str | None) -> None:
     """Answer a free-text question via the Teacher agent."""
+    if is_abusive(text):
+        await send_text(frm, tr(lang, "abusive_input"))
+        return
+    if not allow_ai_call():
+        await send_text(frm, tr(lang, "ai_busy"))
+        return
     state = LearnerState(
         learner_id=f"wa:{frm}",
         name=session.name or "there",
@@ -1042,7 +1089,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             session.current_status = status
             await db.commit()
             # Personalized "why this course is for you", then ask their goal
-            pitch = await generate_pitch(lang, label, nm)
+            pitch = await generate_pitch(lang, label, nm) if allow_ai_call() else ""
             if pitch:
                 await send_text(frm, pitch)
             await _send_goal_question(frm, lang)
@@ -1169,6 +1216,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                     await send_buttons(frm, tr(lang, "submit_empty"),
                                        [("submit_assignment", tr(lang, "submit_btn"))])
                     return
+                if not allow_ai_call():
+                    # Leave the draft untouched so they can hit Submit again later
+                    # without retyping — this isn't a fail, grading just didn't run.
+                    await db.commit()
+                    await send_text(frm, tr(lang, "ai_busy"))
+                    return
                 vid = await _current_video_id(db, session, lang)
                 assignment = await _assignment_for(db, vid)
                 await send_text(frm, tr(lang, "grading"))
@@ -1184,6 +1237,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 return
             # A typed/voice message → append to the draft, don't grade yet
             if text and text.strip():
+                if is_abusive(text):
+                    await db.commit()
+                    await send_text(frm, tr(lang, "abusive_input"))
+                    return
                 session.assignment_draft = ((session.assignment_draft or "") + "\n" + text.strip()).strip()[:8000]
                 await db.commit()
                 await send_buttons(frm, tr(lang, "answer_added"),

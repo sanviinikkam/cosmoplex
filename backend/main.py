@@ -159,7 +159,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "fix-docx-nameerror-1",
+        "build": "security-abuse-hardening-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -1,7 +1,7 @@
 # Cosmoplex — Go-Live Checklist (Security, Reliability, Privacy, Abuse)
 
 > Pre-launch hardening + operational readiness. Priorities: **P0** = must fix before launch,
-> **P1** = within the first days, **P2** = soon after. Status reflects the code as of 2026-07-30.
+> **P1** = within the first days, **P2** = soon after. Status reflects the code as of 2026-08-02.
 > Pair with `HANDOVER.md` (ops) and `CLAUDE.md` (project context).
 
 ---
@@ -9,17 +9,21 @@
 ## 1. Security
 
 - [ ] **P0 — WhatsApp token is permanent.** Confirm `WHATSAPP_TOKEN` is a System User token set to
-  never expire. A temporary token silently kills the whole bot. (See HANDOVER §5.)
+  never expire. A temporary token silently kills the whole bot. (See HANDOVER §5.) *(Business/Meta
+  action — not code; do this yourself before launch.)*
 - [ ] **P0 — Rotate any secret shared informally** during handover; set new values in Render/Vercel.
 - [x] Secrets are gitignored (`.env`, `.env.*`); only `.env.example` is committed. ✅
-- [ ] **P1 — Verify the inbound WhatsApp webhook signature** (`X-Hub-Signature-256` using the Meta
-  App Secret). Right now `POST /whatsapp/webhook` trusts any JSON it receives — an attacker who
-  learns the URL could POST fake "messages" and burn Anthropic/Groq spend. Validate the HMAC.
+- [x] **Verify the inbound WhatsApp webhook signature** (`X-Hub-Signature-256`, HMAC-SHA256 against the
+  Meta App Secret, constant-time compare). `POST /whatsapp/webhook` now rejects any request whose
+  signature doesn't match with a 403 — a spoofed POST can no longer burn AI/voice spend. Set
+  `WHATSAPP_APP_SECRET` on Render (from Meta App settings → Basic) to activate; verification is
+  skipped (not enforced) while it's unset, so set it before real go-live. ✅
 - [ ] **P0 — Strong `ADMIN_PASSWORD`.** The whole admin portal is one shared password. Use a long
   random value; change the default; consider per-person accounts later.
 - [x] Admin API routes are auth-guarded (`require_admin`), Cloudinary upload is signed server-side. ✅
 - [x] Diagnostic/ops endpoints (`/run-drip`, `/diag`) require the verify-token key. ✅
-- [ ] **P1 — Restrict CORS** on the FastAPI backend to your Vercel domain(s) only (verify it isn't `*`).
+- [x] **CORS is already restricted** — not a wildcard; scoped to `FRONTEND_URL` + `*.vercel.app`
+  preview deploys. Verified in `main.py`. ✅
 - [ ] **P1 — Remove or keep-gated the temporary `/whatsapp/diag`** endpoint (debug tool).
 - [x] SQL uses SQLAlchemy parameterized queries (no string-built SQL → injection-safe). ✅
 - [x] TLS everywhere: HTTPS (Vercel/Render) + SSL to Neon. ✅
@@ -30,14 +34,20 @@
 
 ## 2. Abuse & rate limiting (flood / cost protection)
 
-- [ ] **P0 — Per-user rate limit on WhatsApp.** Today there is **no throttle** — one person (or a
-  script) can send hundreds of messages, each potentially triggering a paid Claude call
-  (grading/tutor). Add: max N messages/min and a daily cap per phone; beyond it, a polite
-  "you're going too fast" reply with no AI call.
-- [ ] **P1 — Global spend circuit-breaker.** A daily ceiling on Anthropic/Groq calls; when hit, fall
-  back to canned replies instead of unbounded spend.
+- [x] **Per-user rate limit on WhatsApp.** `core/rate_limit.py` — max 20 messages/min and 500/day per
+  phone (generous; real usage never hits it). Beyond the limit, messages are dropped before any AI/DB
+  work is queued, with a localized "you're going too fast" reply sent at most once per 5 min (all 6
+  languages). In-memory, per-process — fine for the current single-instance deployment; move to Redis
+  if this ever scales horizontally. ✅
+- [x] **Global spend circuit-breaker.** `core/spend_guard.py` — a daily ceiling
+  (`DAILY_AI_CALL_LIMIT`, default 2000) across all 4 AI call sites (tutor chat, assignment grading,
+  onboarding pitch, voice transcription). Once hit, each falls back to a localized "we're at peak
+  capacity, try again shortly" reply (or the existing "please type instead" for voice) instead of
+  calling the API — learner progress/drafts are left untouched so they can retry once it resets.
+  Resets at UTC midnight; in-memory (same caveat as rate limiting). ✅
 - [ ] **P1 — Cap AI work per action.** Assignment answers are capped at 8k chars (✅ done); also cap
-  tutor-chat length and how many gradings/tutor calls one user can trigger per day.
+  tutor-chat length per message (the daily circuit breaker above bounds total calls, but not yet the
+  size of any single tutor message).
 - [x] Inbound message-ID dedupe prevents Meta retries from double-charging. ✅
 - [ ] **P1 — Bulk-import guardrails (admin).** The doc→Claude import is admin-only (✅) but add a
   size/question-count cap so a huge upload can't run away on tokens.
@@ -45,9 +55,13 @@
 
 ## 3. Content moderation & profanity
 
-- [ ] **P0 — Filter abusive/profane learner input** before it hits the AI or gets stored. Add a
-  moderation step on assignment answers + free-text: if abusive, respond with a warning and skip
-  grading/tutor. (Cheap keyword/regex list per language now; upgrade to a moderation model later.)
+- [x] **Filter abusive/profane learner input** before it hits the AI or gets stored.
+  `core/moderation.py` — word-boundary keyword check (English + common Latin-transliterated
+  Hindi/Marathi/Telugu/Tamil/Kannada profanity) applied to assignment answers (checked per message,
+  before it's appended to the draft or stored) and free-text tutor chat (checked before the AI call).
+  Flagged input gets a localized "let's keep this respectful" reply instead. Deliberately simple and
+  imperfect (some false positives/negatives) — upgrade to a moderation model/API if abuse becomes a
+  real problem in practice. ✅
 - [ ] **P1 — Guard the AI's output.** Instruct all agents to refuse off-topic / unsafe requests and
   stay on AI-literacy; verify the grader can't be talked into a passing score by the answer text.
 - [ ] **P2 — Profanity in names.** The onboarding name is echoed back in every message — filter it so
@@ -119,11 +133,17 @@
 
 ---
 
-### Suggested order for the code-level P0/P1s I can implement
-1. **Per-user rate limiting** on the WhatsApp webhook (flood + cost protection).
-2. **Profanity/abuse filter** on learner input (skip AI, warn politely) — all 6 languages.
-3. **Meta webhook signature verification** (reject spoofed POSTs).
-4. **Global daily spend circuit-breaker** on AI calls.
+### Code-level P0/P1s — status
+1. ✅ **Per-user rate limiting** on the WhatsApp webhook (flood + cost protection).
+2. ✅ **Profanity/abuse filter** on learner input (skip AI, warn politely) — all 6 languages.
+3. ✅ **Meta webhook signature verification** (reject spoofed POSTs) — set `WHATSAPP_APP_SECRET` to activate.
+4. ✅ **Global daily spend circuit-breaker** on AI calls.
+5. ✅ **CORS** — confirmed already restricted (no code change needed).
 
-The rest (privacy policy, Meta verification, Render tier, backups, content uploads) are
-account/business actions for you + your coworker.
+**One action left on your side for #3 to actually take effect:** set `WHATSAPP_APP_SECRET` on Render
+(Meta Business → App settings → Basic → App Secret). Until it's set, signature verification is
+skipped (not enforced), matching the previous behavior — so nothing breaks, but the protection isn't
+live until you add it.
+
+The rest (privacy policy, Meta business verification, Render tier, backups, content uploads,
+`ADMIN_PASSWORD` rotation) are account/business actions for you + your coworker.

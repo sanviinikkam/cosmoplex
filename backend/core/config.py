@@ -27,11 +27,18 @@ class Settings(BaseSettings):
     whatsapp_templates_enabled: bool = False  # flip True once drip templates are approved by Meta
     cloudinary_api_key: str = ""              # for signed uploads from the admin portal
     cloudinary_api_secret: str = ""           # kept server-side only; never sent to the browser
+    whatsapp_app_secret: str = ""              # Meta App Secret — verifies the webhook's X-Hub-Signature-256.
+                                                # Optional (verification is skipped if unset) so existing
+                                                # setups don't break, but set it before go-live.
 
     # Admin portal (hidden /admin) — single shared password
     admin_password: str = "change-me-admin"
 
-    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "admin_password", mode="before")
+    # Safety net: bounds worst-case AI spend from abuse or a runaway bug. Generous
+    # default for the current scale; raise it (env var) as usage legitimately grows.
+    daily_ai_call_limit: int = 2000
+
+    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", mode="before")
     @classmethod
     def _strip_secret(cls, v):
         # Pasted secrets often pick up trailing newlines/spaces, which break
