@@ -130,6 +130,21 @@ export const api = {
         }
       ),
 
+    getQuiz: (videoId: string, count = 5) =>
+      apiFetch<{
+        questions: {
+          id: string;
+          question: Record<string, string>;
+          options: Record<string, string[]>;
+          correctIndex: number;
+        }[];
+      }>(`/courses/videos/${videoId}/quiz?count=${count}`),
+
+    getAssignment: (videoId: string) =>
+      apiFetch<{ id: string; question: Record<string, string>; rubric: string } | null>(
+        `/courses/videos/${videoId}/assignment`
+      ),
+
     evaluateAssignment: (
       token: string,
       payload: {

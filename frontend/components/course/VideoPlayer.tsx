@@ -8,12 +8,50 @@ import type { VideoItem } from "@/lib/types";
 import type { AppI18n } from "@/lib/app-i18n";
 import Link from "next/link";
 import { VideoQuiz } from "./VideoQuiz";
-import { pickQuestionsForLesson } from "@/lib/quiz-data";
 import type { MCQ } from "@/lib/quiz-data";
 import { VideoAssignment } from "./VideoAssignment";
-import { pickAssignmentForLesson } from "@/lib/assignment-data";
 import type { Assignment } from "@/lib/assignment-data";
 import { useLang } from "@/lib/use-lang";
+
+// Quiz/assignment banks are admin-uploaded per lesson (same DB tables the
+// WhatsApp channel reads from) — never hardcoded locally, so any lesson with
+// a bank shows one and any lesson without one just continues, on both channels.
+async function fetchQuizForVideo(videoId: string): Promise<MCQ[] | null> {
+  const res = await api.courses.getQuiz(videoId);
+  if (!res.questions.length) return null;
+  return res.questions.map((q) => ({
+    id: q.id,
+    level: "B" as const,
+    question: q.question.en ?? Object.values(q.question)[0] ?? "",
+    question_hi: q.question.hi,
+    question_te: q.question.te,
+    question_ta: q.question.ta,
+    question_kn: q.question.kn,
+    question_mr: q.question.mr,
+    options: q.options.en ?? Object.values(q.options)[0] ?? [],
+    options_hi: q.options.hi,
+    options_te: q.options.te,
+    options_ta: q.options.ta,
+    options_kn: q.options.kn,
+    options_mr: q.options.mr,
+    correctIndex: q.correctIndex,
+  }));
+}
+
+async function fetchAssignmentForVideo(videoId: string): Promise<Assignment | null> {
+  const a = await api.courses.getAssignment(videoId);
+  if (!a) return null;
+  return {
+    id: a.id,
+    question: a.question.en ?? Object.values(a.question)[0] ?? "",
+    question_hi: a.question.hi,
+    question_te: a.question.te,
+    question_ta: a.question.ta,
+    question_kn: a.question.kn,
+    question_mr: a.question.mr,
+    rubric: a.rubric,
+  };
+}
 
 const CLOUD_NAME =
   process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "your_cloud_name";
@@ -131,12 +169,24 @@ export function VideoPlayer({
     function triggerQuizOrNext() {
       if (quizTriggeredRef.current) return;
       quizTriggeredRef.current = true;
-      const questions = pickQuestionsForLesson(video.title);
-      if (questions) {
-        setQuizQuestions(questions);
-      } else {
-        setShowNext(true);
-      }
+      fetchQuizForVideo(video.id)
+        .then((questions) => {
+          if (questions) {
+            setQuizQuestions(questions);
+            return;
+          }
+          // No quiz for this lesson — an assignment may still exist on its own
+          return fetchAssignmentForVideo(video.id)
+            .then((assignment) => {
+              if (assignment) {
+                setActiveAssignment(assignment);
+              } else {
+                setShowNext(true);
+              }
+            })
+            .catch(() => setShowNext(true));
+        })
+        .catch(() => setShowNext(true));
     }
 
     function onEnded() {
@@ -242,12 +292,15 @@ export function VideoPlayer({
           onFinish={() => {
             setQuizQuestions(null);
             // Move to assignment if one exists for this lesson
-            const assignment = pickAssignmentForLesson(video.title);
-            if (assignment) {
-              setActiveAssignment(assignment);
-            } else {
-              setShowNext(true);
-            }
+            fetchAssignmentForVideo(video.id)
+              .then((assignment) => {
+                if (assignment) {
+                  setActiveAssignment(assignment);
+                } else {
+                  setShowNext(true);
+                }
+              })
+              .catch(() => setShowNext(true));
           }}
         />
       )}
