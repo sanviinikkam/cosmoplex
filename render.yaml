@@ -1,41 +1,41 @@
-# Render blueprint for the Cosmoplex backend (FastAPI) + managed Postgres.
-# Frontend is deployed separately on Vercel.
-# Deploy: Render Dashboard → New → Blueprint → point at this repo.
-
+# Exported from Render on 2026-08-03T09:37:46Z
+version: "1"
 services:
-  - type: web
-    name: cosmoplex-api
-    runtime: docker
-    repo: # optional — Render fills this when you connect the repo
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
-    region: singapore
-    plan: free              # free tier — no card required (spins down on idle; upgrade later for always-on)
-    healthCheckPath: /health
-    # NOTE: free tier has no persistent disk, so generated PDF certificates live
-    # on an ephemeral filesystem (lost on restart/redeploy — they regenerate on
-    # demand). Add a disk + paid plan later if you need them to persist.
-    envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false          # paste your real key in the Render dashboard
-      - key: SECRET_KEY
-        generateValue: true  # Render generates a strong random value
-      - key: ENVIRONMENT
-        value: production
-      - key: FRONTEND_URL
-        sync: false          # set to your Vercel URL, e.g. https://cosmoplex.vercel.app
-      - key: DATABASE_URL
-        fromDatabase:
-          name: cosmoplex-db
-          property: connectionString
-      # Optional integrations (leave unset unless you use them):
-      # - key: GROQ_API_KEY   # voice (Groq)
-      #     sync: false
-      # - key: FAL_API_KEY    # Illustrator image generation
-      #     sync: false
-
-databases:
-  - name: cosmoplex-db
-    region: singapore
-    plan: free               # free Postgres expires after ~90 days; upgrade for production
-    postgresMajorVersion: "16"
+- type: web
+  name: cosmoplex-api
+  runtime: docker
+  repo: https://github.com/sanviinikkam/cosmoplex
+  plan: free
+  envVars:
+  - key: DATABASE_URL
+    sync: false
+  - key: GROQ_API_KEY
+    sync: false
+  - key: WHATSAPP_TEMPLATES_ENABLED
+    sync: false
+  - key: CLOUDINARY_API_SECRET
+    sync: false
+  - key: CLOUDINARY_API_KEY
+    sync: false
+  - key: ADMIN_PASSWORD
+    sync: false
+  - key: WHATSAPP_PHONE_NUMBER_ID
+    sync: false
+  - key: WHATSAPP_VERIFY_TOKEN
+    sync: false
+  - key: WHATSAPP_TOKEN
+    sync: false
+  - key: FRONTEND_URL
+    sync: false
+  - key: ANTHROPIC_API_KEY
+    sync: false
+  - key: ENVIRONMENT
+    sync: false
+  - key: SECRET_KEY
+    sync: false
+  region: singapore
+  healthCheckPath: /health
+  dockerContext: .
+  dockerfilePath: ./Dockerfile
+  autoDeployTrigger: commit
+  rootDir: backend
