@@ -977,6 +977,59 @@ async def _translate_assignments(english: list[dict]) -> list[dict]:
     return final
 
 
+# ── Gap-fill: re-translate any item a batch left English-only ──────────────────
+# The batch translate is best-effort — a failed/truncated batch leaves some items
+# with missing languages, which used to be stored English-only silently. This pass
+# re-translates just those items, one at a time (small output, no truncation), so
+# nothing is ever silently English-only. A failure here leaves the item as-is
+# (English still works) rather than aborting the whole import.
+_GAP_QUIZ_SYS = ("Translate one multiple-choice question from English into Hindi(hi), Marathi(mr), "
+                 "Telugu(te), Tamil(ta), Kannada(kn). Faithful, natural for Indian learners; keep "
+                 "technical AI terms recognizable. Keep each options array the SAME length and order. "
+                 'Return ONLY strict JSON: {"hi":{"q":"","options":["",...]},"mr":{...},"te":{...},"ta":{...},"kn":{...}}')
+_GAP_ASSIGN_SYS = ("Translate one open-ended assignment prompt from English into Hindi(hi), Marathi(mr), "
+                   "Telugu(te), Tamil(ta), Kannada(kn). Faithful, natural; keep technical AI terms. "
+                   'Return ONLY strict JSON: {"hi":"","mr":"","te":"","ta":"","kn":""}')
+
+
+async def _fill_quiz_gaps(items: list[dict]) -> list[dict]:
+    async def fill(it):
+        q, o = it["question"], it["options"]
+        n = len(o.get("en") or [])
+        if n < 2 or all(q.get(l) for l in BULK_LANGS[1:]):
+            return it
+        try:
+            tr = await _claude_json(_GAP_QUIZ_SYS, json.dumps({"q": q["en"], "options": o["en"]}, ensure_ascii=False))
+        except HTTPException:
+            return it
+        for lang in BULK_LANGS[1:]:
+            if q.get(lang):
+                continue
+            d = tr.get(lang) or {}
+            lq, lo = (d.get("q") or "").strip(), d.get("options")
+            if lq and isinstance(lo, list) and len(lo) == n and all(str(x).strip() for x in lo):
+                q[lang] = lq
+                o[lang] = [str(x).strip() for x in lo]
+        return it
+    return list(await asyncio.gather(*[fill(it) for it in items]))
+
+
+async def _fill_assign_gaps(items: list[dict]) -> list[dict]:
+    async def fill(it):
+        q = it["question"]
+        if all(q.get(l) for l in BULK_LANGS[1:]):
+            return it
+        try:
+            tr = await _claude_json(_GAP_ASSIGN_SYS, q["en"])
+        except HTTPException:
+            return it
+        for lang in BULK_LANGS[1:]:
+            if not q.get(lang) and (tr.get(lang) or "").strip():
+                q[lang] = tr[lang].strip()
+        return it
+    return list(await asyncio.gather(*[fill(it) for it in items]))
+
+
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                        replace: bool = Form(False),
@@ -993,6 +1046,7 @@ async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text
     else:
         # Unstructured doc → let the AI find the questions too.
         items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
+    items = await _fill_quiz_gaps(items)   # retry any language a batch missed
     if not items:
         raise HTTPException(status_code=422, detail="No multiple-choice questions found in that document.")
     if replace:
@@ -1041,6 +1095,7 @@ async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), 
     else:
         # Unstructured doc → let the AI find the prompts too.
         items = _clean_assignments(await _extract_items(ASSIGN_SYS, content, "assignments"))
+    items = await _fill_assign_gaps(items)   # retry any language a batch missed
     if not items:
         raise HTTPException(status_code=422,
                             detail="No assignment prompts found — number each prompt (1., 2., …), use the "
