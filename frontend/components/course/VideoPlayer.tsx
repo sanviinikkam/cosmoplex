@@ -314,6 +314,7 @@ export function VideoPlayer({
           onFinish={() => {
             setActiveAssignment(null);
             setShowNext(true);
+            onCompleted?.();   // refresh unlock state so the next lesson opens
           }}
         />
       )}

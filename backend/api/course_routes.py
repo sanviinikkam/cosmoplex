@@ -61,38 +61,59 @@ def _pick_duration(video: Video, language: str) -> Optional[int]:
     return video.duration_seconds
 
 
-def _all_videos_completed_in_level(modules: list, level: int, learner_id: str) -> bool:
-    """Return True if every video in the given level is completed by this learner."""
+ASSIGNMENT_PASS_MARK = 60   # /100 — matches the web VideoAssignment + WhatsApp ASSIGN_PASS
+
+
+def _video_cleared(video: Video, learner_id: str, has_assignment: set, passed_titles: set) -> bool:
+    """A lesson is 'cleared' (counts toward unlocking the NEXT lesson) when it is
+    watched to completion AND — if it has an assignment — the learner has passed
+    that assignment. Lessons with no assignment clear on watch alone, so their
+    behavior is unchanged."""
+    prog = _progress_map(video, learner_id)
+    if not (prog and prog.completed):
+        return False
+    if video.id in has_assignment and video.title not in passed_titles:
+        return False
+    return True
+
+
+def _all_videos_cleared_in_level(modules: list, level: int, learner_id: str,
+                                 has_assignment: set, passed_titles: set) -> bool:
+    """True if every video in the level is cleared (watched + assignment passed)."""
     for mod in modules:
         if mod.level != level:
             continue
         for sec in mod.sections:
             for video in sec.videos:
-                prog = _progress_map(video, learner_id)
-                if not (prog and prog.completed):
+                if not _video_cleared(video, learner_id, has_assignment, passed_titles):
                     return False
     return True
 
 
-def _build_course_response(course: Course, learner_id: str, language: str = "en") -> dict:
+def _build_course_response(course: Course, learner_id: str, language: str = "en",
+                           has_assignment: set | None = None,
+                           passed_titles: set | None = None) -> dict:
     """Serialize a fully-loaded Course with per-learner unlock + progress state.
 
-    Level-based access rules:
-    - Within a level, ALL modules/sections are freely accessible simultaneously.
-    - To advance to the next level, the learner must complete every video in the
-      current level (agent gate handled separately by the agent system).
+    Access rules:
+    - Lessons unlock sequentially: a lesson opens only once every earlier lesson is
+      'cleared' — watched to completion AND (if it has an assignment) its assignment
+      passed. Lessons with no assignment clear on watch alone (unchanged behavior).
+    - Level N (N>1) additionally requires every lesson in level N-1 cleared.
     - Videos are served in the learner's preferred language where a variant exists.
     """
+    has_assignment = has_assignment or set()
+    passed_titles = passed_titles or set()
     modules = course.modules  # already ordered by order_index
 
-    # Determine which levels are unlocked
-    # Level 1 is always unlocked. Level N (N>1) is unlocked when level N-1 is done.
+    # Level N (N>1) unlocks when every lesson in level N-1 is cleared.
     unlocked_levels: set[int] = {1}
     for level in (2, 3):
-        if _all_videos_completed_in_level(modules, level - 1, learner_id):
+        if _all_videos_cleared_in_level(modules, level - 1, learner_id, has_assignment, passed_titles):
             unlocked_levels.add(level)
 
     modules_out = []
+    prev_all_cleared = True   # running sequential gate across lessons, in order
 
     for module in modules:
         level_unlocked = module.level in unlocked_levels
@@ -107,6 +128,9 @@ def _build_course_response(course: Course, learner_id: str, language: str = "en"
                 watched   = prog.watched_seconds  if prog else 0
                 dur_saved = prog.duration_seconds if prog else 0
                 completed = prog.completed        if prog else False
+                has_a  = video.id in has_assignment
+                passed = video.title in passed_titles
+                cleared = completed and (not has_a or passed)
 
                 if not completed:
                     section_all_complete = False
@@ -123,8 +147,12 @@ def _build_course_response(course: Course, learner_id: str, language: str = "en"
                     "watchedSeconds": watched,
                     "durationSavedSeconds": dur_saved or duration or 0,
                     "completed": completed,
-                    "unlocked": level_unlocked,
+                    "unlocked": level_unlocked and prev_all_cleared,
+                    "hasAssignment": has_a,
+                    "assignmentPassed": passed,
                 })
+                # sequential gate: the NEXT lesson opens only if this one is cleared
+                prev_all_cleared = prev_all_cleared and cleared
 
             sections_out.append({
                 "id": section.id,
@@ -205,7 +233,21 @@ async def get_course(
     db: AsyncSession = Depends(get_db),
 ):
     course = await _load_course(course_id, db)
-    return _build_course_response(course, learner.id, learner.preferred_language or "en")
+    # Which lessons have an assignment, and which this learner has already passed —
+    # feeds the sequential unlock gate.
+    has_assignment = set(
+        (await db.execute(select(AssignmentPrompt.video_id).distinct())).scalars().all()
+    )
+    passed_titles = set(
+        (await db.execute(
+            select(LessonAssignmentSubmission.lesson_title)
+            .where(LessonAssignmentSubmission.learner_id == learner.id,
+                   LessonAssignmentSubmission.score >= ASSIGNMENT_PASS_MARK)
+            .distinct()
+        )).scalars().all()
+    )
+    return _build_course_response(course, learner.id, learner.preferred_language or "en",
+                                  has_assignment, passed_titles)
 
 
 @router.get("/{course_id}/continue")
