@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
-import { CheckCircle, VideoCamera, ArrowClockwise, Lock } from "@phosphor-icons/react";
+import { CheckCircle, VideoCamera, Lock, Exam } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { VideoItem } from "@/lib/types";
@@ -90,13 +90,29 @@ const LOCK_NOTE: Record<Lang, string> = {
   ta: "அடுத்த பாடத்தைத் திறக்க கீழே உள்ள அசைன்மென்ட்டில் தேர்ச்சி பெறுங்கள்.",
   kn: "ಮುಂದಿನ ಪಾಠವನ್ನು ಅನ್‌ಲಾಕ್ ಮಾಡಲು ಕೆಳಗಿನ ಅಸೈನ್‌ಮೆಂಟ್ ಪಾಸ್ ಮಾಡಿ.",
 };
-const TAKE_ANOTHER: Record<Lang, string> = {
-  en: "Take another quiz",
-  hi: "एक और क्विज़ लें",
-  mr: "आणखी एक क्विझ घ्या",
-  te: "మరో క్విజ్ తీసుకోండి",
-  ta: "மற்றொரு வினாடி வினா எடுங்கள்",
-  kn: "ಇನ್ನೊಂದು ಕ್ವಿಜ್ ತೆಗೆದುಕೊಳ್ಳಿ",
+const QUIZ_TITLE: Record<Lang, string> = {
+  en: "Practice quiz",
+  hi: "अभ्यास क्विज़",
+  mr: "सराव क्विझ",
+  te: "ప్రాక్టీస్ క్విజ్",
+  ta: "பயிற்சி வினாடி வினா",
+  kn: "ಅಭ್ಯಾಸ ಕ್ವಿಜ್",
+};
+const QUIZ_HINT: Record<Lang, string> = {
+  en: "Optional — check your understanding. Retake it anytime.",
+  hi: "वैकल्पिक — अपनी समझ जांचें। कभी भी दोबारा लें।",
+  mr: "पर्यायी — तुमची समज तपासा. कधीही पुन्हा घ्या.",
+  te: "ఐచ్ఛికం — మీ అవగాహనను తనిఖీ చేసుకోండి. ఎప్పుడైనా మళ్లీ తీసుకోండి.",
+  ta: "விருப்பம் — உங்கள் புரிதலைச் சரிபார்க்கவும். எப்போது வேண்டுமானாலும் மீண்டும் எடுக்கலாம்.",
+  kn: "ಐಚ್ಛಿಕ — ನಿಮ್ಮ ತಿಳುವಳಿಕೆಯನ್ನು ಪರಿಶೀಲಿಸಿ. ಯಾವಾಗ ಬೇಕಾದರೂ ಮತ್ತೆ ತೆಗೆದುಕೊಳ್ಳಿ.",
+};
+const QUIZ_TAKE: Record<Lang, string> = {
+  en: "Take the quiz",
+  hi: "क्विज़ लें",
+  mr: "क्विझ घ्या",
+  te: "క్విజ్ తీసుకోండి",
+  ta: "வினாடி வினா எடுங்கள்",
+  kn: "ಕ್ವಿಜ್ ತೆಗೆದುಕೊಳ್ಳಿ",
 };
 
 interface Props {
@@ -118,9 +134,10 @@ export function VideoPlayer({
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const revealedRef = useRef(false);
   const [completed, setCompleted] = useState(video.completed);
+  const [quizAvailable, setQuizAvailable] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<MCQ[] | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [activeAssignment, setActiveAssignment] = useState<Assignment | null>(null);
-  const [quizKey, setQuizKey] = useState(0);
 
   const saveProgress = useCallback(
     async (watchedSeconds: number, durationSeconds: number) => {
@@ -142,18 +159,17 @@ export function VideoPlayer({
     [video.id, completed, onCompleted]
   );
 
-  // Fetch this lesson's quiz + assignment (both, in parallel) so they can be
-  // shown together below the video. Either may be null (no bank for that lesson).
+  // Find out whether this lesson has a quiz + assignment (does NOT open the quiz).
   const loadAssessments = useCallback(async () => {
     const [q, a] = await Promise.all([
       fetchQuizForVideo(video.id).catch(() => null),
       fetchAssignmentForVideo(video.id).catch(() => null),
     ]);
-    setQuizQuestions(q);
+    setQuizAvailable(!!(q && q.length));
     setActiveAssignment(a);
   }, [video.id]);
 
-  // Reveal the quiz + assignment once the video is watched. Idempotent per video.
+  // Mark the lesson watched and surface the quiz card + assignment. Idempotent.
   const revealAssessments = useCallback(() => {
     if (revealedRef.current) return;
     revealedRef.current = true;
@@ -161,23 +177,29 @@ export function VideoPlayer({
     loadAssessments();
   }, [loadAssessments]);
 
-  // "Take another quiz" — pull a fresh random set and remount the quiz.
-  const reloadQuiz = useCallback(async () => {
+  // Open the quiz ON DEMAND with a fresh random set (the quiz itself is a modal).
+  const openQuiz = useCallback(async () => {
     const q = await fetchQuizForVideo(video.id).catch(() => null);
-    setQuizQuestions(q);
-    setQuizKey((k) => k + 1);
+    if (q && q.length) {
+      setQuizQuestions(q);
+      setQuizOpen(true);
+    }
   }, [video.id]);
 
   const resolvedPublicId =
     video.cloudinaryPublicId ?? LANG_VIDEO_OVERRIDES[video.title]?.[lang] ?? null;
 
-  // Reset reveal state when navigating to a different video
+  // Reset per-video UI state when navigating to a different video
   useEffect(() => {
     revealedRef.current = false;
+    setQuizOpen(false);
+    setQuizAvailable(false);
+    setActiveAssignment(null);
   }, [video.id]);
 
-  // Already completed (e.g. revisiting the lesson) → show the quiz + assignment
-  // immediately, so the learner never has to replay to reach them.
+  // Already completed (e.g. revisiting) → surface the quiz card + assignment
+  // immediately. Note: this does NOT auto-open the quiz — it just makes it
+  // available so the learner never has to replay to reach it.
   useEffect(() => {
     if (video.completed) revealAssessments();
   }, [video.id, video.completed, revealAssessments]);
@@ -191,8 +213,7 @@ export function VideoPlayer({
     }
   }, [video.watchedSeconds, video.completed]);
 
-  // Save progress every 10s while playing, and reveal assessments on completion.
-  // resolvedPublicId is a dep so this re-runs when lang switches and the element appears.
+  // Save progress every 10s while playing; surface assessments on completion.
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -280,9 +301,9 @@ export function VideoPlayer({
         )}
       </div>
 
-      {/* Quiz + assignment — shown once the video is completed, always accessible
-          (no replay needed), and persist across revisits. */}
-      {completed && (quizQuestions?.length || activeAssignment) && (
+      {/* Quiz card + assignment — appear below the video once it's watched, and
+          persist across revisits. The quiz opens only when the learner chooses. */}
+      {completed && (quizAvailable || activeAssignment) && (
         <div className="flex flex-col gap-6">
           {/* Why the next lesson is locked */}
           {needsAssignment && (
@@ -292,21 +313,19 @@ export function VideoPlayer({
             </div>
           )}
 
-          {/* Quiz (practice — does not gate). Retake for a fresh set anytime. */}
-          {quizQuestions && quizQuestions.length > 0 && (
-            <div className="flex flex-col items-center gap-3">
-              <VideoQuiz
-                key={quizKey}
-                questions={quizQuestions}
-                lang={lang}
-                onFinish={reloadQuiz}
-              />
+          {/* Practice quiz (optional — does not gate). Opens on click, retake anytime. */}
+          {quizAvailable && (
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-900">{QUIZ_TITLE[lang] ?? QUIZ_TITLE.en}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{QUIZ_HINT[lang] ?? QUIZ_HINT.en}</p>
+              </div>
               <button
-                onClick={reloadQuiz}
-                className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
+                onClick={openQuiz}
+                className="shrink-0 inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-700 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
               >
-                <ArrowClockwise size={13} weight="bold" />
-                {TAKE_ANOTHER[lang] ?? TAKE_ANOTHER.en}
+                <Exam size={15} weight="bold" />
+                {QUIZ_TAKE[lang] ?? QUIZ_TAKE.en}
               </button>
             </div>
           )}
@@ -324,6 +343,15 @@ export function VideoPlayer({
             />
           )}
         </div>
+      )}
+
+      {/* Quiz modal — opens only on demand and closes on finish (no loop) */}
+      {quizOpen && quizQuestions && (
+        <VideoQuiz
+          questions={quizQuestions}
+          lang={lang}
+          onFinish={() => setQuizOpen(false)}
+        />
       )}
     </div>
   );
