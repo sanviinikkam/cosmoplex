@@ -66,7 +66,9 @@ function VideoRow({
 }) {
   const pct = progressPct(video);
   const isLocked = !video.unlocked;
-  const isComplete = video.completed;
+  // "Complete" = watched AND (if the lesson has an assignment) the assignment
+  // passed — so a video watched but assignment still pending doesn't show a tick.
+  const isComplete = video.completed && (!video.hasAssignment || !!video.assignmentPassed);
 
   return (
     <div
@@ -151,7 +153,9 @@ function SectionAccordion({
   const hasActive = section.videos.some((v) => v.id === activeVideoId);
   const isOpen = open || hasActive;
 
-  const completedCount = section.videos.filter((v) => v.completed).length;
+  const completedCount = section.videos.filter(
+    (v) => v.completed && (!v.hasAssignment || v.assignmentPassed)
+  ).length;
 
   return (
     <div className="border border-zinc-100 rounded-2xl overflow-hidden">
@@ -242,7 +246,7 @@ function ModuleAccordion({
     0
   );
   const completedVideos = module.sections.reduce(
-    (acc, s) => acc + s.videos.filter((v) => v.completed).length,
+    (acc, s) => acc + s.videos.filter((v) => v.completed && (!v.hasAssignment || v.assignmentPassed)).length,
     0
   );
   const allComplete = totalVideos > 0 && completedVideos === totalVideos;

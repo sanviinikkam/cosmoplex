@@ -1,17 +1,16 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
-import { CheckCircle, ArrowRight, VideoCamera } from "@phosphor-icons/react";
+import { CheckCircle, VideoCamera, ArrowClockwise, Lock } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { VideoItem } from "@/lib/types";
 import type { AppI18n } from "@/lib/app-i18n";
-import Link from "next/link";
 import { VideoQuiz } from "./VideoQuiz";
 import type { MCQ } from "@/lib/quiz-data";
 import { VideoAssignment } from "./VideoAssignment";
 import type { Assignment } from "@/lib/assignment-data";
-import { useLang } from "@/lib/use-lang";
+import { useLang, type Lang } from "@/lib/use-lang";
 
 // Quiz/assignment banks are admin-uploaded per lesson (same DB tables the
 // WhatsApp channel reads from) — never hardcoded locally, so any lesson with
@@ -82,6 +81,24 @@ function cloudinaryThumbUrl(publicId: string): string {
   return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/w_800,h_450,c_fill,so_0/${publicId}.jpg`;
 }
 
+// Short in-context strings, all six languages (Golden Rule: never English-only).
+const LOCK_NOTE: Record<Lang, string> = {
+  en: "Pass the assignment below to unlock the next lesson.",
+  hi: "अगला पाठ अनलॉक करने के लिए नीचे दिया गया असाइनमेंट पास करें।",
+  mr: "पुढील धडा अनलॉक करण्यासाठी खालील असाइनमेंट पास करा.",
+  te: "తదుపరి పాఠాన్ని అన్‌లాక్ చేయడానికి కింది అసైన్‌మెంట్‌ను పాస్ చేయండి.",
+  ta: "அடுத்த பாடத்தைத் திறக்க கீழே உள்ள அசைன்மென்ட்டில் தேர்ச்சி பெறுங்கள்.",
+  kn: "ಮುಂದಿನ ಪಾಠವನ್ನು ಅನ್‌ಲಾಕ್ ಮಾಡಲು ಕೆಳಗಿನ ಅಸೈನ್‌ಮೆಂಟ್ ಪಾಸ್ ಮಾಡಿ.",
+};
+const TAKE_ANOTHER: Record<Lang, string> = {
+  en: "Take another quiz",
+  hi: "एक और क्विज़ लें",
+  mr: "आणखी एक क्विझ घ्या",
+  te: "మరో క్విజ్ తీసుకోండి",
+  ta: "மற்றொரு வினாடி வினா எடுங்கள்",
+  kn: "ಇನ್ನೊಂದು ಕ್ವಿಜ್ ತೆಗೆದುಕೊಳ್ಳಿ",
+};
+
 interface Props {
   video: VideoItem;
   courseId: string;
@@ -93,20 +110,17 @@ interface Props {
 
 export function VideoPlayer({
   video,
-  courseId,
-  nextVideoId,
-  nextVideoTitle,
   onCompleted,
   t,
 }: Props) {
   const lang = useLang();
   const videoRef = useRef<HTMLVideoElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const quizTriggeredRef = useRef(false);
+  const revealedRef = useRef(false);
   const [completed, setCompleted] = useState(video.completed);
-  const [showNext, setShowNext] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<MCQ[] | null>(null);
   const [activeAssignment, setActiveAssignment] = useState<Assignment | null>(null);
+  const [quizKey, setQuizKey] = useState(0);
 
   const saveProgress = useCallback(
     async (watchedSeconds: number, durationSeconds: number) => {
@@ -128,15 +142,45 @@ export function VideoPlayer({
     [video.id, completed, onCompleted]
   );
 
-  // DB value (admin portal) wins; fall back to the legacy map only if the
-  // backend hasn't stored an ID for this lesson yet.
+  // Fetch this lesson's quiz + assignment (both, in parallel) so they can be
+  // shown together below the video. Either may be null (no bank for that lesson).
+  const loadAssessments = useCallback(async () => {
+    const [q, a] = await Promise.all([
+      fetchQuizForVideo(video.id).catch(() => null),
+      fetchAssignmentForVideo(video.id).catch(() => null),
+    ]);
+    setQuizQuestions(q);
+    setActiveAssignment(a);
+  }, [video.id]);
+
+  // Reveal the quiz + assignment once the video is watched. Idempotent per video.
+  const revealAssessments = useCallback(() => {
+    if (revealedRef.current) return;
+    revealedRef.current = true;
+    setCompleted(true);
+    loadAssessments();
+  }, [loadAssessments]);
+
+  // "Take another quiz" — pull a fresh random set and remount the quiz.
+  const reloadQuiz = useCallback(async () => {
+    const q = await fetchQuizForVideo(video.id).catch(() => null);
+    setQuizQuestions(q);
+    setQuizKey((k) => k + 1);
+  }, [video.id]);
+
   const resolvedPublicId =
     video.cloudinaryPublicId ?? LANG_VIDEO_OVERRIDES[video.title]?.[lang] ?? null;
 
-  // Reset quiz trigger when navigating to a different video
+  // Reset reveal state when navigating to a different video
   useEffect(() => {
-    quizTriggeredRef.current = false;
+    revealedRef.current = false;
   }, [video.id]);
+
+  // Already completed (e.g. revisiting the lesson) → show the quiz + assignment
+  // immediately, so the learner never has to replay to reach them.
+  useEffect(() => {
+    if (video.completed) revealAssessments();
+  }, [video.id, video.completed, revealAssessments]);
 
   // Restore saved position
   useEffect(() => {
@@ -147,8 +191,8 @@ export function VideoPlayer({
     }
   }, [video.watchedSeconds, video.completed]);
 
-  // Save progress every 10s while playing
-  // resolvedPublicId is a dep so this re-runs when lang switches and the video element appears
+  // Save progress every 10s while playing, and reveal assessments on completion.
+  // resolvedPublicId is a dep so this re-runs when lang switches and the element appears.
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -166,36 +210,12 @@ export function VideoPlayer({
       if (el) saveProgress(el.currentTime, el.duration || 0);
     }
 
-    function triggerQuizOrNext() {
-      if (quizTriggeredRef.current) return;
-      quizTriggeredRef.current = true;
-      fetchQuizForVideo(video.id)
-        .then((questions) => {
-          if (questions) {
-            setQuizQuestions(questions);
-            return;
-          }
-          // No quiz for this lesson — an assignment may still exist on its own
-          return fetchAssignmentForVideo(video.id)
-            .then((assignment) => {
-              if (assignment) {
-                setActiveAssignment(assignment);
-              } else {
-                setShowNext(true);
-              }
-            })
-            .catch(() => setShowNext(true));
-        })
-        .catch(() => setShowNext(true));
-    }
-
     function onEnded() {
       if (saveTimerRef.current) clearInterval(saveTimerRef.current);
       if (el) saveProgress(el.duration, el.duration);
-      triggerQuizOrNext();
+      revealAssessments();
     }
 
-    // Also track 90% threshold + fallback quiz trigger at ≥99% in case `ended` doesn't fire
     function onTimeUpdate() {
       if (!el) return;
       const pct = el.duration > 0 ? el.currentTime / el.duration : 0;
@@ -203,7 +223,7 @@ export function VideoPlayer({
         saveProgress(el.currentTime, el.duration);
       }
       if (pct >= 0.99) {
-        triggerQuizOrNext();
+        revealAssessments();
       }
     }
 
@@ -219,7 +239,7 @@ export function VideoPlayer({
       el.removeEventListener("timeupdate", onTimeUpdate);
       if (saveTimerRef.current) clearInterval(saveTimerRef.current);
     };
-  }, [saveProgress, completed, resolvedPublicId]);
+  }, [saveProgress, completed, resolvedPublicId, revealAssessments]);
 
   // ── No video uploaded yet ──────────────────────────────────────────────────
   if (!resolvedPublicId) {
@@ -230,6 +250,10 @@ export function VideoPlayer({
       </div>
     );
   }
+
+  // A lesson is "cleared" only when watched AND (if it has an assignment) passed.
+  const needsAssignment = !!video.hasAssignment && !video.assignmentPassed;
+  const cleared = completed && !needsAssignment;
 
   return (
     <div className="flex flex-col gap-6">
@@ -247,76 +271,59 @@ export function VideoPlayer({
           playsInline
         />
 
-        {/* Completed badge */}
-        {completed && !showNext && !quizQuestions && !activeAssignment && (
+        {/* Completed badge — only when the lesson is truly cleared (not just watched) */}
+        {cleared && (
           <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg">
             <CheckCircle size={13} weight="fill" />
             {t.completed}
           </div>
         )}
-
-        {/* Next video overlay — only after quiz is dismissed */}
-        {showNext && nextVideoId && !quizQuestions && !activeAssignment && (
-          <div className="absolute inset-0 bg-zinc-950/80 flex flex-col items-center justify-center gap-4 backdrop-blur-sm">
-            <CheckCircle size={48} weight="fill" className="text-emerald-400" />
-            <p className="text-white font-semibold text-lg">
-              {t.sectionComplete}
-            </p>
-            {nextVideoTitle && (
-              <p className="text-zinc-400 text-sm">
-                {t.nextLabel(nextVideoTitle)}
-              </p>
-            )}
-            <Link
-              href={`/course/${courseId}/learn/${nextVideoId}`}
-              className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-medium px-6 py-2.5 rounded-xl transition-colors"
-            >
-              {t.continueBtn}
-              <ArrowRight size={14} weight="bold" />
-            </Link>
-            <button
-              onClick={() => setShowNext(false)}
-              className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
-            >
-              {t.replay}
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Quiz — appears below the video after completion */}
-      {quizQuestions && (
-        <VideoQuiz
-          questions={quizQuestions}
-          lang={lang}
-          onFinish={() => {
-            setQuizQuestions(null);
-            // Move to assignment if one exists for this lesson
-            fetchAssignmentForVideo(video.id)
-              .then((assignment) => {
-                if (assignment) {
-                  setActiveAssignment(assignment);
-                } else {
-                  setShowNext(true);
-                }
-              })
-              .catch(() => setShowNext(true));
-          }}
-        />
-      )}
+      {/* Quiz + assignment — shown once the video is completed, always accessible
+          (no replay needed), and persist across revisits. */}
+      {completed && (quizQuestions?.length || activeAssignment) && (
+        <div className="flex flex-col gap-6">
+          {/* Why the next lesson is locked */}
+          {needsAssignment && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Lock size={15} weight="bold" className="shrink-0" />
+              {LOCK_NOTE[lang] ?? LOCK_NOTE.en}
+            </div>
+          )}
 
-      {/* Assignment — appears after quiz */}
-      {activeAssignment && (
-        <VideoAssignment
-          assignment={activeAssignment}
-          lessonTitle={video.title}
-          lang={lang}
-          onFinish={() => {
-            setActiveAssignment(null);
-            setShowNext(true);
-            onCompleted?.();   // refresh unlock state so the next lesson opens
-          }}
-        />
+          {/* Quiz (practice — does not gate). Retake for a fresh set anytime. */}
+          {quizQuestions && quizQuestions.length > 0 && (
+            <div className="flex flex-col items-center gap-3">
+              <VideoQuiz
+                key={quizKey}
+                questions={quizQuestions}
+                lang={lang}
+                onFinish={reloadQuiz}
+              />
+              <button
+                onClick={reloadQuiz}
+                className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
+              >
+                <ArrowClockwise size={13} weight="bold" />
+                {TAKE_ANOTHER[lang] ?? TAKE_ANOTHER.en}
+              </button>
+            </div>
+          )}
+
+          {/* Assignment (this is what unlocks the next lesson) */}
+          {activeAssignment && (
+            <VideoAssignment
+              assignment={activeAssignment}
+              lessonTitle={video.title}
+              lang={lang}
+              onFinish={() => {
+                // passed → refresh course so the next lesson unlocks
+                onCompleted?.();
+              }}
+            />
+          )}
+        </div>
       )}
     </div>
   );

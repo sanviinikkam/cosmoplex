@@ -77,6 +77,8 @@ export interface VideoItem {
   durationSavedSeconds: number;
   completed: boolean;
   unlocked: boolean;
+  hasAssignment?: boolean;
+  assignmentPassed?: boolean;
 }
 
 export interface CourseSection {
