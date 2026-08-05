@@ -284,7 +284,18 @@ async def send_video(to: str, public_id: str, caption: str) -> None:
     link-fetch timeout. Falls back to a link, then a text link, if needed.
     """
     url = _video_url(public_id)
-    data = await _download(url)
+    # A cold Cloudinary derivative (first-ever request for a video) is still
+    # transcoding — the first fetch triggers generation but may 4xx/hang, so a
+    # single attempt would silently drop the video and jump straight to the quiz.
+    # Retry a few times (pausing for the transcode the first attempt kicked off)
+    # so the video sends on the first "next lesson" instead of needing a manual retry.
+    data = None
+    for attempt in range(3):
+        data = await _download(url)
+        if data:
+            break
+        if attempt < 2:
+            await asyncio.sleep(6)
     if data:
         print(f"✓ video fetched {len(data)} bytes for {public_id}")
         media_id = await _upload_media(data)

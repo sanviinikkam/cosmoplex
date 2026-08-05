@@ -27,7 +27,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -351,14 +352,45 @@ async def create_video(body: VideoBody, _: bool = Depends(require_admin), db: As
     return await _tree(m.course_id, db)
 
 
+# WhatsApp delivers videos through this Cloudinary transform — keep in sync with
+# whatsapp_routes.VIDEO_TRANSFORM. Fetching the transformed URL once forces
+# Cloudinary to transcode + cache the compressed derivative, so a freshly uploaded
+# video never hits a cold (dropped) transcode on its first WhatsApp send.
+_WA_VIDEO_TRANSFORM = "w_480,br_400k,vc_h264,ac_aac,q_auto:low"
+
+
+async def _warm_whatsapp_derivative(public_id: str) -> None:
+    pid = (public_id or "").strip()
+    if not pid:
+        return
+    url = (f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}"
+           f"/video/upload/{_WA_VIDEO_TRANSFORM}/{pid}.mp4")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as h:
+            for _ in range(4):
+                r = await h.get(url, headers={"Range": "bytes=0-1"}, timeout=100)
+                if r.status_code in (200, 206):
+                    print(f"✓ warmed WhatsApp video derivative for {pid}")
+                    return
+                if r.status_code == 423:   # Cloudinary still transcoding
+                    await asyncio.sleep(8)
+                    continue
+                print(f"⚠ warm got HTTP {r.status_code} for {pid}")
+                return
+    except Exception as e:
+        print(f"⚠ warm failed for {pid}: {e}")
+
+
 @router.put("/videos/{video_id}")
-async def update_video(video_id: str, body: VideoBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks,
+                       _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
     v.title = body.title
     if body.cloudinary_public_id is not None:
         v.cloudinary_public_id = body.cloudinary_public_id
+        background_tasks.add_task(_warm_whatsapp_derivative, body.cloudinary_public_id)
     if body.duration_seconds is not None:
         v.duration_seconds = body.duration_seconds
     s = await db.get(Section, v.section_id)
@@ -389,7 +421,8 @@ class VariantBody(BaseModel):
 
 
 @router.put("/videos/{video_id}/variant")
-async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks,
+                         _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Supported: {sorted(SUPPORTED_LANGUAGES)}")
     v = await db.get(Video, video_id)
@@ -407,6 +440,7 @@ async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(req
                                     cloudinary_public_id=body.cloudinary_public_id,
                                     duration_seconds=body.duration_seconds))
     await db.commit()
+    background_tasks.add_task(_warm_whatsapp_derivative, body.cloudinary_public_id)
     return {"ok": True, "videoId": video_id, "language": body.language}
 
 
@@ -574,7 +608,7 @@ async def list_intro_videos(_: bool = Depends(require_admin), db: AsyncSession =
 
 
 @router.put("/intro-videos/{language}")
-async def set_intro_video(language: str, body: IntroVideoBody,
+async def set_intro_video(language: str, body: IntroVideoBody, background_tasks: BackgroundTasks,
                           _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if language not in INTRO_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"language must be one of {sorted(INTRO_LANGUAGES)}")
@@ -587,6 +621,7 @@ async def set_intro_video(language: str, body: IntroVideoBody,
     iv.cloudinary_public_id = body.cloudinary_public_id.strip()
     iv.duration_seconds = body.duration_seconds
     await db.commit()
+    background_tasks.add_task(_warm_whatsapp_derivative, iv.cloudinary_public_id)
     return _intro_dict(iv)
 
 

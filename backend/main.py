@@ -161,7 +161,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "assignment-gate-and-translations-1",
+        "build": "video-cold-transcode-retry-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
