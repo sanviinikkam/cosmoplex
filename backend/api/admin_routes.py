@@ -355,12 +355,28 @@ async def create_video(body: VideoBody, _: bool = Depends(require_admin), db: As
     return await _tree(m.course_id, db)
 
 
-async def _compress_and_swap(kind: str, obj_id: str, source_public_id: str) -> None:
+async def _lesson_name_hint(db, video_id: str, lang: str) -> str | None:
+    """A clean, foldered Cloudinary name for a lesson video, e.g.
+    'cosmoplex/lessons/1.1/1.1-en' — replaces the random auto-generated ids."""
+    v = await db.get(Video, video_id)
+    if not v:
+        return None
+    s = await db.get(Section, v.section_id)
+    m = await db.get(CourseModule, s.module_id) if s else None
+    if not (s and m):
+        return None
+    label = f"{m.order_index + 1}.{s.order_index + 1}"
+    return f"cosmoplex/lessons/{label}/{label}-{lang}"
+
+
+async def _compress_and_swap(kind: str, obj_id: str, source_public_id: str,
+                             name_hint: str | None = None) -> None:
     """Background job: download the just-uploaded original, ffmpeg-compress it to a
-    <16 MB MP4, upload that, and point the row at it (is_compressed=True) so it can
-    be delivered raw — no credit-metered Cloudinary transform. Non-destructive: on
-    ANY failure the row keeps its original id and stays served via the (cached)
-    transform, so playback never breaks. `kind` is 'video' or 'variant'."""
+    <16 MB MP4, upload that (under a clean foldered name if name_hint is given), and
+    point the row at it (is_compressed=True) so it can be delivered raw — no
+    credit-metered Cloudinary transform. Non-destructive: on ANY failure the row
+    keeps its original id and stays served via the (cached) transform, so playback
+    never breaks. `kind` is 'video' or 'variant'."""
     src = make_tempfile(".src")
     out = make_tempfile(".mp4")
     try:
@@ -368,7 +384,7 @@ async def _compress_and_swap(kind: str, obj_id: str, source_public_id: str) -> N
             return
         if not await compress_to_whatsapp_mp4(src, out):
             return
-        res = await cloudinary_upload(out)
+        res = await cloudinary_upload(out, public_id=name_hint)
         if not res:
             return
         new_pid, dur = res
@@ -410,7 +426,10 @@ async def update_video(video_id: str, body: VideoBody, background_tasks: Backgro
     m = await db.get(CourseModule, s.module_id)
     await db.commit()
     if new_upload:
-        background_tasks.add_task(_compress_and_swap, "video", video_id, body.cloudinary_public_id)
+        label = f"{m.order_index + 1}.{s.order_index + 1}"
+        name_hint = f"cosmoplex/lessons/{label}/{label}-base"
+        background_tasks.add_task(_compress_and_swap, "video", video_id,
+                                  body.cloudinary_public_id, name_hint)
     return await _tree(m.course_id, db)
 
 
@@ -463,9 +482,11 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
         new_upload = True
     await db.flush()                 # populate variant.id before it's needed
     variant_id = variant.id
+    name_hint = await _lesson_name_hint(db, video_id, body.language)
     await db.commit()
     if new_upload:
-        background_tasks.add_task(_compress_and_swap, "variant", variant_id, body.cloudinary_public_id)
+        background_tasks.add_task(_compress_and_swap, "variant", variant_id,
+                                  body.cloudinary_public_id, name_hint)
     return {"ok": True, "videoId": video_id, "language": body.language}
 
 

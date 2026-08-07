@@ -83,23 +83,33 @@ async def cloudinary_download(public_id: str, dest_path: str) -> bool:
         return False
 
 
-async def cloudinary_upload(src_path: str, folder: str = "cosmoplex/lessons") -> tuple[str, int | None] | None:
+async def cloudinary_upload(src_path: str, public_id: str | None = None,
+                            folder: str = "cosmoplex/lessons") -> tuple[str, int | None] | None:
     """Signed upload of a local video file to Cloudinary (same signing scheme as the
-    admin signature endpoint). Returns (public_id, duration_seconds) or None."""
+    admin signature endpoint). If `public_id` is given (a full foldered path like
+    'cosmoplex/lessons/1.1/1.1-en'), the asset is named that and overwrites any
+    prior one with that name; otherwise Cloudinary auto-names it under `folder`.
+    Returns (public_id, duration_seconds) or None."""
     if not settings.cloudinary_api_key or not settings.cloudinary_api_secret:
         print("⚠ cloudinary api key/secret not configured — cannot upload compressed video")
         return None
     ts = int(time.time())
-    to_sign = f"folder={folder}&timestamp={ts}{settings.cloudinary_api_secret}"
+    params: dict[str, str] = {"timestamp": str(ts)}
+    if public_id:
+        params["public_id"] = public_id
+        params["overwrite"] = "true"
+    else:
+        params["folder"] = folder
+    # Cloudinary signature: all signed params, alphabetical, joined by &, + secret.
+    to_sign = "&".join(f"{k}={params[k]}" for k in sorted(params)) + settings.cloudinary_api_secret
     signature = hashlib.sha1(to_sign.encode()).hexdigest()
     url = f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/video/upload"
     try:
         async with httpx.AsyncClient(timeout=300) as h:
             with open(src_path, "rb") as f:
                 r = await h.post(url, data={
+                    **params,
                     "api_key": settings.cloudinary_api_key,
-                    "timestamp": str(ts),
-                    "folder": folder,
                     "signature": signature,
                 }, files={"file": ("video.mp4", f, "video/mp4")})
         if r.status_code >= 400:

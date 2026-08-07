@@ -167,7 +167,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "test-accounts-1",
+        "build": "cloudinary-clean-names-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
