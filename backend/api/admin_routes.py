@@ -22,13 +22,12 @@ import asyncio
 import hashlib
 import io
 import json
-import os
 import re
 import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,10 +35,7 @@ from sqlalchemy.orm import selectinload
 
 from core.auth import create_admin_token, require_admin
 from core.config import settings
-from core.video_compress import (
-    compress_to_whatsapp_mp4, cloudinary_download, cloudinary_upload, make_tempfile,
-)
-from db.database import async_session_factory, get_db
+from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo,
@@ -355,81 +351,19 @@ async def create_video(body: VideoBody, _: bool = Depends(require_admin), db: As
     return await _tree(m.course_id, db)
 
 
-async def _lesson_name_hint(db, video_id: str, lang: str) -> str | None:
-    """A clean, foldered Cloudinary name for a lesson video, e.g.
-    'cosmoplex/lessons/1.1/1.1-en' — replaces the random auto-generated ids."""
-    v = await db.get(Video, video_id)
-    if not v:
-        return None
-    s = await db.get(Section, v.section_id)
-    m = await db.get(CourseModule, s.module_id) if s else None
-    if not (s and m):
-        return None
-    label = f"{m.order_index + 1}.{s.order_index + 1}"
-    return f"cosmoplex/lessons/{label}/{label}-{lang}"
-
-
-async def _compress_and_swap(kind: str, obj_id: str, source_public_id: str,
-                             name_hint: str | None = None) -> None:
-    """Background job: download the just-uploaded original, ffmpeg-compress it to a
-    <16 MB MP4, upload that (under a clean foldered name if name_hint is given), and
-    point the row at it (is_compressed=True) so it can be delivered raw — no
-    credit-metered Cloudinary transform. Non-destructive: on ANY failure the row
-    keeps its original id and stays served via the (cached) transform, so playback
-    never breaks. `kind` is 'video' or 'variant'."""
-    src = make_tempfile(".src")
-    out = make_tempfile(".mp4")
-    try:
-        if not await cloudinary_download(source_public_id, src):
-            return
-        if not await compress_to_whatsapp_mp4(src, out):
-            return
-        res = await cloudinary_upload(out, public_id=name_hint)
-        if not res:
-            return
-        new_pid, dur = res
-        model = Video if kind == "video" else VideoLanguageVariant
-        async with async_session_factory() as db:
-            obj = await db.get(model, obj_id)
-            # Only swap if the row still points at the original we compressed —
-            # guards against a newer re-upload racing this job.
-            if obj and obj.cloudinary_public_id == source_public_id and not obj.is_compressed:
-                obj.cloudinary_public_id = new_pid
-                obj.is_compressed = True
-                if dur:
-                    obj.duration_seconds = dur
-                await db.commit()
-                print(f"✓ compressed {kind} {obj_id}: {source_public_id} → {new_pid}")
-    finally:
-        for p in (src, out):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-
-
 @router.put("/videos/{video_id}")
-async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks,
-                       _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_video(video_id: str, body: VideoBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
     v.title = body.title
-    new_upload = False
-    if body.cloudinary_public_id is not None and body.cloudinary_public_id != v.cloudinary_public_id:
+    if body.cloudinary_public_id is not None:
         v.cloudinary_public_id = body.cloudinary_public_id
-        v.is_compressed = False          # a fresh upload is the full-size original
-        new_upload = True
     if body.duration_seconds is not None:
         v.duration_seconds = body.duration_seconds
     s = await db.get(Section, v.section_id)
     m = await db.get(CourseModule, s.module_id)
     await db.commit()
-    if new_upload:
-        label = f"{m.order_index + 1}.{s.order_index + 1}"
-        name_hint = f"cosmoplex/lessons/{label}/{label}-base"
-        background_tasks.add_task(_compress_and_swap, "video", video_id,
-                                  body.cloudinary_public_id, name_hint)
     return await _tree(m.course_id, db)
 
 
@@ -455,8 +389,7 @@ class VariantBody(BaseModel):
 
 
 @router.put("/videos/{video_id}/variant")
-async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks,
-                         _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Supported: {sorted(SUPPORTED_LANGUAGES)}")
     v = await db.get(Video, video_id)
@@ -465,28 +398,15 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
     res = await db.execute(select(VideoLanguageVariant).where(
         VideoLanguageVariant.video_id == video_id, VideoLanguageVariant.language == body.language))
     variant = res.scalar_one_or_none()
-    new_upload = False
     if variant:
-        if body.cloudinary_public_id != variant.cloudinary_public_id:
-            variant.cloudinary_public_id = body.cloudinary_public_id
-            variant.is_compressed = False          # fresh upload = full-size original
-            new_upload = True
+        variant.cloudinary_public_id = body.cloudinary_public_id
         if body.duration_seconds is not None:
             variant.duration_seconds = body.duration_seconds
     else:
-        variant = VideoLanguageVariant(video_id=video_id, language=body.language,
-                                       cloudinary_public_id=body.cloudinary_public_id,
-                                       duration_seconds=body.duration_seconds,
-                                       is_compressed=False)
-        db.add(variant)
-        new_upload = True
-    await db.flush()                 # populate variant.id before it's needed
-    variant_id = variant.id
-    name_hint = await _lesson_name_hint(db, video_id, body.language)
+        db.add(VideoLanguageVariant(video_id=video_id, language=body.language,
+                                    cloudinary_public_id=body.cloudinary_public_id,
+                                    duration_seconds=body.duration_seconds))
     await db.commit()
-    if new_upload:
-        background_tasks.add_task(_compress_and_swap, "variant", variant_id,
-                                  body.cloudinary_public_id, name_hint)
     return {"ok": True, "videoId": video_id, "language": body.language}
 
 

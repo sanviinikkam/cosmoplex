@@ -6,8 +6,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 # System libraries WeasyPrint needs to render PDF certificates, plus Noto +
 # Indic fonts so learner names in Hindi/Marathi/Telugu/Tamil/Kannada render.
-# ffmpeg compresses admin-uploaded videos to a WhatsApp-friendly (<16 MB) MP4
-# so they can be delivered without a (credit-metered) Cloudinary transform.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \
@@ -17,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         shared-mime-info \
         fonts-noto-core \
         fonts-indic \
-        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
