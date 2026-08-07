@@ -57,6 +57,8 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE videos ADD COLUMN IF NOT EXISTS is_compressed BOOLEAN DEFAULT FALSE"))
             await conn.execute(text(
                 "ALTER TABLE video_language_variants ADD COLUMN IF NOT EXISTS is_compressed BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text(
+                "ALTER TABLE learner_profiles ADD COLUMN IF NOT EXISTS is_test BOOLEAN DEFAULT FALSE"))
         print("✓ WhatsApp session columns ready")
         # Seed the current hardcoded intro video as the 'default' so the admin
         # portal reflects reality (idempotent — only inserts if the table is empty).
@@ -165,7 +167,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "auto-compress-uploads-1",
+        "build": "test-accounts-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

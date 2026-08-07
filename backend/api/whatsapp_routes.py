@@ -740,6 +740,7 @@ async def _db_lessons(db, lang: str) -> list[dict]:
                 if cloud_id:
                     lessons.append({"video_id": video.id, "title": video.title,
                                     "cloud_id": cloud_id, "compressed": compressed,
+                                    "label": f"{module.order_index + 1}.{section.order_index + 1}",
                                     "module_id": module.id,
                                     "module_title": module.title, "content_doc": module.content_doc})
     if not lessons:
@@ -758,6 +759,22 @@ async def _db_lessons(db, lang: str) -> list[dict]:
 async def _lesson_at(db, lang: str, idx: int) -> dict | None:
     lessons = await _db_lessons(db, lang)
     return lessons[idx] if 0 <= idx < len(lessons) else None
+
+
+# Test accounts (see TEST_PHONES) can jump straight to a lesson by messaging
+# "lesson 2.3" / "2.3" — handy for QA without playing through the whole course.
+TEST_PHONES = {"919482593764"}
+
+
+async def _jump_index(db, lang: str, mod: int, sec: int) -> int | None:
+    """Index in the language's playable list for lesson 'mod.sec', or None if that
+    lesson has no video in this language (so it isn't in the list)."""
+    label = f"{mod}.{sec}"
+    lessons = await _db_lessons(db, lang)
+    for i, lesson in enumerate(lessons):
+        if lesson.get("label") == label:
+            return i
+    return None
 
 
 QUIZ_PER_ATTEMPT = 5   # how many questions we ask per quiz
@@ -1087,6 +1104,28 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             await db.commit()
             await _send_language_picker(frm)
             return
+
+        # (Test accounts only) "lesson 2.3" / "2.3" → jump straight to that lesson,
+        # so QA can spot-check any lesson without playing through the course.
+        if frm in TEST_PHONES and reply_id is None:
+            mj = re.match(r"^(?:lesson\s*)?(\d+)\.(\d+)$", low)
+            if mj:
+                lang = session.language or "en"
+                idx = await _jump_index(db, lang, int(mj.group(1)), int(mj.group(2)))
+                if idx is not None:
+                    session.language = lang
+                    session.stage = "lesson"
+                    session.lesson_index = idx
+                    _reset_quiz_state(session)
+                    if not session.name:
+                        session.name = name or "friend"
+                    await db.commit()
+                    await _send_lesson(db, frm, lang, session.name or "friend", idx)
+                else:
+                    await db.commit()
+                    await send_text(frm, f"(test) Lesson {mj.group(1)}.{mj.group(2)} has no "
+                                         f"{lang} video, so it isn't in the playable list.")
+                return
 
         # Language selection from the list → ask the learner's name next
         if reply_id and reply_id.startswith("lang_"):

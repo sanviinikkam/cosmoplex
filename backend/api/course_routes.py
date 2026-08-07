@@ -92,7 +92,8 @@ def _all_videos_cleared_in_level(modules: list, level: int, learner_id: str,
 
 def _build_course_response(course: Course, learner_id: str, language: str = "en",
                            has_assignment: set | None = None,
-                           passed_titles: set | None = None) -> dict:
+                           passed_titles: set | None = None,
+                           is_test: bool = False) -> dict:
     """Serialize a fully-loaded Course with per-learner unlock + progress state.
 
     Access rules:
@@ -147,7 +148,7 @@ def _build_course_response(course: Course, learner_id: str, language: str = "en"
                     "watchedSeconds": watched,
                     "durationSavedSeconds": dur_saved or duration or 0,
                     "completed": completed,
-                    "unlocked": level_unlocked and prev_all_cleared,
+                    "unlocked": True if is_test else (level_unlocked and prev_all_cleared),
                     "hasAssignment": has_a,
                     "assignmentPassed": passed,
                 })
@@ -160,7 +161,7 @@ def _build_course_response(course: Course, learner_id: str, language: str = "en"
                 "orderIndex": section.order_index,
                 "videos": videos_out,
                 "completed": section_all_complete and len(videos_out) > 0,
-                "unlocked": level_unlocked,
+                "unlocked": is_test or level_unlocked,
             })
 
         modules_out.append({
@@ -170,7 +171,7 @@ def _build_course_response(course: Course, learner_id: str, language: str = "en"
             "orderIndex": module.order_index,
             "level": module.level,
             "sections": sections_out,
-            "unlocked": level_unlocked,
+            "unlocked": is_test or level_unlocked,
         })
 
     return {
@@ -247,7 +248,7 @@ async def get_course(
         )).scalars().all()
     )
     return _build_course_response(course, learner.id, learner.preferred_language or "en",
-                                  has_assignment, passed_titles)
+                                  has_assignment, passed_titles, is_test=bool(learner.is_test))
 
 
 @router.get("/{course_id}/continue")

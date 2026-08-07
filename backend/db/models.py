@@ -35,6 +35,7 @@ class LearnerProfile(Base):
     current_module_id = Column(String(50), nullable=True)
     total_score = Column(Float, default=0.0)
     certificate_issued = Column(Boolean, default=False)
+    is_test = Column(Boolean, default=False)   # QA account: all lessons unlocked, gate bypassed
     created_at = Column(DateTime, default=datetime.utcnow)
 
     module_progress = relationship("ModuleProgress", back_populates="learner", lazy="select")
