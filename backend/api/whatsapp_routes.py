@@ -908,6 +908,29 @@ def _reset_quiz_state(session) -> None:
     session.quiz_seen = None
 
 
+# "Skip for now" button labels (≤20 chars per WhatsApp) for the OPTIONAL assignment
+# shown on non-last microlessons. All six languages (never English-only).
+SKIP_BTN = {
+    "en": "Skip for now",
+    "hi": "अभी छोड़ें",
+    "mr": "आत्ता वगळा",
+    "te": "ఇప్పటికి వదిలేయ్",
+    "ta": "இப்போதைக்கு தவிர்",
+    "kn": "ಸದ್ಯಕ್ಕೆ ಬಿಡಿ",
+}
+
+
+def _is_last_in_module(lessons: list[dict], idx: int) -> bool:
+    """True if lessons[idx] is the LAST microlesson of its module (the next lesson
+    belongs to a different module, or it's the final lesson). The assignment is
+    compulsory here; optional on every other microlesson."""
+    if idx < 0 or idx >= len(lessons):
+        return False
+    if idx == len(lessons) - 1:
+        return True
+    return lessons[idx].get("module_id") != lessons[idx + 1].get("module_id")
+
+
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     """After finishing the current lesson, move to the next and auto-deliver it.
     Returns True if a next lesson was sent, False if the course is complete."""
@@ -1020,10 +1043,12 @@ async def _send_quiz_question(to: str, lang: str, qidx: int, items: list[dict]) 
                     rows=rows, section_title=tr(lang, "answer_btn"))
 
 
-async def _send_assignment(to: str, lang: str, assignment: dict) -> None:
+async def _send_assignment(to: str, lang: str, assignment: dict, skippable: bool = False) -> None:
     q = assignment["question"].get(lang, assignment["question"]["en"])
-    await send_buttons(to, tr(lang, "assignment_intro").format(q=q),
-                       [("submit_assignment", tr(lang, "submit_btn"))])
+    buttons = [("submit_assignment", tr(lang, "submit_btn"))]
+    if skippable:   # optional assignment (non-last microlesson) → offer to skip
+        buttons.append(("skip_assignment", SKIP_BTN.get(lang, SKIP_BTN["en"])))
+    await send_buttons(to, tr(lang, "assignment_intro").format(q=q), buttons)
 
 
 # Free-typed language names → code, so "english" / "i want tamil" switches too.
@@ -1292,7 +1317,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                     await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
                     vid = await _current_video_id(db, session, lang)
                     assignment = await _assignment_for(db, vid)
-                    await _send_assignment(frm, lang, assignment)
+                    lessons = await _db_lessons(db, lang)
+                    # Assignment is optional except on a module's last microlesson.
+                    skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
+                    await _send_assignment(frm, lang, assignment, skippable=skippable)
                 else:
                     session.stage = "quiz_failed"
                     await db.commit()
@@ -1309,6 +1337,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         # Assignment: collect answer across multiple messages (text or voice),
         # grade only when they tap Submit.
         if session.stage == "assignment":
+            # Skip → only allowed on non-last microlessons (assignment is optional
+            # there). On a module's last microlesson it's compulsory, so re-show it.
+            if reply_id == "skip_assignment":
+                lessons = await _db_lessons(db, lang)
+                if not _is_last_in_module(lessons, session.lesson_index or 0):
+                    session.assignment_draft = None
+                    await _send_between_choice(db, session, frm, lang, nm)
+                else:
+                    vid = await _current_video_id(db, session, lang)
+                    assignment = await _assignment_for(db, vid)
+                    await _send_assignment(frm, lang, assignment, skippable=False)
+                return
             # Submit → grade the accumulated draft
             if reply_id == "submit_assignment":
                 draft = (session.assignment_draft or "").strip()
