@@ -93,9 +93,12 @@ def _messages_url() -> str:
 VIDEO_TRANSFORM = "w_480,br_400k,vc_h264,ac_aac,q_auto:low"
 
 
-def _video_url(public_id: str) -> str:
+def _video_url(public_id: str, transform: bool = True) -> str:
+    # transform=False for files our backend already compressed (<16 MB) — serving
+    # them raw avoids a credit-metered Cloudinary transform.
+    tf = f"{VIDEO_TRANSFORM}/" if transform else ""
     return (f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}"
-            f"/video/upload/{VIDEO_TRANSFORM}/{public_id}.mp4")
+            f"/video/upload/{tf}{public_id}.mp4")
 
 
 async def _post(payload: dict) -> httpx.Response | None:
@@ -276,14 +279,15 @@ async def send_template(to: str, name: str, lang_code: str, body_params: list[st
     })
 
 
-async def send_video(to: str, public_id: str, caption: str) -> None:
+async def send_video(to: str, public_id: str, caption: str, compressed: bool = False) -> None:
     """Deliver a lesson video so it plays inline in WhatsApp.
 
-    Downloads the compressed (<16 MB) Cloudinary derivative, uploads it to
-    WhatsApp for a media_id, and sends by id — this avoids Meta's short
-    link-fetch timeout. Falls back to a link, then a text link, if needed.
+    Downloads the compressed (<16 MB) video, uploads it to WhatsApp for a media_id,
+    and sends by id — this avoids Meta's short link-fetch timeout. `compressed=True`
+    serves the stored file raw (our backend already compressed it, no Cloudinary
+    transform); otherwise it applies the on-the-fly transform. Falls back to a link.
     """
-    url = _video_url(public_id)
+    url = _video_url(public_id, transform=not compressed)
     # A cold Cloudinary derivative (first-ever request for a video) is still
     # transcoding — the first fetch triggers generation but may 4xx/hang, so a
     # single attempt would silently drop the video and jump straight to the quiz.
@@ -702,11 +706,14 @@ async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
 # web platform and admin portal use, so uploads/edits in the admin portal reflect
 # on both surfaces and Lesson N is the same lesson everywhere.
 
-def _variant_public_id(video: Video, lang: str) -> str | None:
-    """Cloudinary ID for a lang. Same priority as course_routes._pick_cloudinary_id:
-    exact language → 'en' → base video field."""
-    by_lang = {v.language: v.cloudinary_public_id for v in (video.language_variants or [])}
-    return by_lang.get(lang) or by_lang.get("en") or video.cloudinary_public_id
+def _variant_public_id(video: Video, lang: str) -> tuple[str | None, bool]:
+    """(Cloudinary ID, is_compressed) for a lang. Priority: exact language → 'en' →
+    base video field. is_compressed=True → deliver raw (no Cloudinary transform)."""
+    variants = {v.language: v for v in (video.language_variants or [])}
+    chosen = variants.get(lang) or variants.get("en")
+    if chosen:
+        return chosen.cloudinary_public_id, bool(chosen.is_compressed)
+    return video.cloudinary_public_id, bool(getattr(video, "is_compressed", False))
 
 
 async def _db_lessons(db, lang: str) -> list[dict]:
@@ -729,10 +736,11 @@ async def _db_lessons(db, lang: str) -> list[dict]:
     for module in course.modules:            # relationships already order_by order_index
         for section in module.sections:
             for video in section.videos:
-                cloud_id = _variant_public_id(video, lang)
+                cloud_id, compressed = _variant_public_id(video, lang)
                 if cloud_id:
                     lessons.append({"video_id": video.id, "title": video.title,
-                                    "cloud_id": cloud_id, "module_id": module.id,
+                                    "cloud_id": cloud_id, "compressed": compressed,
+                                    "module_id": module.id,
                                     "module_title": module.title, "content_doc": module.content_doc})
     if not lessons:
         # DB not populated in this environment — fall back to the built-in lesson
@@ -742,7 +750,7 @@ async def _db_lessons(db, lang: str) -> list[dict]:
         if cloud_id:
             lessons.append({"video_id": None,
                             "title": "The 10 AI Words Every Fresher Must Know",
-                            "cloud_id": cloud_id, "module_id": None,
+                            "cloud_id": cloud_id, "compressed": False, "module_id": None,
                             "module_title": None, "content_doc": None})
     return lessons
 
@@ -865,7 +873,8 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
         await send_text(to, tr(lang, "no_more"))
         return
     title = await _localized_title(db, lesson["video_id"], lesson["title"], lang)
-    await send_video(to, lesson["cloud_id"], _lesson_caption(lang, title))
+    await send_video(to, lesson["cloud_id"], _lesson_caption(lang, title),
+                     compressed=lesson.get("compressed", False))
     # A video takes a moment to transcode/render on the phone; a text sent right
     # after would appear ABOVE it. Pause so the video lands first, then the
     # "Start quiz" prompt.

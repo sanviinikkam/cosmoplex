@@ -251,6 +251,10 @@ class Video(Base):
     duration_seconds = Column(Integer, nullable=True)
     thumbnail_cloudinary_id = Column(String(500), nullable=True)
     order_index = Column(Integer, nullable=False, default=0)
+    # True once our backend has ffmpeg-compressed this file to a <16 MB MP4, so it
+    # can be delivered raw (no credit-metered Cloudinary transform). False = legacy
+    # full-size upload, still served via the (cached) Cloudinary transform.
+    is_compressed = Column(Boolean, default=False)
 
     section = relationship("Section", back_populates="videos")
     progress_records = relationship("VideoProgress", back_populates="video", lazy="select")
@@ -271,6 +275,7 @@ class VideoLanguageVariant(Base):
     cloudinary_public_id = Column(String(500), nullable=False)
     duration_seconds = Column(Integer, nullable=True)      # override if lang version differs
     title = Column(String(255), nullable=True)             # localized lesson title (auto-translated, editable)
+    is_compressed = Column(Boolean, default=False)         # backend-compressed → deliver raw (no transform)
 
     __table_args__ = (
         UniqueConstraint("video_id", "language", name="uq_video_language_variant"),
