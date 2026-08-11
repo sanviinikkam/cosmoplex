@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
-  type IntroVideoItem, type AdminDashboard,
+  type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -146,7 +146,150 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+function Bar({ pct, color }: { pct: number; color?: string }) {
+  return (
+    <div className="h-2 rounded-full bg-zinc-200 overflow-hidden">
+      <div className={`h-full ${color ?? "bg-emerald-500"}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-zinc-400">{label}</div>
+      <div className="text-sm text-zinc-800 mt-0.5">{value === null || value === undefined || value === "" ? "—" : value}</div>
+    </div>
+  );
+}
+
+function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: string }; onClose: () => void }) {
+  const [wa, setWa] = useState<WaDetail | null>(null);
+  const [web, setWeb] = useState<WebDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true); setErr(""); setWa(null); setWeb(null);
+      try {
+        if (sel.kind === "wa") { const d = await adminApi.whatsappDetail(sel.id); if (alive) setWa(d); }
+        else { const d = await adminApi.learnerDetail(sel.id); if (alive) setWeb(d); }
+      } catch (e) { if (alive) setErr(e instanceof Error ? e.message : "Failed to load user"); }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [sel]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 sticky top-0 bg-white">
+          <h3 className="font-semibold">Learner detail</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 text-xl leading-none">×</button>
+        </div>
+        <div className="p-5">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+          ) : err ? (
+            <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>
+          ) : wa ? (
+            <div className="flex flex-col gap-5">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-lg font-semibold">{wa.name}</span>
+                  <span className="text-sm text-zinc-400">{wa.phone}</span>
+                  <span className="text-xs rounded bg-emerald-50 text-emerald-700 px-2 py-0.5">WhatsApp</span>
+                  <span className="text-xs rounded bg-zinc-100 text-zinc-700 px-2 py-0.5">stage: {wa.stage}</span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-zinc-500">Course progress</span>
+                  <span className="font-semibold tabular-nums">{wa.lesson.percent}%</span>
+                </div>
+                <Bar pct={wa.lesson.percent} />
+                <div className="text-xs text-zinc-500 mt-1.5">
+                  {wa.lesson.completed} of {wa.lesson.total} lessons completed
+                  {wa.lesson.label && <> · currently on <span className="font-medium text-zinc-700">{wa.lesson.label} {wa.lesson.title}</span></>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Language" value={wa.language} />
+                <Field label="Profile" value={wa.currentStatus} />
+                <Field label="Quiz (this attempt)" value={`${wa.quiz.correct}/${wa.quiz.index || 0} correct`} />
+                <Field label="Nudges sent" value={wa.nudgesSent} />
+                <Field label="Joined" value={wa.createdAt ? new Date(wa.createdAt).toLocaleDateString() : null} />
+                <Field label="Last active" value={timeAgo(wa.lastActive)} />
+              </div>
+              {wa.goal && <Field label="Their goal" value={wa.goal} />}
+            </div>
+          ) : web ? (
+            <div className="flex flex-col gap-5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-lg font-semibold">{web.name ?? "—"}</span>
+                <span className="text-xs rounded bg-indigo-50 text-indigo-700 px-2 py-0.5">Web</span>
+                {web.isTest && <span className="text-xs rounded bg-amber-100 text-amber-700 px-2 py-0.5">test</span>}
+                {web.certificate && <span className="text-xs rounded bg-emerald-50 text-emerald-700 px-2 py-0.5">certified ✓</span>}
+              </div>
+              <div className="text-sm text-zinc-500 -mt-2">{web.email}</div>
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-zinc-500">Videos completed</span>
+                  <span className="font-semibold tabular-nums">{web.videos.percent}%</span>
+                </div>
+                <Bar pct={web.videos.percent} color="bg-indigo-500" />
+                <div className="text-xs text-zinc-500 mt-1.5">
+                  {web.videos.completed} of {web.videos.total} videos
+                  {web.videos.lastWatched && <> · last watched {timeAgo(web.videos.lastWatched)}</>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Language" value={web.language} />
+                <Field label="Current module" value={web.currentModule} />
+                <Field label="Exams passed" value={`${web.exams.passed}/${web.exams.attempts}`} />
+                <Field label="Best exam score" value={web.exams.bestScore} />
+                <Field label="Assignments submitted" value={web.assignments.submitted} />
+                <Field label="Total score" value={web.totalScore} />
+              </div>
+              {web.exams.recent.length > 0 && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1.5">Recent exams</div>
+                  <ul className="flex flex-col gap-1 text-sm">
+                    {web.exams.recent.map((e, i) => (
+                      <li key={i} className="flex justify-between border-b border-zinc-100 pb-1">
+                        <span className="text-zinc-700">{e.module}</span>
+                        <span className="tabular-nums text-zinc-500">{e.score ?? "—"} {e.passed ? "✓" : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {web.assignments.recent.length > 0 && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1.5">Recent assignments</div>
+                  <ul className="flex flex-col gap-1 text-sm">
+                    {web.assignments.recent.map((a, i) => (
+                      <li key={i} className="flex justify-between border-b border-zinc-100 pb-1">
+                        <span className="text-zinc-700">{a.lesson ?? "—"}</span>
+                        <span className="tabular-nums text-zinc-500">{a.score ?? "—"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SystemStatus() {
+  const [sel, setSel] = useState<{ kind: "wa" | "web"; id: string } | null>(null);
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -238,7 +381,8 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(wa.recent ?? []).map((r, i) => (
-                      <tr key={i} className="border-t border-zinc-100">
+                      <tr key={i} onClick={() => setSel({ kind: "wa", id: r.id })}
+                        className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                         <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
                         <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>
@@ -264,7 +408,8 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(web.recent ?? []).map((r, i) => (
-                      <tr key={i} className="border-t border-zinc-100">
+                      <tr key={i} onClick={() => setSel({ kind: "web", id: r.id })}
+                        className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2">
                           <span className="font-medium">{r.name ?? "—"}</span>
                           {r.isTest && <span className="ml-1.5 rounded bg-amber-100 text-amber-700 px-1 py-0.5 text-[10px]">test</span>}
@@ -282,9 +427,10 @@ function SystemStatus() {
             </div>
           </div>
 
-          <div className="text-[11px] text-zinc-400">Snapshot at {data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"}</div>
+          <div className="text-[11px] text-zinc-400">Snapshot at {data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"} · click any user for detail</div>
         </div>
       ) : null}
+      {sel && <UserDetailModal sel={sel} onClose={() => setSel(null)} />}
     </section>
   );
 }
@@ -296,6 +442,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<"content" | "analytics">("content");
 
   const refresh = useCallback(async () => {
     try {
@@ -356,8 +503,19 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
-      <SystemStatus />
+      <div className="flex gap-1 mb-6 border-b border-zinc-200">
+        {([["content", "Content"], ["analytics", "Analytics"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              tab === key ? "border-emerald-600 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-800"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
 
+      {tab === "analytics" && <SystemStatus />}
+
+      {tab === "content" && (<>
       <IntroVideosManager />
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
@@ -396,6 +554,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           )}
         </main>
       </div>
+      </>)}
     </div>
   );
 }

@@ -40,6 +40,7 @@ from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo,
     LearnerProfile, WhatsAppSession, Certificate,
+    ExamAttempt, LessonAssignmentSubmission, ModuleProgress,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -180,6 +181,7 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
             "withProgress": with_progress,
             "byLanguage": await group(LearnerProfile.preferred_language),
             "recent": [{
+                "id": r.id,
                 "name": r.name, "email": r.email, "language": r.preferred_language,
                 "certificate": bool(r.certificate_issued), "isTest": bool(r.is_test),
                 "score": r.total_score,
@@ -203,6 +205,7 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
             "byStage": await group(WhatsAppSession.stage),
             "byLanguage": await group(WhatsAppSession.language),
             "recent": [{
+                "id": r.phone,
                 "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
                 "stage": r.stage, "lesson": r.lesson_index,
                 "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
@@ -212,6 +215,85 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
         whatsapp = {"error": type(e).__name__}
 
     return {"generatedAt": now.isoformat(), "content": content, "web": web, "whatsapp": whatsapp}
+
+
+@router.get("/whatsapp/{phone}")
+async def whatsapp_detail(phone: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Per-user detail for a WhatsApp learner: where they are, how far, quiz state."""
+    s = await db.get(WhatsAppSession, phone)
+    if not s:
+        raise HTTPException(status_code=404, detail="WhatsApp user not found")
+    from api.whatsapp_routes import _db_lessons  # lazy import avoids a circular import
+    lang = s.language or "en"
+    try:
+        lessons = await _db_lessons(db, lang)
+    except Exception:
+        lessons = []
+    total = len(lessons)
+    idx = s.lesson_index or 0
+    cur = lessons[idx] if 0 <= idx < total else None
+    nudges = 0
+    if isinstance(s.nudge_log, dict):
+        nudges = sum((v or {}).get("n", 0) for v in s.nudge_log.values() if isinstance(v, dict))
+    return {
+        "type": "whatsapp",
+        "name": s.name or "—", "phone": ("•••• " + phone[-4:]) if len(phone) >= 4 else phone,
+        "language": lang, "stage": s.stage,
+        "currentStatus": s.current_status, "goal": s.goal,
+        "lesson": {"index": idx, "completed": idx, "total": total,
+                   "percent": round(idx / total * 100) if total else 0,
+                   "label": (cur or {}).get("label"), "title": (cur or {}).get("title")},
+        "quiz": {"index": s.quiz_index or 0, "correct": s.quiz_correct or 0},
+        "nudgesSent": nudges,
+        "createdAt": s.created_at.isoformat() if s.created_at else None,
+        "lastActive": s.last_active_at.isoformat() if s.last_active_at else None,
+    }
+
+
+@router.get("/learner/{learner_id}")
+async def learner_detail(learner_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Per-user detail for a web learner: completion %, exams, assignments."""
+    lp = await db.get(LearnerProfile, learner_id)
+    if not lp:
+        raise HTTPException(status_code=404, detail="Learner not found")
+    total_videos = (await db.execute(select(func.count()).select_from(Video))).scalar() or 0
+    vp = (await db.execute(select(VideoProgress).where(VideoProgress.learner_id == learner_id))).scalars().all()
+    completed = sum(1 for v in vp if v.completed)
+    last_watched = max((v.last_watched_at for v in vp if v.last_watched_at), default=None)
+
+    exams = (await db.execute(select(ExamAttempt).where(ExamAttempt.learner_id == learner_id)
+             .order_by(ExamAttempt.attempted_at.desc()))).scalars().all()
+    mod_ids = {e.module_id for e in exams if e.module_id}
+    if lp.current_module_id:
+        mod_ids.add(lp.current_module_id)
+    mod_titles = {}
+    if mod_ids:
+        rows = (await db.execute(select(CourseModule.id, CourseModule.title)
+                .where(CourseModule.id.in_(mod_ids)))).all()
+        mod_titles = {mid: t for mid, t in rows}
+
+    subs = (await db.execute(select(LessonAssignmentSubmission)
+            .where(LessonAssignmentSubmission.learner_id == learner_id)
+            .order_by(LessonAssignmentSubmission.submitted_at.desc()))).scalars().all()
+
+    return {
+        "type": "web",
+        "name": lp.name, "email": lp.email, "language": lp.preferred_language, "isTest": bool(lp.is_test),
+        "enrolledAt": (lp.enrollment_date or lp.created_at).isoformat() if (lp.enrollment_date or lp.created_at) else None,
+        "currentModule": mod_titles.get(lp.current_module_id),
+        "totalScore": lp.total_score, "certificate": bool(lp.certificate_issued),
+        "videos": {"completed": completed, "total": total_videos,
+                   "percent": round(completed / total_videos * 100) if total_videos else 0,
+                   "lastWatched": last_watched.isoformat() if last_watched else None},
+        "exams": {"attempts": len(exams), "passed": sum(1 for e in exams if e.passed),
+                  "bestScore": max((e.score for e in exams if e.score is not None), default=None),
+                  "recent": [{"module": mod_titles.get(e.module_id, "—"), "score": e.score,
+                              "passed": bool(e.passed),
+                              "at": e.attempted_at.isoformat() if e.attempted_at else None} for e in exams[:6]]},
+        "assignments": {"submitted": len(subs),
+                        "recent": [{"lesson": a.lesson_title, "score": a.score,
+                                    "at": a.submitted_at.isoformat() if a.submitted_at else None} for a in subs[:6]]},
+    }
 
 
 @router.get("/courses")

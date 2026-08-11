@@ -32,12 +32,29 @@ export type AssignmentPayload = { question: Record<string, string>; rubric: stri
 export type IntroVideoItem = { language: string; cloudinaryPublicId: string; durationSeconds: number | null };
 
 export type WebLearnerRow = {
+  id: string;
   name: string | null; email: string; language: string;
   certificate: boolean; isTest: boolean; score: number | null; joined: string | null;
 };
 export type WaSessionRow = {
+  id: string;
   name: string; phone: string; language: string | null;
   stage: string; lesson: number | null; lastActive: string | null;
+};
+
+export type WaDetail = {
+  type: "whatsapp"; name: string; phone: string; language: string; stage: string;
+  currentStatus: string | null; goal: string | null;
+  lesson: { index: number; completed: number; total: number; percent: number; label: string | null; title: string | null };
+  quiz: { index: number; correct: number }; nudgesSent: number;
+  createdAt: string | null; lastActive: string | null;
+};
+export type WebDetail = {
+  type: "web"; name: string | null; email: string; language: string; isTest: boolean;
+  enrolledAt: string | null; currentModule: string | null; totalScore: number | null; certificate: boolean;
+  videos: { completed: number; total: number; percent: number; lastWatched: string | null };
+  exams: { attempts: number; passed: number; bestScore: number | null; recent: { module: string; score: number | null; passed: boolean; at: string | null }[] };
+  assignments: { submitted: number; recent: { lesson: string | null; score: number | null; at: string | null }[] };
 };
 export type AdminDashboard = {
   generatedAt: string;
@@ -127,6 +144,8 @@ export const adminApi = {
   },
 
   dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
+  whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
+  learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),
 
   listCourses: () => adminFetch<AdminCourse[]>("/admin/courses"),
   createCourse: (b: { title: string; description?: string }) =>
