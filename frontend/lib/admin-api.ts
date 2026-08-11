@@ -31,6 +31,21 @@ export type AssignmentItem = { id: string; question: Record<string, string>; rub
 export type AssignmentPayload = { question: Record<string, string>; rubric: string };
 export type IntroVideoItem = { language: string; cloudinaryPublicId: string; durationSeconds: number | null };
 
+export type WebLearnerRow = {
+  name: string | null; email: string; language: string;
+  certificate: boolean; isTest: boolean; score: number | null; joined: string | null;
+};
+export type WaSessionRow = {
+  name: string; phone: string; language: string | null;
+  stage: string; lesson: number | null; lastActive: string | null;
+};
+export type AdminDashboard = {
+  generatedAt: string;
+  content: { error?: string; courses?: number; modules?: number; sections?: number; videos?: number; quizzes?: number; assignments?: number };
+  web: { error?: string; total?: number; testAccounts?: number; certificates?: number; withProgress?: number; byLanguage?: Record<string, number>; recent?: WebLearnerRow[] };
+  whatsapp: { error?: string; total?: number; active24h?: number; active7d?: number; completed?: number; byStage?: Record<string, number>; byLanguage?: Record<string, number>; recent?: WaSessionRow[] };
+};
+
 export const LANGUAGES: { code: string; label: string }[] = [
   { code: "en", label: "English" },
   { code: "hi", label: "हिंदी" },
@@ -110,6 +125,8 @@ export const adminApi = {
     setAdminToken(data.access_token);
     return data;
   },
+
+  dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
 
   listCourses: () => adminFetch<AdminCourse[]>("/admin/courses"),
   createCourse: (b: { title: string; description?: string }) =>

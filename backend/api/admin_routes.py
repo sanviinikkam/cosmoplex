@@ -39,6 +39,7 @@ from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo,
+    LearnerProfile, WhatsAppSession, Certificate,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -138,6 +139,81 @@ async def _next_order(db: AsyncSession, model, fk_col, fk_val) -> int:
 
 
 # ── Courses ─────────────────────────────────────────────────────────────────────
+@router.get("/dashboard")
+async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """System overview for the admin portal: content counts, web-learner and
+    WhatsApp-user stats, status breakdowns, and recent activity. Defensive —
+    a failure in one block returns {"error": ...} for that block only."""
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+
+    async def count(model, *where):
+        q = select(func.count()).select_from(model)
+        for w in where:
+            q = q.where(w)
+        return (await db.execute(q)).scalar() or 0
+
+    async def group(col):
+        rows = (await db.execute(select(col, func.count()).group_by(col))).all()
+        return {(str(k) if k not in (None, "") else "—"): n for k, n in rows}
+
+    # ── Content ──
+    try:
+        content = {
+            "courses": await count(Course), "modules": await count(CourseModule),
+            "sections": await count(Section), "videos": await count(Video),
+            "quizzes": await count(QuizQuestion), "assignments": await count(AssignmentPrompt),
+        }
+    except Exception as e:
+        content = {"error": type(e).__name__}
+
+    # ── Web learners ──
+    try:
+        with_progress = (await db.execute(
+            select(func.count(func.distinct(VideoProgress.learner_id))))).scalar() or 0
+        recent = (await db.execute(
+            select(LearnerProfile).order_by(LearnerProfile.created_at.desc()).limit(8))).scalars().all()
+        web = {
+            "total": await count(LearnerProfile),
+            "testAccounts": await count(LearnerProfile, LearnerProfile.is_test.is_(True)),
+            "certificates": await count(Certificate),
+            "withProgress": with_progress,
+            "byLanguage": await group(LearnerProfile.preferred_language),
+            "recent": [{
+                "name": r.name, "email": r.email, "language": r.preferred_language,
+                "certificate": bool(r.certificate_issued), "isTest": bool(r.is_test),
+                "score": r.total_score,
+                "joined": r.created_at.isoformat() if r.created_at else None,
+            } for r in recent],
+        }
+    except Exception as e:
+        web = {"error": type(e).__name__}
+
+    # ── WhatsApp users ──
+    try:
+        recent_wa = (await db.execute(
+            select(WhatsAppSession).order_by(WhatsAppSession.last_active_at.desc()).limit(10))).scalars().all()
+        def mask(p):
+            return ("•••• " + p[-4:]) if p and len(p) >= 4 else (p or "—")
+        whatsapp = {
+            "total": await count(WhatsAppSession),
+            "active24h": await count(WhatsAppSession, WhatsAppSession.last_active_at >= now - timedelta(hours=24)),
+            "active7d": await count(WhatsAppSession, WhatsAppSession.last_active_at >= now - timedelta(days=7)),
+            "completed": await count(WhatsAppSession, WhatsAppSession.stage == "done"),
+            "byStage": await group(WhatsAppSession.stage),
+            "byLanguage": await group(WhatsAppSession.language),
+            "recent": [{
+                "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
+                "stage": r.stage, "lesson": r.lesson_index,
+                "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
+            } for r in recent_wa],
+        }
+    except Exception as e:
+        whatsapp = {"error": type(e).__name__}
+
+    return {"generatedAt": now.isoformat(), "content": content, "web": web, "whatsapp": whatsapp}
+
+
 @router.get("/courses")
 async def list_courses(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Course).options(_FULL_TREE).order_by(Course.created_at))

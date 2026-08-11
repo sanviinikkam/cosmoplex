@@ -167,7 +167,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "revert-to-cloudinary-transforms-1",
+        "build": "admin-dashboard-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
-  type IntroVideoItem,
+  type IntroVideoItem, type AdminDashboard,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -113,6 +113,182 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+// ── System status ─────────────────────────────────────────────────────────────
+function StatTile({ label, value, accent }: { label: string; value: number | string; accent?: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-zinc-200 p-4">
+      <div className={`text-2xl font-semibold tabular-nums ${accent ?? "text-zinc-800"}`}>{value}</div>
+      <div className="text-xs text-zinc-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+function Pills({ data }: { data?: Record<string, number> }) {
+  const entries = Object.entries(data ?? {}).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return <span className="text-xs text-zinc-400">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {entries.map(([k, v]) => (
+        <span key={k} className="text-xs rounded-md bg-zinc-100 text-zinc-700 px-2 py-0.5">
+          {k} <span className="font-semibold tabular-nums">{v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function SystemStatus() {
+  const [data, setData] = useState<AdminDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try { setData(await adminApi.dashboard()); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load status"); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const wa = data?.whatsapp ?? {};
+  const web = data?.web ?? {};
+  const c = data?.content ?? {};
+
+  return (
+    <section className="bg-zinc-50 rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-semibold">System status</h2>
+          <p className="text-sm text-zinc-500">Live snapshot of users, activity, and content.</p>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-white disabled:opacity-50 inline-flex items-center gap-1.5">
+          {loading ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Refresh
+        </button>
+      </div>
+
+      {err && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
+
+      {loading && !data ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : data ? (
+        <div className="flex flex-col gap-5">
+          {/* WhatsApp */}
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-emerald-700 mb-2">WhatsApp learners</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatTile label="Total users" value={wa.total ?? 0} accent="text-emerald-700" />
+              <StatTile label="Active · 24h" value={wa.active24h ?? 0} />
+              <StatTile label="Active · 7d" value={wa.active7d ?? 0} />
+              <StatTile label="Completed course" value={wa.completed ?? 0} />
+            </div>
+            <div className="mt-3 grid md:grid-cols-2 gap-4">
+              <div><div className="text-xs text-zinc-500 mb-1.5">By stage</div><Pills data={wa.byStage} /></div>
+              <div><div className="text-xs text-zinc-500 mb-1.5">By language</div><Pills data={wa.byLanguage} /></div>
+            </div>
+          </div>
+
+          {/* Web */}
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-indigo-700 mb-2">Web learners</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatTile label="Total learners" value={web.total ?? 0} accent="text-indigo-700" />
+              <StatTile label="Started learning" value={web.withProgress ?? 0} />
+              <StatTile label="Certificates" value={web.certificates ?? 0} />
+              <StatTile label="Test accounts" value={web.testAccounts ?? 0} />
+            </div>
+            <div className="mt-3"><div className="text-xs text-zinc-500 mb-1.5">By language</div><Pills data={web.byLanguage} /></div>
+          </div>
+
+          {/* Content */}
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 mb-2">Content in the system</div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <StatTile label="Courses" value={c.courses ?? 0} />
+              <StatTile label="Modules" value={c.modules ?? 0} />
+              <StatTile label="Sections" value={c.sections ?? 0} />
+              <StatTile label="Videos" value={c.videos ?? 0} />
+              <StatTile label="Quizzes" value={c.quizzes ?? 0} />
+              <StatTile label="Assignments" value={c.assignments ?? 0} />
+            </div>
+          </div>
+
+          {/* Recent activity */}
+          <div className="grid md:grid-cols-2 gap-5">
+            <div>
+              <div className="text-xs text-zinc-500 mb-2">Recent WhatsApp activity</div>
+              <div className="bg-white rounded-xl border border-zinc-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 text-zinc-500 text-xs">
+                    <tr>
+                      <th className="text-left font-medium px-3 py-2">User</th>
+                      <th className="text-left font-medium px-3 py-2">Stage</th>
+                      <th className="text-left font-medium px-3 py-2">Lang</th>
+                      <th className="text-right font-medium px-3 py-2">Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(wa.recent ?? []).map((r, i) => (
+                      <tr key={i} className="border-t border-zinc-100">
+                        <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
+                        <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
+                        <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>
+                        <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.lastActive)}</td>
+                      </tr>
+                    ))}
+                    {!(wa.recent ?? []).length && <tr><td colSpan={4} className="px-3 py-4 text-center text-zinc-400 text-sm">No sessions yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-500 mb-2">Recent web signups</div>
+              <div className="bg-white rounded-xl border border-zinc-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 text-zinc-500 text-xs">
+                    <tr>
+                      <th className="text-left font-medium px-3 py-2">Learner</th>
+                      <th className="text-left font-medium px-3 py-2">Lang</th>
+                      <th className="text-center font-medium px-3 py-2">Cert</th>
+                      <th className="text-right font-medium px-3 py-2">Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(web.recent ?? []).map((r, i) => (
+                      <tr key={i} className="border-t border-zinc-100">
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{r.name ?? "—"}</span>
+                          {r.isTest && <span className="ml-1.5 rounded bg-amber-100 text-amber-700 px-1 py-0.5 text-[10px]">test</span>}
+                          <div className="text-zinc-400 text-xs">{r.email}</div>
+                        </td>
+                        <td className="px-3 py-2 text-zinc-600">{r.language}</td>
+                        <td className="px-3 py-2 text-center">{r.certificate ? "✓" : "—"}</td>
+                        <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.joined)}</td>
+                      </tr>
+                    ))}
+                    {!(web.recent ?? []).length && <tr><td colSpan={4} className="px-3 py-4 text-center text-zinc-400 text-sm">No signups yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-zinc-400">Snapshot at {data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"}</div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [courses, setCourses] = useState<AdminCourse[]>([]);
@@ -179,6 +355,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </header>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
+
+      <SystemStatus />
 
       <IntroVideosManager />
 
