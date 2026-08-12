@@ -956,7 +956,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         session.stage = "between_lessons"
         await db.commit()
         await send_buttons(
-            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
+            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title) + REFER_HINT.get(lang, REFER_HINT["en"]),
             [("next_lesson", tr(lang, "start_next_btn")),
              ("practice_quiz", tr(lang, "practice_btn")),
              ("ask_doubt", tr(lang, "doubt_btn"))],
@@ -967,6 +967,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         await send_buttons(
             frm, tr(lang, "done_choice").format(name=nm),
             [("practice_quiz", tr(lang, "practice_btn")),
+             ("get_referral", INVITE_BTN.get(lang, INVITE_BTN["en"])),
              ("ask_doubt", tr(lang, "doubt_btn"))],
         )
 
@@ -1121,6 +1122,21 @@ REFERRAL_MSG = {
     "te": "🎁 స్నేహితులను ఆహ్వానించి ఒక్కొక్కరికి ₹{reward} సంపాదించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: {paid} చేరారు, ₹{earned} సంపాదించారు.\nషేర్ చేయండి 👇",
     "ta": "🎁 நண்பர்களை அழைத்து ஒவ்வொருவருக்கும் ₹{reward} சம்பாதியுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: {paid} சேர்ந்தனர், ₹{earned} சம்பாதித்தீர்கள்.\nபகிருங்கள் 👇",
     "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} ಸೇರಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
+}
+
+# One-line nudge appended after a lesson so learners discover the program.
+REFER_HINT = {
+    "en": "\n\n🎁 Invite friends & earn ₹50 each — reply *refer*.",
+    "hi": "\n\n🎁 दोस्तों को बुलाएँ, हर एक पर ₹50 — *refer* लिखें.",
+    "mr": "\n\n🎁 मित्रांना बोलवा, प्रत्येकी ₹50 — *refer* लिहा.",
+    "te": "\n\n🎁 స్నేహితులను ఆహ్వానించండి, ఒక్కొక్కరికి ₹50 — *refer* అని పంపండి.",
+    "ta": "\n\n🎁 நண்பர்களை அழையுங்கள், தலா ₹50 — *refer* எனச் சொல்லுங்கள்.",
+    "kn": "\n\n🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ, ತಲಾ ₹50 — *refer* ಎಂದು ಕಳುಹಿಸಿ.",
+}
+# Reply-button label (≤20 chars) for the course-complete screen.
+INVITE_BTN = {
+    "en": "Invite & earn ₹50", "hi": "बुलाएँ, ₹50 पाएँ", "mr": "बोलवा, ₹50 मिळवा",
+    "te": "ఆహ్వానించి ₹50", "ta": "அழைத்து ₹50 பெறு", "kn": "ಆಹ್ವಾನಿಸಿ ₹50 ಪಡೆ",
 }
 
 async def _send_referral_info(db, session, frm: str) -> None:
@@ -1312,6 +1328,11 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         # Between lessons: "Start next lesson" → advance + deliver it
         if reply_id == "next_lesson":
             await _advance_lesson(db, session, frm, lang, nm)
+            return
+
+        # "Invite & earn ₹50" button (course-complete screen) → send code + link
+        if reply_id == "get_referral":
+            await _send_referral_info(db, session, frm)
             return
 
         # Between lessons: "I have a doubt" → clarify previous lesson first
