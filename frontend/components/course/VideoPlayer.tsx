@@ -73,8 +73,13 @@ const LANG_VIDEO_OVERRIDES: Record<string, Partial<Record<string, string>>> = {
   },
 };
 
+// MUST stay byte-identical to the backend's VIDEO_TRANSFORM (whatsapp_routes.py):
+// serving the same transform string means the web reuses the SAME cached Cloudinary
+// derivative WhatsApp already generated — so no extra transformation credits, and a
+// much smaller stream than the raw original. Changing this string = a new derivative.
+const VIDEO_TRANSFORM = "w_480,br_400k,vc_h264,ac_aac,q_auto:low";
 function cloudinaryVideoUrl(publicId: string): string {
-  return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/${publicId}`;
+  return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/${VIDEO_TRANSFORM}/${publicId}.mp4`;
 }
 
 function cloudinaryThumbUrl(publicId: string): string {
