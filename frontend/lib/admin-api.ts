@@ -52,7 +52,7 @@ export type WaDetail = {
 export type WebDetail = {
   type: "web"; name: string | null; email: string; language: string; isTest: boolean;
   enrolledAt: string | null; currentModule: string | null; totalScore: number | null; certificate: boolean;
-  videos: { completed: number; total: number; percent: number; lastWatched: string | null };
+  lesson: { completed: number; total: number; percent: number; label: string | null; title: string | null; lastWatched: string | null };
   exams: { attempts: number; passed: number; bestScore: number | null; recent: { module: string; score: number | null; passed: boolean; at: string | null }[] };
   assignments: { submitted: number; recent: { lesson: string | null; score: number | null; at: string | null }[] };
 };

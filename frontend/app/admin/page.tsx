@@ -237,13 +237,14 @@ function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: stri
               <div className="text-sm text-zinc-500 -mt-2">{web.email}</div>
               <div>
                 <div className="flex items-center justify-between text-sm mb-1.5">
-                  <span className="text-zinc-500">Videos completed</span>
-                  <span className="font-semibold tabular-nums">{web.videos.percent}%</span>
+                  <span className="text-zinc-500">Course progress</span>
+                  <span className="font-semibold tabular-nums">{web.lesson.percent}%</span>
                 </div>
-                <Bar pct={web.videos.percent} color="bg-indigo-500" />
+                <Bar pct={web.lesson.percent} color="bg-indigo-500" />
                 <div className="text-xs text-zinc-500 mt-1.5">
-                  {web.videos.completed} of {web.videos.total} videos
-                  {web.videos.lastWatched && <> · last watched {timeAgo(web.videos.lastWatched)}</>}
+                  {web.lesson.completed} of {web.lesson.total} lessons completed
+                  {web.lesson.label && <> · currently on <span className="font-medium text-zinc-700">{web.lesson.label} {web.lesson.title}</span></>}
+                  {web.lesson.lastWatched && <> · last watched {timeAgo(web.lesson.lastWatched)}</>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

@@ -287,10 +287,20 @@ async def learner_detail(learner_id: str, _: bool = Depends(require_admin), db: 
     lp = await db.get(LearnerProfile, learner_id)
     if not lp:
         raise HTTPException(status_code=404, detail="Learner not found")
-    total_videos = (await db.execute(select(func.count()).select_from(Video))).scalar() or 0
     vp = (await db.execute(select(VideoProgress).where(VideoProgress.learner_id == learner_id))).scalars().all()
-    completed = sum(1 for v in vp if v.completed)
     last_watched = max((v.last_watched_at for v in vp if v.last_watched_at), default=None)
+    # Lesson-wise progress on the SAME per-language playable lesson list WhatsApp uses
+    # (only lessons that have a video), so both channels report consistently — not raw
+    # Video-row counts that include empty, not-yet-uploaded lesson slots.
+    from api.whatsapp_routes import _db_lessons
+    try:
+        lessons = await _db_lessons(db, lp.preferred_language or "en")
+    except Exception:
+        lessons = []
+    completed_ids = {v.video_id for v in vp if v.completed}
+    completed = sum(1 for les in lessons if les.get("video_id") in completed_ids)
+    total_lessons = len(lessons)
+    current = next((les for les in lessons if les.get("video_id") not in completed_ids), None)
 
     exams = (await db.execute(select(ExamAttempt).where(ExamAttempt.learner_id == learner_id)
              .order_by(ExamAttempt.attempted_at.desc()))).scalars().all()
@@ -313,8 +323,9 @@ async def learner_detail(learner_id: str, _: bool = Depends(require_admin), db: 
         "enrolledAt": (lp.enrollment_date or lp.created_at).isoformat() if (lp.enrollment_date or lp.created_at) else None,
         "currentModule": mod_titles.get(lp.current_module_id),
         "totalScore": lp.total_score, "certificate": bool(lp.certificate_issued),
-        "videos": {"completed": completed, "total": total_videos,
-                   "percent": round(completed / total_videos * 100) if total_videos else 0,
+        "lesson": {"completed": completed, "total": total_lessons,
+                   "percent": round(completed / total_lessons * 100) if total_lessons else 0,
+                   "label": (current or {}).get("label"), "title": (current or {}).get("title"),
                    "lastWatched": last_watched.isoformat() if last_watched else None},
         "exams": {"attempts": len(exams), "passed": sum(1 for e in exams if e.passed),
                   "bestScore": max((e.score for e in exams if e.score is not None), default=None),
