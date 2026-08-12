@@ -20,6 +20,7 @@ Everything except /admin/login requires a valid admin token (require_admin).
 """
 import asyncio
 import hashlib
+import httpx
 import io
 import json
 import re
@@ -509,18 +510,60 @@ async def create_video(body: VideoBody, _: bool = Depends(require_admin), db: As
     return await _tree(m.course_id, db)
 
 
+async def _cloudinary_rename(from_id: str, to_id: str) -> str | None:
+    """Move/rename a Cloudinary video asset (metadata op — no transcode). Returns
+    the new public_id on success, or None (non-fatal — caller keeps the old id)."""
+    if not (settings.cloudinary_api_key and settings.cloudinary_api_secret and settings.cloudinary_cloud_name):
+        return None
+    ts = int(time.time())
+    params = {"from_public_id": from_id, "to_public_id": to_id, "overwrite": "true", "timestamp": str(ts)}
+    to_sign = "&".join(f"{k}={params[k]}" for k in sorted(params)) + settings.cloudinary_api_secret
+    sig = hashlib.sha1(to_sign.encode()).hexdigest()
+    url = f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/video/rename"
+    try:
+        async with httpx.AsyncClient(timeout=30) as h:
+            r = await h.post(url, data={**params, "api_key": settings.cloudinary_api_key, "signature": sig})
+        if r.status_code == 200:
+            return r.json().get("public_id") or to_id
+        print(f"⚠ cloudinary rename {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        print(f"⚠ cloudinary rename error: {e}")
+    return None
+
+
+async def _lesson_label(db, video_id: str) -> str | None:
+    """'module.section' label for a video, e.g. '1.1' — used for the folder name."""
+    v = await db.get(Video, video_id)
+    if not v:
+        return None
+    s = await db.get(Section, v.section_id)
+    m = await db.get(CourseModule, s.module_id) if s else None
+    if not (s and m):
+        return None
+    return f"{m.order_index + 1}.{s.order_index + 1}"
+
+
 @router.put("/videos/{video_id}")
 async def update_video(video_id: str, body: VideoBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
     v.title = body.title
+    new_upload = body.cloudinary_public_id is not None and body.cloudinary_public_id != v.cloudinary_public_id
     if body.cloudinary_public_id is not None:
         v.cloudinary_public_id = body.cloudinary_public_id
     if body.duration_seconds is not None:
         v.duration_seconds = body.duration_seconds
     s = await db.get(Section, v.section_id)
     m = await db.get(CourseModule, s.module_id)
+    # Organise the new upload into a named folder: cosmoplex/lessons/<label>/<label>-base
+    if new_upload and v.cloudinary_public_id and s and m:
+        label = f"{m.order_index + 1}.{s.order_index + 1}"
+        target = f"cosmoplex/lessons/{label}/{label}-base"
+        if target != v.cloudinary_public_id:
+            renamed = await _cloudinary_rename(v.cloudinary_public_id, target)
+            if renamed:
+                v.cloudinary_public_id = renamed
     await db.commit()
     return await _tree(m.course_id, db)
 
@@ -557,13 +600,25 @@ async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(req
         VideoLanguageVariant.video_id == video_id, VideoLanguageVariant.language == body.language))
     variant = res.scalar_one_or_none()
     if variant:
+        new_upload = body.cloudinary_public_id != variant.cloudinary_public_id
         variant.cloudinary_public_id = body.cloudinary_public_id
         if body.duration_seconds is not None:
             variant.duration_seconds = body.duration_seconds
     else:
-        db.add(VideoLanguageVariant(video_id=video_id, language=body.language,
-                                    cloudinary_public_id=body.cloudinary_public_id,
-                                    duration_seconds=body.duration_seconds))
+        new_upload = True
+        variant = VideoLanguageVariant(video_id=video_id, language=body.language,
+                                       cloudinary_public_id=body.cloudinary_public_id,
+                                       duration_seconds=body.duration_seconds)
+        db.add(variant)
+    # Organise the new upload into a named folder: cosmoplex/lessons/<label>/<label>-<lang>
+    if new_upload and body.cloudinary_public_id:
+        label = await _lesson_label(db, video_id)
+        if label:
+            target = f"cosmoplex/lessons/{label}/{label}-{body.language}"
+            if target != body.cloudinary_public_id:
+                renamed = await _cloudinary_rename(body.cloudinary_public_id, target)
+                if renamed:
+                    variant.cloudinary_public_id = renamed
     await db.commit()
     return {"ok": True, "videoId": video_id, "language": body.language}
 
