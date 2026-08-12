@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -531,6 +531,25 @@ async def _cloudinary_rename(from_id: str, to_id: str) -> str | None:
     return None
 
 
+async def _warm_derivative(public_id: str) -> None:
+    """Request the delivery transform once so Cloudinary generates + caches it
+    (Cloudinary-side transcode — no local processing). Makes the first WhatsApp
+    send fast instead of hitting a cold transcode. Same transform string as the
+    WhatsApp bot + web, so all channels reuse this one cached derivative. Warms
+    ONE video (the one just uploaded) — not a blanket sweep."""
+    from api.whatsapp_routes import VIDEO_TRANSFORM  # single source of the string
+    if not settings.cloudinary_cloud_name or not public_id:
+        return
+    url = (f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}"
+           f"/video/upload/{VIDEO_TRANSFORM}/{public_id}.mp4")
+    try:
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as h:
+            r = await h.get(url)
+        print(f"warm {public_id}: {r.status_code}")
+    except Exception as e:
+        print(f"⚠ warm error {public_id}: {e}")
+
+
 async def _lesson_label(db, video_id: str) -> str | None:
     """'module.section' label for a video, e.g. '1.1' — used for the folder name."""
     v = await db.get(Video, video_id)
@@ -544,7 +563,7 @@ async def _lesson_label(db, video_id: str) -> str | None:
 
 
 @router.put("/videos/{video_id}")
-async def update_video(video_id: str, body: VideoBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -564,6 +583,8 @@ async def update_video(video_id: str, body: VideoBody, _: bool = Depends(require
             renamed = await _cloudinary_rename(v.cloudinary_public_id, target)
             if renamed:
                 v.cloudinary_public_id = renamed
+    if new_upload and v.cloudinary_public_id:
+        background_tasks.add_task(_warm_derivative, v.cloudinary_public_id)
     await db.commit()
     return await _tree(m.course_id, db)
 
@@ -590,7 +611,7 @@ class VariantBody(BaseModel):
 
 
 @router.put("/videos/{video_id}/variant")
-async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Supported: {sorted(SUPPORTED_LANGUAGES)}")
     v = await db.get(Video, video_id)
@@ -619,6 +640,8 @@ async def upsert_variant(video_id: str, body: VariantBody, _: bool = Depends(req
                 renamed = await _cloudinary_rename(body.cloudinary_public_id, target)
                 if renamed:
                     variant.cloudinary_public_id = renamed
+    if new_upload and variant.cloudinary_public_id:
+        background_tasks.add_task(_warm_derivative, variant.cloudinary_public_id)
     await db.commit()
     return {"ok": True, "videoId": video_id, "language": body.language}
 

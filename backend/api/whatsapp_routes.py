@@ -162,9 +162,9 @@ async def send_list(to: str, header: str, body: str, button: str,
     })
 
 
-async def _download(url: str) -> bytes | None:
+async def _download(url: str, timeout: int = 60) -> bytes | None:
     try:
-        async with httpx.AsyncClient(timeout=180, follow_redirects=True) as h:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as h:
             r = await h.get(url)
             if r.status_code < 400:
                 return r.content
@@ -291,7 +291,10 @@ async def send_video(to: str, public_id: str, caption: str) -> None:
     # so the video sends on the first "next lesson" instead of needing a manual retry.
     data = None
     for attempt in range(3):
-        data = await _download(url)
+        # Short per-attempt timeout so a stuck/cold fetch fails fast and we fall
+        # back to a link in seconds, not minutes. Warm-on-upload makes the derivative
+        # ready ahead of time, so this path is mostly a safety net now.
+        data = await _download(url, timeout=30)
         if data:
             break
         if attempt < 2:
