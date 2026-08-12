@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
-  type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail,
+  type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -435,6 +435,84 @@ function SystemStatus() {
   );
 }
 
+// ── Referrals ─────────────────────────────────────────────────────────────────
+function ReferralsPanel() {
+  const [data, setData] = useState<ReferralsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try { setData(await adminApi.referrals()); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load referrals"); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <section className="bg-zinc-50 rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-lg font-semibold">Referrals</h2>
+          {data?.demoMode && <span className="text-xs rounded bg-amber-100 text-amber-700 px-2 py-0.5">DEMO — no real payouts</span>}
+        </div>
+        <button onClick={load} disabled={loading}
+          className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-white disabled:opacity-50 inline-flex items-center gap-1.5">
+          {loading ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Refresh
+        </button>
+      </div>
+
+      {err && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
+
+      {loading && !data ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : data ? (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-3 gap-3">
+            <StatTile label="Total referrals" value={data.total} />
+            <StatTile label="Rewarded" value={data.paid} accent="text-emerald-700" />
+            <StatTile label={`Paid out (₹${data.rewardEach} each)`} value={`₹${data.payoutTotal}`} accent="text-emerald-700" />
+          </div>
+          <div className="bg-white rounded-xl border border-zinc-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 text-zinc-500 text-xs">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">Code</th>
+                  <th className="text-left font-medium px-3 py-2">Referrer</th>
+                  <th className="text-left font-medium px-3 py-2">Via</th>
+                  <th className="text-left font-medium px-3 py-2">Status</th>
+                  <th className="text-right font-medium px-3 py-2">Reward</th>
+                  <th className="text-right font-medium px-3 py-2">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((r) => (
+                  <tr key={r.id} className="border-t border-zinc-100">
+                    <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
+                    <td className="px-3 py-2">{r.referrerContact} <span className="text-zinc-400 text-xs">({r.referrerKind})</span></td>
+                    <td className="px-3 py-2 text-zinc-600">{r.referredKind}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${
+                        r.status === "paid" ? "bg-emerald-50 text-emerald-700"
+                        : r.status === "rejected" ? "bg-red-50 text-red-700"
+                        : "bg-amber-50 text-amber-700"}`}>
+                        {r.status}{r.payoutRef ? ` · ${r.payoutRef}` : ""}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">₹{r.reward}</td>
+                    <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.createdAt)}</td>
+                  </tr>
+                ))}
+                {!data.items.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-zinc-400 text-sm">No referrals yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [courses, setCourses] = useState<AdminCourse[]>([]);
@@ -513,7 +591,10 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         ))}
       </div>
 
-      {tab === "analytics" && <SystemStatus />}
+      {tab === "analytics" && (<>
+        <SystemStatus />
+        <ReferralsPanel />
+      </>)}
 
       {tab === "content" && (<>
       <IntroVideosManager />

@@ -41,7 +41,7 @@ from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo,
     LearnerProfile, WhatsAppSession, Certificate,
-    ExamAttempt, LessonAssignmentSubmission, ModuleProgress,
+    ExamAttempt, LessonAssignmentSubmission, ModuleProgress, Referral,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -216,6 +216,36 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
         whatsapp = {"error": type(e).__name__}
 
     return {"generatedAt": now.isoformat(), "content": content, "web": web, "whatsapp": whatsapp}
+
+
+@router.get("/referrals")
+async def list_referrals(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Referral ledger for the admin portal: totals + recent rows with the
+    referrer's contact (email / masked phone) for payout."""
+    rows = (await db.execute(select(Referral).order_by(Referral.created_at.desc()).limit(200))).scalars().all()
+    items = []
+    for r in rows:
+        if r.referrer_kind == "web":
+            lp = await db.get(LearnerProfile, r.referrer_id)
+            contact = (lp.email if lp else r.referrer_id)
+        else:
+            p = r.referrer_id or ""
+            contact = ("•••• " + p[-4:]) if len(p) >= 4 else p
+        items.append({
+            "id": r.id, "code": r.code,
+            "referrerKind": r.referrer_kind, "referrerContact": contact,
+            "referredKind": r.referred_kind,
+            "status": r.status, "reward": r.reward_amount, "payoutRef": r.payout_ref,
+            "createdAt": r.created_at.isoformat() if r.created_at else None,
+        })
+    paid = [r for r in rows if r.status == "paid"]
+    return {
+        "total": len(rows), "paid": len(paid),
+        "payoutTotal": sum(r.reward_amount for r in paid),
+        "demoMode": settings.referral_demo_mode,
+        "rewardEach": settings.referral_reward_rupees,
+        "items": items,
+    }
 
 
 @router.get("/whatsapp/{phone}")

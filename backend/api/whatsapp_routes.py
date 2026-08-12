@@ -1102,6 +1102,42 @@ async def _start_quiz(db, session, frm: str, lang: str, practice: bool = False) 
     await _send_quiz_question(frm, lang, 0, items)
 
 
+# ── Referral program ────────────────────────────────────────────────────────
+# Codes use the no-ambiguous-character alphabet from core/referrals.py.
+def _extract_ref_code(text: str | None) -> str | None:
+    """Pull a referral code from a first message like 'JOIN ABCD2345' or a bare code."""
+    if not text:
+        return None
+    t = text.strip().upper()
+    m = re.match(r"^(?:JOIN|REF|REFER|REFERRAL)\s+([A-HJ-NP-Z2-9]{8})$", t)
+    if m:
+        return m.group(1)
+    return t if re.fullmatch(r"[A-HJ-NP-Z2-9]{8}", t) else None
+
+REFERRAL_MSG = {
+    "en": "🎁 Invite friends & earn ₹{reward} each!\nYour code: *{code}*\nSo far: {paid} joined, ₹{earned} earned.\nShare 👇",
+    "hi": "🎁 दोस्तों को बुलाएँ और हर एक पर ₹{reward} कमाएँ!\nआपका कोड: *{code}*\nअब तक: {paid} जुड़े, ₹{earned} कमाए।\nशेयर करें 👇",
+    "mr": "🎁 मित्रांना आमंत्रित करा, प्रत्येकी ₹{reward} कमवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: {paid} जोडले, ₹{earned} कमावले.\nशेअर करा 👇",
+    "te": "🎁 స్నేహితులను ఆహ్వానించి ఒక్కొక్కరికి ₹{reward} సంపాదించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: {paid} చేరారు, ₹{earned} సంపాదించారు.\nషేర్ చేయండి 👇",
+    "ta": "🎁 நண்பர்களை அழைத்து ஒவ்வொருவருக்கும் ₹{reward} சம்பாதியுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: {paid} சேர்ந்தனர், ₹{earned} சம்பாதித்தீர்கள்.\nபகிருங்கள் 👇",
+    "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} ಸೇರಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
+}
+
+async def _send_referral_info(db, session, frm: str) -> None:
+    from core.referrals import get_or_create_wa_code, referral_stats
+    lang = session.language or "en"
+    code = await get_or_create_wa_code(db, session)
+    stats = await referral_stats(db, "whatsapp", session.phone)
+    msg = REFERRAL_MSG.get(lang, REFERRAL_MSG["en"]).format(
+        reward=settings.referral_reward_rupees, code=code,
+        paid=stats["paid"], earned=stats["earned"])
+    num = settings.whatsapp_business_number
+    if num:
+        msg += f"\nhttps://wa.me/{num}?text=JOIN%20{code}"
+    msg += f"\n{settings.frontend_url}/?ref={code}"
+    await send_text(frm, msg)
+
+
 # ── Main handler ──────────────────────────────────────────────────────────────
 async def _handle_message(frm: str, reply_id: str | None, text: str | None, name: str | None) -> None:
     async with async_session_factory() as db:
@@ -1114,6 +1150,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         session.last_active_at = datetime.utcnow()  # for the drip engine's idle check
 
         low = (text or "").strip().lower()
+
+        # First contact via a referral link/code ("JOIN ABCD2345") — stash it; it's
+        # attributed once they finish signing up (provide their name).
+        if session.stage == "new" and not session.language and not session.referred_by_code:
+            ref_code = _extract_ref_code(text)
+            if ref_code:
+                session.referred_by_code = ref_code
+
+        # "refer" / "invite" → the learner's own code + share link
+        if reply_id is None and low in ("refer", "referral", "invite", "refer a friend", "my code"):
+            await _send_referral_info(db, session, frm)
+            return
 
         # Explicit reset → back to the language picker, fresh state
         if reply_id is None and low in ("restart", "reset", "start over", "restart course"):
@@ -1190,6 +1238,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 await send_text(frm, ob(lang, "name_q"))
                 return
             session.name = candidate[:40]
+            # Signed up → credit the referrer (if they arrived via a code). Demo payout.
+            if session.referred_by_code:
+                from core.referrals import attribute_signup
+                await attribute_signup(db, session.referred_by_code, "whatsapp", frm)
             await db.commit()
             await _begin_onboarding(db, session, frm, lang)
             return

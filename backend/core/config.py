@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # default for the current scale; raise it (env var) as usage legitimately grows.
     daily_ai_call_limit: int = 2000
 
+    # Referral program
+    referral_reward_rupees: int = 50
+    referral_demo_mode: bool = True       # True = NO real money moves; payouts auto-marked as demo
+    whatsapp_business_number: str = ""    # e.g. "919812345678" — for wa.me referral links (optional)
+
     @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", mode="before")
     @classmethod
     def _strip_secret(cls, v):

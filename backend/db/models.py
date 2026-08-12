@@ -36,6 +36,7 @@ class LearnerProfile(Base):
     total_score = Column(Float, default=0.0)
     certificate_issued = Column(Boolean, default=False)
     is_test = Column(Boolean, default=False)   # QA account: all lessons unlocked, gate bypassed
+    referral_code = Column(String(12), unique=True, nullable=True)  # this learner's own code to share
     created_at = Column(DateTime, default=datetime.utcnow)
 
     module_progress = relationship("ModuleProgress", back_populates="learner", lazy="select")
@@ -373,6 +374,8 @@ class WhatsAppSession(Base):
     nudge_log = Column(JSONB, nullable=True)               # {key: {"n": count, "at": iso}} per-nudge caps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    referral_code = Column(String(12), unique=True, nullable=True)  # this user's own code to share
+    referred_by_code = Column(String(12), nullable=True)            # code they arrived with (pending until signup)
 
 
 class IntroVideo(Base):
@@ -385,3 +388,22 @@ class IntroVideo(Base):
     cloudinary_public_id = Column(String(500), nullable=False)
     duration_seconds = Column(Integer, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Referral(Base):
+    """One row per successful referral (the referred person joined via a code).
+    Reward accrues to the REFERRER. Payout is automated but demo-mode by default
+    (no real money moves — status goes straight to 'paid' with payout_ref='DEMO')."""
+    __tablename__ = "referrals"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    code = Column(String(12), index=True)                   # the referrer's code that was used
+    referrer_kind = Column(String(10))                      # 'web' | 'whatsapp'
+    referrer_id = Column(String(255), index=True)           # learner_id or phone of the referrer
+    referred_kind = Column(String(10))                      # 'web' | 'whatsapp'
+    referred_id = Column(String(255), unique=True, index=True)  # one reward per referred person
+    status = Column(String(15), default="pending")         # pending | paid | rejected
+    reward_amount = Column(Integer, default=50)             # rupees
+    payout_ref = Column(String(100), nullable=True)        # 'DEMO' (demo mode) or a real txn id later
+    created_at = Column(DateTime, default=datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)

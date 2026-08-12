@@ -56,6 +56,14 @@ export type WebDetail = {
   exams: { attempts: number; passed: number; bestScore: number | null; recent: { module: string; score: number | null; passed: boolean; at: string | null }[] };
   assignments: { submitted: number; recent: { lesson: string | null; score: number | null; at: string | null }[] };
 };
+export type ReferralRow = {
+  id: string; code: string; referrerKind: string; referrerContact: string;
+  referredKind: string; status: string; reward: number; payoutRef: string | null; createdAt: string | null;
+};
+export type ReferralsData = {
+  total: number; paid: number; payoutTotal: number; demoMode: boolean; rewardEach: number; items: ReferralRow[];
+};
+
 export type AdminDashboard = {
   generatedAt: string;
   content: { error?: string; courses?: number; modules?: number; sections?: number; videos?: number; quizzes?: number; assignments?: number };
@@ -144,6 +152,7 @@ export const adminApi = {
   },
 
   dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
+  referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
   whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
   learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),
 
