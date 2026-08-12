@@ -167,7 +167,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "video-warm-on-upload-1",
+        "build": "video-warm-no-rename-1",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
