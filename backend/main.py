@@ -173,7 +173,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "referrals-2-discoverable",
+        "build": "referrals-3-notify",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

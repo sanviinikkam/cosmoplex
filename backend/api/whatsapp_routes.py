@@ -1124,6 +1124,16 @@ REFERRAL_MSG = {
     "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} ಸೇರಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
 }
 
+# Sent to the REFERRER when their code lands a signup.
+REFERRAL_SUCCESS = {
+    "en": "🎉 {name} just joined using your code! You've earned ₹{reward}. Total earned: ₹{earned}. 🙌",
+    "hi": "🎉 {name} ने आपके कोड से जॉइन किया! आपने ₹{reward} कमाए। कुल कमाई: ₹{earned}। 🙌",
+    "mr": "🎉 {name} ने तुमच्या कोडने जॉइन केले! तुम्ही ₹{reward} कमावले. एकूण कमाई: ₹{earned}. 🙌",
+    "te": "🎉 {name} మీ కోడ్‌తో చేరారు! మీరు ₹{reward} సంపాదించారు. మొత్తం సంపాదన: ₹{earned}. 🙌",
+    "ta": "🎉 {name} உங்கள் குறியீட்டில் இணைந்தார்! நீங்கள் ₹{reward} சம்பாதித்தீர்கள். மொத்தம்: ₹{earned}. 🙌",
+    "kn": "🎉 {name} ನಿಮ್ಮ ಕೋಡ್‌ನಿಂದ ಸೇರಿದ್ದಾರೆ! ನೀವು ₹{reward} ಗಳಿಸಿದ್ದೀರಿ. ಒಟ್ಟು: ₹{earned}. 🙌",
+}
+
 # One-line nudge appended after a lesson so learners discover the program.
 REFER_HINT = {
     "en": "\n\n🎁 Invite friends & earn ₹50 each — reply *refer*.",

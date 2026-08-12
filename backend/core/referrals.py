@@ -86,7 +86,34 @@ async def attribute_signup(db, code: str, referred_kind: str, referred_id: str) 
     # else: wire a real payout provider here (Razorpay/Cashfree) — intentionally unwired.
     db.add(ref)
     await db.commit()
+    await _notify_referrer(db, ref)   # tell the referrer they earned a reward
     return ref
+
+
+async def _referred_name(db, kind: str, ident: str) -> str:
+    if kind == "whatsapp":
+        s = await db.get(WhatsAppSession, ident)
+        return (s.name if s and s.name else "Someone")
+    lp = await db.get(LearnerProfile, ident)
+    return (lp.name if lp and lp.name else "Someone")
+
+
+async def _notify_referrer(db, ref: Referral) -> None:
+    """Tell the referrer their code landed a signup. WhatsApp referrers get a
+    message now; web referrers see it in their referral card (built later)."""
+    if ref.referrer_kind != "whatsapp":
+        return
+    try:
+        from api.whatsapp_routes import send_text, REFERRAL_SUCCESS  # lazy: avoid circular import
+        session = await db.get(WhatsAppSession, ref.referrer_id)
+        lang = (session.language if session else None) or "en"
+        stats = await referral_stats(db, "whatsapp", ref.referrer_id)
+        name = await _referred_name(db, ref.referred_kind, ref.referred_id)
+        msg = REFERRAL_SUCCESS.get(lang, REFERRAL_SUCCESS["en"]).format(
+            name=name, reward=ref.reward_amount, earned=stats["earned"])
+        await send_text(ref.referrer_id, msg)
+    except Exception as e:
+        print(f"⚠ referral notify error: {e}")
 
 
 async def referral_stats(db, kind: str, ident: str) -> dict:
