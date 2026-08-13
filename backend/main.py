@@ -173,7 +173,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "learner-detail-lessonwise",
+        "build": "hindi-nudges-devanagari",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

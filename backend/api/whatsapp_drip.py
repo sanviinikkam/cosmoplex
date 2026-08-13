@@ -61,7 +61,7 @@ NUDGE_TEMPLATE = {
 NUDGE_TEXT = {
     "finish_signup": {
         "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?",
-        "hi": "{name}, aapne humein 'seen' pe chhod diya 👀 aapka AI glow-up bas ek reply door hai — aur pehla lesson bilkul free 🎓 wapas aao na?",
+        "hi": "{name}, आपने हमें 'seen' पर छोड़ दिया 👀 आपका AI glow-up बस एक reply दूर है — और पहला पाठ बिल्कुल free 🎓 वापस आओ ना?",
         "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?",
         "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?",
         "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?",
@@ -69,7 +69,7 @@ NUDGE_TEXT = {
     },
     "start_lesson": {
         "en": "{name}, your first lesson is just sitting here waiting 🎬 2 mins and you'll have 10 AI words to casually drop in any conversation 💬 shall we?",
-        "hi": "{name}, aapka pehla lesson yahin baitha wait kar raha hai 🎬 2 min mein 10 AI words jo kisi bhi baat-cheet mein casually daal sako 💬 chalein?",
+        "hi": "{name}, आपका पहला पाठ यहीं बैठा इंतज़ार कर रहा है 🎬 2 मिनट में 10 AI शब्द जो किसी भी बातचीत में casually डाल सको 💬 चलें?",
         "mr": "{name}, तुमचा पहिला धडा इथेच वाट बघत बसलाय 🎬 2 मिनिटांत 10 AI शब्द जे कोणत्याही गप्पांमध्ये सहज टाकता येतील 💬 सुरू करूया?",
         "te": "{name}, మీ మొదటి పాఠం ఇక్కడే వేచి ఉంది 🎬 2 నిమిషాల్లో ఏ సంభాషణలోనైనా casualగా చెప్పగలిగే 10 AI పదాలు 💬 మొదలుపెడదామా?",
         "ta": "{name}, உங்க முதல் பாடம் இங்கயே காத்திருக்கு 🎬 2 நிமிஷத்துல எந்த பேச்சிலயும் casual-ஆ சொல்ற 10 AI வார்த்தைகள் 💬 ஆரம்பிக்கலாமா?",
@@ -77,7 +77,7 @@ NUDGE_TEXT = {
     },
     "resume_lesson": {
         "en": "{name}, you paused mid-lesson like it's a web-series cliffhanger 😅 the quiz is right there — finish the last few mins? 💪",
-        "hi": "{name}, aapne lesson beech mein pause kar diya jaise web-series ka cliffhanger 😅 quiz bas saamne hai — last kuch min poore kar lo? 💪",
+        "hi": "{name}, आपने पाठ बीच में ही pause कर दिया जैसे web-series का cliffhanger 😅 quiz बस सामने है — आख़िरी कुछ मिनट पूरे कर लो? 💪",
         "mr": "{name}, तुम्ही धडा मधेच pause केलात जसं web-series चा cliffhanger 😅 quiz अगदी समोर आहे — शेवटची काही मिनिटं पूर्ण करूया? 💪",
         "te": "{name}, పాఠాన్ని మధ్యలో pause చేశారు web-series cliffhanger లా 😅 quiz ఇదిగో ఎదురుగా ఉంది — చివరి కొన్ని నిమిషాలు పూర్తి చేద్దామా? 💪",
         "ta": "{name}, பாடத்த பாதியில pause பண்ணீட்டீங்க web-series cliffhanger மாதிரி 😅 quiz இதோ முன்னாடி — கடைசி சில நிமிஷம் முடிச்சிடலாமா? 💪",
@@ -85,7 +85,7 @@ NUDGE_TEXT = {
     },
     "finish_quiz": {
         "en": "{name}, one quiz stands between you and 'certified smart' 🧠 come back and bully it a little ✅",
-        "hi": "{name}, bas ek quiz aur aap ban jaoge 'certified smart' 🧠 wapas aakar use thoda hara do ✅",
+        "hi": "{name}, बस एक quiz और आप बन जाओगे 'certified smart' 🧠 वापस आकर उसे थोड़ा हरा दो ✅",
         "mr": "{name}, फक्त एक quiz आणि तुम्ही व्हाल 'certified smart' 🧠 परत येऊन त्याला थोडं हरवा ✅",
         "te": "{name}, ఒక్క quiz దాటితే మీరు 'certified smart' 🧠 తిరిగి వచ్చి దాన్ని కొంచెం ఓడించండి ✅",
         "ta": "{name}, ஒரே ஒரு quiz தாண்டினா நீங்க 'certified smart' 🧠 திரும்பி வந்து அத கொஞ்சம் ஜெயிச்சிடுங்க ✅",
@@ -93,7 +93,7 @@ NUDGE_TEXT = {
     },
     "submit_assignment": {
         "en": "{name}, your assignment is sitting there tapping its foot ✍️ type your answer, I'll grade it, we end on a high 🎯",
-        "hi": "{name}, aapka assignment wahin baitha aapka intezaar kar raha hai ✍️ apna answer type karo, main grade karta hoon, zabardast ending karte hain 🎯",
+        "hi": "{name}, आपका assignment वहीं बैठा आपका इंतज़ार कर रहा है ✍️ अपना जवाब type करो, मैं grade कर दूँगा, ज़बरदस्त ending करते हैं 🎯",
         "mr": "{name}, तुमचं assignment तिथेच तुमची वाट बघत बसलंय ✍️ उत्तर type करा, मी तपासतो, दणक्यात शेवट करूया 🎯",
         "te": "{name}, మీ assignment అక్కడే మీ కోసం ఎదురుచూస్తోంది ✍️ మీ సమాధానం type చేయండి, నేను grade చేస్తా, అదిరిపోయేలా ముగిద్దాం 🎯",
         "ta": "{name}, உங்க assignment அங்கயே உங்களுக்காக காத்திருக்கு ✍️ பதில type பண்ணுங்க, நான் grade பண்றேன், அசத்தலா முடிப்போம் 🎯",
@@ -101,7 +101,7 @@ NUDGE_TEXT = {
     },
     "keep_learning": {
         "en": "{name}, you finished Lesson 1 like a pro 😎 more coming soon — got AI questions? my DMs are always open 🌟",
-        "hi": "{name}, Lesson 1 ko chutki mein nipta diya 😎 aur lessons aa rahe hain — AI ka koi sawaal ho toh DM khula hai 🌟",
+        "hi": "{name}, पाठ 1 को चुटकी में निपटा दिया 😎 और पाठ आ रहे हैं — AI का कोई सवाल हो तो DM खुला है 🌟",
         "mr": "{name}, धडा 1 चुटकीसरशी संपवला 😎 अजून धडे येतायत — AI बद्दल काही प्रश्न? DM नेहमी खुला आहे 🌟",
         "te": "{name}, పాఠం 1ని చిటికెలో ముగించారు 😎 ఇంకా పాఠాలు వస్తున్నాయి — AI గురించి ఏ doubt అయినా? నా DM ఎప్పుడూ open 🌟",
         "ta": "{name}, பாடம் 1-ஐ நொடியில முடிச்சிட்டீங்க 😎 இன்னும் பாடங்க வருது — AI பத்தி ஏதாவது doubt? என் DM எப்பவும் open 🌟",
