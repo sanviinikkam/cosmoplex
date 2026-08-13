@@ -1157,10 +1157,12 @@ async def _send_referral_info(db, session, frm: str) -> None:
     msg = REFERRAL_MSG.get(lang, REFERRAL_MSG["en"]).format(
         reward=settings.referral_reward_rupees, code=code,
         paid=stats["paid"], earned=stats["earned"])
+    # Only the wa.me link for now — it opens WhatsApp with JOIN pre-filled and
+    # actually credits the referrer. (The web ?ref= link returns once web signup
+    # attribution is built.)
     num = settings.whatsapp_business_number
     if num:
         msg += f"\nhttps://wa.me/{num}?text=JOIN%20{code}"
-    msg += f"\n{settings.frontend_url}/?ref={code}"
     await send_text(frm, msg)
 
 

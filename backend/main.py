@@ -173,7 +173,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "hindi-nudges-devanagari",
+        "build": "referral-wa-link-only",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
