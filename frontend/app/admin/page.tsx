@@ -5,6 +5,7 @@ import {
   adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
+  type WebLearnerRow, type WaSessionRow,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -436,6 +437,150 @@ function SystemStatus() {
   );
 }
 
+// ── Full user directory (every user, searchable, paginated) ────────────────────
+const PAGE_SIZE = 50;
+
+function UserDirectory() {
+  const [channel, setChannel] = useState<"web" | "whatsapp">("web");
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<(WebLearnerRow | WaSessionRow)[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [sel, setSel] = useState<{ kind: "wa" | "web"; id: string } | null>(null);
+
+  // Fetch a page. append=true keeps existing rows (Load more); otherwise replaces.
+  const fetchPage = useCallback(async (ch: "web" | "whatsapp", query: string, off: number, append: boolean) => {
+    setLoading(true); setErr("");
+    try {
+      const res = await adminApi.users(ch, { q: query, limit: PAGE_SIZE, offset: off });
+      setTotal(res.total);
+      setOffset(off);
+      setRows((prev) => (append ? [...prev, ...res.items] : res.items));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load users");
+    } finally { setLoading(false); }
+  }, []);
+
+  // Reload from the top whenever the channel changes.
+  useEffect(() => { fetchPage(channel, "", 0, false); setQ(""); }, [channel, fetchPage]);
+
+  // Debounced search — refetch from the top 350ms after the last keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => fetchPage(channel, q, 0, false), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  const loaded = rows.length;
+  const hasMore = loaded < total;
+
+  return (
+    <section className="bg-zinc-50 rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-lg font-semibold">All users</h2>
+          <p className="text-sm text-zinc-500">Full directory — search, browse, click any row for detail.</p>
+        </div>
+        <div className="inline-flex rounded-lg border border-zinc-300 overflow-hidden text-sm">
+          {(["web", "whatsapp"] as const).map((ch) => (
+            <button key={ch} onClick={() => setChannel(ch)}
+              className={`px-3 py-1.5 capitalize ${channel === ch ? "bg-emerald-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}>
+              {ch === "web" ? "Web" : "WhatsApp"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-3">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={channel === "web" ? "Search by name or email…" : "Search by name or phone digits…"}
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+        <span className="text-xs text-zinc-500 whitespace-nowrap">
+          {loading && !loaded ? "…" : `${loaded} of ${total}`}
+        </span>
+      </div>
+
+      {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
+
+      <div className="bg-white rounded-xl border border-zinc-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          {channel === "web" ? (
+            <>
+              <thead className="bg-zinc-50 text-zinc-500 text-xs sticky top-0">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">Learner</th>
+                  <th className="text-left font-medium px-3 py-2">Lang</th>
+                  <th className="text-center font-medium px-3 py-2">Score</th>
+                  <th className="text-center font-medium px-3 py-2">Cert</th>
+                  <th className="text-right font-medium px-3 py-2">Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(rows as WebLearnerRow[]).map((r, i) => (
+                  <tr key={r.id ?? i} onClick={() => setSel({ kind: "web", id: r.id })}
+                    className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
+                    <td className="px-3 py-2">
+                      <span className="font-medium">{r.name ?? "—"}</span>
+                      {r.isTest && <span className="ml-1.5 rounded bg-amber-100 text-amber-700 px-1 py-0.5 text-[10px]">test</span>}
+                      <div className="text-zinc-400 text-xs">{r.email}</div>
+                    </td>
+                    <td className="px-3 py-2 text-zinc-600">{r.language}</td>
+                    <td className="px-3 py-2 text-center text-zinc-600">{r.score ?? "—"}</td>
+                    <td className="px-3 py-2 text-center">{r.certificate ? "✓" : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.joined)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          ) : (
+            <>
+              <thead className="bg-zinc-50 text-zinc-500 text-xs sticky top-0">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">User</th>
+                  <th className="text-left font-medium px-3 py-2">Stage</th>
+                  <th className="text-center font-medium px-3 py-2">Lesson</th>
+                  <th className="text-left font-medium px-3 py-2">Lang</th>
+                  <th className="text-right font-medium px-3 py-2">Active</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(rows as WaSessionRow[]).map((r, i) => (
+                  <tr key={r.id ?? i} onClick={() => setSel({ kind: "wa", id: r.id })}
+                    className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
+                    <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
+                    <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
+                    <td className="px-3 py-2 text-center text-zinc-600">{r.lesson != null ? r.lesson + 1 : "—"}</td>
+                    <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.lastActive)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
+        </table>
+        {!loading && !loaded && (
+          <div className="px-3 py-6 text-center text-zinc-400 text-sm">
+            {q ? "No users match that search." : "No users yet."}
+          </div>
+        )}
+      </div>
+
+      {hasMore && (
+        <div className="mt-3 text-center">
+          <button onClick={() => fetchPage(channel, q, offset + PAGE_SIZE, true)} disabled={loading}
+            className="text-sm rounded-lg border border-zinc-300 px-4 py-1.5 hover:bg-white disabled:opacity-50 inline-flex items-center gap-1.5">
+            {loading ? <Spinner className="w-3.5 h-3.5" /> : null} Load more ({total - loaded} left)
+          </button>
+        </div>
+      )}
+
+      {sel && <UserDetailModal sel={sel} onClose={() => setSel(null)} />}
+    </section>
+  );
+}
+
 // ── Referrals ─────────────────────────────────────────────────────────────────
 function ReferralsPanel() {
   const [data, setData] = useState<ReferralsData | null>(null);
@@ -594,6 +739,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       {tab === "analytics" && (<>
         <SystemStatus />
+        <UserDirectory />
         <ReferralsPanel />
       </>)}
 

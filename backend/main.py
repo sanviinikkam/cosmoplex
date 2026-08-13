@@ -173,7 +173,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "referral-wa-link-only",
+        "build": "admin-user-directory",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

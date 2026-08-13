@@ -64,6 +64,10 @@ export type ReferralsData = {
   total: number; paid: number; payoutTotal: number; demoMode: boolean; rewardEach: number; items: ReferralRow[];
 };
 
+export type UsersPage<Row> = {
+  channel: string; total: number; offset: number; limit: number; count: number; items: Row[];
+};
+
 export type AdminDashboard = {
   generatedAt: string;
   content: { error?: string; courses?: number; modules?: number; sections?: number; videos?: number; quizzes?: number; assignments?: number };
@@ -152,6 +156,13 @@ export const adminApi = {
   },
 
   dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
+  users: (channel: "web" | "whatsapp", opts?: { q?: string; limit?: number; offset?: number }) => {
+    const p = new URLSearchParams({ channel });
+    if (opts?.q) p.set("q", opts.q);
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    if (opts?.offset != null) p.set("offset", String(opts.offset));
+    return adminFetch<UsersPage<WebLearnerRow | WaSessionRow>>(`/admin/users?${p.toString()}`);
+  },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
   whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
   learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),

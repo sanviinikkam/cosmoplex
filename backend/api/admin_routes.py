@@ -30,7 +30,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -216,6 +216,70 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
         whatsapp = {"error": type(e).__name__}
 
     return {"generatedAt": now.isoformat(), "content": content, "web": web, "whatsapp": whatsapp}
+
+
+@router.get("/users")
+async def all_users(
+    channel: str = "web",
+    q: str | None = None,
+    limit: int = 500,
+    offset: int = 0,
+    _: bool = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """The FULL user directory (not just recent) for the admin portal, one channel
+    at a time. channel=web|whatsapp, optional case-insensitive search `q`, paginated.
+    Rows carry the same `id` the detail endpoints (/learner/{id}, /whatsapp/{phone})
+    expect, so a row stays click-through to the per-user modal."""
+    limit = max(1, min(limit, 1000))
+    term = f"%{(q or '').strip().lower()}%"
+
+    if channel == "whatsapp":
+        def mask(p):
+            return ("•••• " + p[-4:]) if p and len(p) >= 4 else (p or "—")
+        base = select(WhatsAppSession)
+        if q and q.strip():
+            base = base.where(or_(
+                func.lower(WhatsAppSession.name).like(term),
+                WhatsAppSession.phone.like(term),
+            ))
+        total = (await db.execute(
+            select(func.count()).select_from(base.subquery()))).scalar() or 0
+        rows = (await db.execute(
+            base.order_by(WhatsAppSession.last_active_at.desc().nullslast())
+                .offset(max(0, offset)).limit(limit))).scalars().all()
+        items = [{
+            "id": r.phone,
+            "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
+            "stage": r.stage, "lesson": r.lesson_index,
+            "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
+            "joined": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
+        } for r in rows]
+    else:
+        base = select(LearnerProfile)
+        if q and q.strip():
+            base = base.where(or_(
+                func.lower(LearnerProfile.name).like(term),
+                func.lower(LearnerProfile.email).like(term),
+            ))
+        total = (await db.execute(
+            select(func.count()).select_from(base.subquery()))).scalar() or 0
+        rows = (await db.execute(
+            base.order_by(LearnerProfile.created_at.desc().nullslast())
+                .offset(max(0, offset)).limit(limit))).scalars().all()
+        items = [{
+            "id": r.id,
+            "name": r.name, "email": r.email, "language": r.preferred_language,
+            "certificate": bool(r.certificate_issued), "isTest": bool(r.is_test),
+            "score": r.total_score,
+            "joined": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows]
+
+    return {
+        "channel": channel, "total": total,
+        "offset": max(0, offset), "limit": limit,
+        "count": len(items), "items": items,
+    }
 
 
 @router.get("/referrals")
