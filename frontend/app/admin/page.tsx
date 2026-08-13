@@ -140,7 +140,13 @@ function Pills({ data }: { data?: Record<string, number> }) {
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "—";
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  // The backend stores UTC (datetime.utcnow) and serializes with a naive
+  // isoformat() — no trailing "Z" or offset. A bare timestamp is parsed as
+  // *local* time by the browser, which skews "ago" by the local UTC offset
+  // (e.g. −5:30 in IST). Treat a marker-less timestamp as UTC.
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const t = new Date(hasTz ? iso : iso + "Z").getTime();
+  const s = Math.max(0, (Date.now() - t) / 1000);
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
@@ -429,7 +435,7 @@ function SystemStatus() {
             </div>
           </div>
 
-          <div className="text-[11px] text-zinc-400">Snapshot at {data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "—"} · click any user for detail</div>
+          <div className="text-[11px] text-zinc-400">Snapshot at {data.generatedAt ? new Date(data.generatedAt + "Z").toLocaleString() : "—"} · click any user for detail</div>
         </div>
       ) : null}
       {sel && <UserDetailModal sel={sel} onClose={() => setSel(null)} />}
