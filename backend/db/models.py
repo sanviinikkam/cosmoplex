@@ -357,7 +357,8 @@ class WhatsAppSession(Base):
     __tablename__ = "whatsapp_sessions"
 
     phone = Column(String(30), primary_key=True)          # e.g. "919876543210"
-    language = Column(String(10), nullable=True)           # en | hi | mr | te | ta | kn
+    language = Column(String(10), nullable=True)           # en | hi | mr | te | ta | kn (course/UI language)
+    quiz_language = Column(String(10), nullable=True)      # override for quiz + assignment only; falls back to `language`
     stage = Column(String(30), default="new")              # new | lesson | quiz | quiz_failed | assignment | done
     lesson_index = Column(Integer, default=0)              # position in the lesson list
     quiz_index = Column(Integer, default=0)                # current quiz question (0-based)

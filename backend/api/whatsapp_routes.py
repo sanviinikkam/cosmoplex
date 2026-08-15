@@ -78,6 +78,40 @@ LANGS = {
     "kn": "ಕನ್ನಡ (Kannada)",
 }
 
+# ── Quiz/assignment language switch ──────────────────────────────────────────
+# A separate language JUST for quizzes + assignments (the video/course/UI stays
+# in `session.language`). Reply-button labels must stay ≤ 20 chars.
+QLANG_BTN = {  # button under the lesson video
+    "en": "🌐 Quiz language", "hi": "🌐 क्विज़ भाषा", "mr": "🌐 क्विझ भाषा",
+    "te": "🌐 క్విజ్ భాష", "ta": "🌐 வினா மொழி", "kn": "🌐 ಕ್ವಿಜ್ ಭಾಷೆ",
+}
+QLANG_CHOOSE = {  # list-open button (≤20 chars)
+    "en": "Choose language", "hi": "भाषा चुनें", "mr": "भाषा निवडा",
+    "te": "భాష ఎంచుకోండి", "ta": "மொழியைத் தேர்வு", "kn": "ಭಾಷೆ ಆಯ್ಕೆಮಾಡಿ",
+}
+QLANG_PROMPT = {  # picker body
+    "en": "Pick the language for quizzes & assignments 👇\n(your lessons stay the same)",
+    "hi": "क्विज़ और असाइनमेंट के लिए भाषा चुनें 👇\n(आपके पाठ वैसे ही रहेंगे)",
+    "mr": "क्विझ आणि असाइनमेंटसाठी भाषा निवडा 👇\n(तुमचे धडे तसेच राहतील)",
+    "te": "క్విజ్‌లు & అసైన్‌మెంట్‌ల కోసం భాషను ఎంచుకోండి 👇\n(మీ పాఠాలు అలాగే ఉంటాయి)",
+    "ta": "வினாடி வினா & பணிகளுக்கான மொழியைத் தேர்வுசெய்யவும் 👇\n(உங்கள் பாடங்கள் அப்படியே இருக்கும்)",
+    "kn": "ಕ್ವಿಜ್ & ಅಸೈನ್‌ಮೆಂಟ್‌ಗಳಿಗೆ ಭಾಷೆ ಆಯ್ಕೆಮಾಡಿ 👇\n(ನಿಮ್ಮ ಪಾಠಗಳು ಹಾಗೇ ಇರುತ್ತವೆ)",
+}
+QLANG_SET = {  # confirmation after switching
+    "en": "✅ Quizzes & assignments will now be in {label}.",
+    "hi": "✅ अब क्विज़ और असाइनमेंट {label} में होंगे।",
+    "mr": "✅ आता क्विझ आणि असाइनमेंट {label} मध्ये असतील.",
+    "te": "✅ ఇప్పుడు క్విజ్‌లు & అసైన్‌మెంట్‌లు {label}లో ఉంటాయి.",
+    "ta": "✅ இனி வினாடி வினா & பணிகள் {label} மொழியில் இருக்கும்.",
+    "kn": "✅ ಇನ್ನು ಕ್ವಿಜ್ & ಅಸೈನ್‌ಮೆಂಟ್‌ಗಳು {label}ನಲ್ಲಿ ಇರುತ್ತವೆ.",
+}
+
+
+def _qlang(session) -> str:
+    """The language for quiz + assignment content — the per-user override if set,
+    otherwise the course language."""
+    return session.quiz_language or session.language or "en"
+
 
 def _configured() -> bool:
     return bool(settings.whatsapp_token and settings.whatsapp_phone_number_id)
@@ -645,6 +679,18 @@ async def _send_language_picker(to: str) -> None:
     )
 
 
+async def _send_quiz_language_picker(to: str, lang: str) -> None:
+    """Picker that switches ONLY the quiz + assignment language (rows carry a
+    distinct `qlang_` id so this never restarts onboarding)."""
+    rows = [(f"qlang_{code}", label.split(" (")[0], label) for code, label in LANGS.items()]
+    await send_list(
+        to, header="Cosmoplex",
+        body=QLANG_PROMPT.get(lang, QLANG_PROMPT["en"]),
+        button=QLANG_CHOOSE.get(lang, QLANG_CHOOSE["en"]),
+        rows=rows, section_title="Languages",
+    )
+
+
 # ── Onboarding (pre-sale funnel) ─────────────────────────────────────────────
 STATUS_MAP = {
     "prof_student": "student",
@@ -892,7 +938,7 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
     # "Start quiz" prompt.
     await asyncio.sleep(LESSON_BUTTON_DELAY_SEC)
     await send_buttons(to, tr(lang, "after_text").format(name=name),
-                       [("quiz", tr(lang, "quiz_btn")), ("menu", tr(lang, "menu_btn"))])
+                       [("quiz", tr(lang, "quiz_btn")), ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"]))])
 
 
 def _reset_quiz_state(session) -> None:
@@ -1093,14 +1139,35 @@ async def _resume_stage(db, session, frm: str, lang: str) -> None:
         await _send_lesson(db, frm, lang, session.name or "friend", session.lesson_index or 0)
 
 
+async def _rerender_quiz_step(db, session, frm: str, lang: str, qlang: str) -> None:
+    """After a quiz-language switch, re-show the current quiz/assignment step in
+    `qlang` WITHOUT changing stage or touching the video/lesson. If they're still
+    on the lesson video (haven't started the quiz), just re-offer the buttons."""
+    st = session.stage
+    if st in ("quiz", "practice"):
+        await _send_quiz_question(frm, qlang, session.quiz_index or 0, _current_quiz(session))
+    elif st == "assignment":
+        vid = await _current_video_id(db, session, lang)   # video_id is language-independent
+        assignment = await _assignment_for(db, vid)
+        if assignment:
+            lessons = await _db_lessons(db, lang)
+            skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
+            await _send_assignment(frm, qlang, assignment, skippable=skippable)
+    else:
+        # On the lesson video (pre-quiz) → re-offer Start-quiz + Quiz-language.
+        nm = (session.name or "").strip() or "friend"
+        await send_buttons(frm, tr(lang, "after_text").format(name=nm),
+                           [("quiz", tr(lang, "quiz_btn")), ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"]))])
+
+
 async def _start_quiz(db, session, frm: str, lang: str, practice: bool = False) -> None:
     session.stage = "practice" if practice else "quiz"
     session.quiz_index = 0
     session.quiz_correct = 0
-    vid = await _current_video_id(db, session, lang)
+    vid = await _current_video_id(db, session, lang)   # video_id is language-independent
     items = await _select_quiz(db, session, vid)   # fresh non-repeating random set
     await db.commit()
-    await _send_quiz_question(frm, lang, 0, items)
+    await _send_quiz_question(frm, _qlang(session), 0, items)   # render in the quiz language
 
 
 # ── Referral program ────────────────────────────────────────────────────────
@@ -1250,12 +1317,31 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             return
 
         lang = session.language
+        qlang = session.quiz_language or lang    # quiz + assignment language (override)
         nm = (session.name or "").strip() or "friend"
 
-        # "Language" button/command → re-show picker anytime
+        # "Language" typed command → re-show the full-course picker (changes everything)
         if reply_id == "menu" or low in ("menu", "language", "lang", "change language", "भाषा", "மொழி", "ಭಾಷೆ", "భాష"):
             await db.commit()
             await _send_language_picker(frm)
+            return
+
+        # "Quiz language" button → picker that switches ONLY quiz + assignment
+        if reply_id == "quiz_lang":
+            await db.commit()
+            await _send_quiz_language_picker(frm, lang)
+            return
+
+        # A quiz-language pick (qlang_XX) → set the override, confirm, re-render the
+        # current quiz/assignment step in the new language. Never touches onboarding.
+        if reply_id and reply_id.startswith("qlang_"):
+            chosen = reply_id.split("_", 1)[1]
+            if chosen in LANGS:
+                session.quiz_language = chosen
+                await db.commit()
+                await send_text(frm, QLANG_SET.get(lang, QLANG_SET["en"]).format(
+                    label=LANGS[chosen].split(" (")[0]))
+                await _rerender_quiz_step(db, session, frm, lang, chosen)
             return
 
         # Onboarding: capture the learner's name → then begin the funnel
@@ -1374,44 +1460,44 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 item = _shuffle_options(base, frm, qidx)   # same order the learner saw
                 if chosen == item["correct"]:
                     session.quiz_correct = (session.quiz_correct or 0) + 1
-                    await send_text(frm, tr(lang, "correct"))
+                    await send_text(frm, tr(qlang, "correct"))
                 else:
-                    correct_opt = item["opts"].get(lang, item["opts"]["en"])[item["correct"]]
-                    await send_text(frm, tr(lang, "wrong").format(a=correct_opt))
+                    correct_opt = item["opts"].get(qlang, item["opts"]["en"])[item["correct"]]
+                    await send_text(frm, tr(qlang, "wrong").format(a=correct_opt))
 
                 qidx += 1
                 session.quiz_index = qidx
                 if qidx < len(items):
                     await db.commit()
-                    await _send_quiz_question(frm, lang, qidx, items)
+                    await _send_quiz_question(frm, qlang, qidx, items)
                     return
                 score = session.quiz_correct or 0
                 if practice:
                     # Practice doesn't gate progress — show the score, back to the menu
-                    await send_text(frm, tr(lang, "practice_result").format(s=score, n=len(items), name=nm))
+                    await send_text(frm, tr(qlang, "practice_result").format(s=score, n=len(items), name=nm))
                     await _send_between_choice(db, session, frm, lang, nm)
                 elif score >= QUIZ_PASS:
                     session.stage = "assignment"
                     session.assignment_draft = None
                     await db.commit()
-                    await send_text(frm, tr(lang, "score_pass").format(s=score, name=nm))
+                    await send_text(frm, tr(qlang, "score_pass").format(s=score, name=nm))
                     vid = await _current_video_id(db, session, lang)
                     assignment = await _assignment_for(db, vid)
                     lessons = await _db_lessons(db, lang)
                     # Assignment is optional except on a module's last microlesson.
                     skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
-                    await _send_assignment(frm, lang, assignment, skippable=skippable)
+                    await _send_assignment(frm, qlang, assignment, skippable=skippable)
                 else:
                     session.stage = "quiz_failed"
                     await db.commit()
                     await send_buttons(
-                        frm, tr(lang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
-                        [("retake", tr(lang, "retake_btn"))],
+                        frm, tr(qlang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
+                        [("retake", tr(qlang, "retake_btn"))],
                     )
                 return
             # Nudge: they typed instead of tapping — resend the current question
             await db.commit()
-            await _send_quiz_question(frm, lang, session.quiz_index or 0, items)
+            await _send_quiz_question(frm, qlang, session.quiz_index or 0, items)
             return
 
         # Assignment: collect answer across multiple messages (text or voice),
@@ -1427,51 +1513,52 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 else:
                     vid = await _current_video_id(db, session, lang)
                     assignment = await _assignment_for(db, vid)
-                    await _send_assignment(frm, lang, assignment, skippable=False)
+                    await _send_assignment(frm, qlang, assignment, skippable=False)
                 return
             # Submit → grade the accumulated draft
             if reply_id == "submit_assignment":
                 draft = (session.assignment_draft or "").strip()
                 if len(draft) < 10:
                     await db.commit()
-                    await send_buttons(frm, tr(lang, "submit_empty"),
-                                       [("submit_assignment", tr(lang, "submit_btn"))])
+                    await send_buttons(frm, tr(qlang, "submit_empty"),
+                                       [("submit_assignment", tr(qlang, "submit_btn"))])
                     return
                 if not allow_ai_call():
                     # Leave the draft untouched so they can hit Submit again later
                     # without retyping — this isn't a fail, grading just didn't run.
                     await db.commit()
-                    await send_text(frm, tr(lang, "ai_busy"))
+                    await send_text(frm, tr(qlang, "ai_busy"))
                     return
                 vid = await _current_video_id(db, session, lang)
                 assignment = await _assignment_for(db, vid)
-                await send_text(frm, tr(lang, "grading"))
-                q = assignment["question"].get(lang, assignment["question"]["en"])
-                score, feedback = await grade_answer(q, assignment["rubric"], draft, lang)
+                await send_text(frm, tr(qlang, "grading"))
+                q = assignment["question"].get(qlang, assignment["question"]["en"])
+                # Grade in the quiz language so feedback comes back in the same language.
+                score, feedback = await grade_answer(q, assignment["rubric"], draft, qlang)
                 session.assignment_draft = None
                 if score >= ASSIGN_PASS:
-                    await send_text(frm, tr(lang, "assign_pass").format(s=score, f=feedback, name=nm))
+                    await send_text(frm, tr(qlang, "assign_pass").format(s=score, f=feedback, name=nm))
                     await _send_between_choice(db, session, frm, lang, nm)
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
-                    await send_text(frm, tr(lang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
+                    await send_text(frm, tr(qlang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
                 return
             # A typed/voice message → append to the draft, don't grade yet
             if text and text.strip():
                 if is_abusive(text):
                     await db.commit()
-                    await send_text(frm, tr(lang, "abusive_input"))
+                    await send_text(frm, tr(qlang, "abusive_input"))
                     return
                 session.assignment_draft = ((session.assignment_draft or "") + "\n" + text.strip()).strip()[:8000]
                 await db.commit()
-                await send_buttons(frm, tr(lang, "answer_added"),
-                                   [("submit_assignment", tr(lang, "submit_btn"))])
+                await send_buttons(frm, tr(qlang, "answer_added"),
+                                   [("submit_assignment", tr(qlang, "submit_btn"))])
                 return
             # Anything else → re-show the assignment + Submit button
             vid = await _current_video_id(db, session, lang)
             assignment = await _assignment_for(db, vid)
             await db.commit()
-            await _send_assignment(frm, lang, assignment)
+            await _send_assignment(frm, qlang, assignment)
             return
 
         # Between lessons / clarifying: answer the doubt via the Teacher, then keep
