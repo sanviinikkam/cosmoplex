@@ -175,7 +175,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "quiz-language-switch",
+        "build": "marketing-assets-drip",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  adminApi, uploadVideoToCloudinary, getAdminToken, clearAdminToken,
+  adminApi, uploadMediaToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
-  type WebLearnerRow, type WaSessionRow,
+  type WebLearnerRow, type WaSessionRow, type MarketingAssetRow,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -751,6 +751,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       {tab === "content" && (<>
       <IntroVideosManager />
+      <MarketingAssetsManager />
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar */}
@@ -870,6 +871,117 @@ function IntroVideosManager() {
           </div>
           <p className="text-[11px] text-zinc-400 mt-2">
             A specific language overrides the default for that language. Uploads are compressed automatically when sent over WhatsApp.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pre-sale marketing assets (signup drip) ──────────────────────────────────
+const MARKETING_DAYS = [1, 2, 3, 7];
+
+function marketingImgThumb(pid: string): string {
+  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/w_240,h_160,c_fill,q_auto,f_auto/${pid}`;
+}
+
+function MarketingAssetsManager() {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<MarketingAssetRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setItems((await adminApi.listMarketingAssets()).items); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { if (open) load(); }, [open, load]);
+
+  async function save(fn: () => Promise<unknown>) {
+    setErr(""); setSaving(true);
+    try { await fn(); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
+  }
+
+  const assetFor = (day: number, lang: string) =>
+    items.find((i) => i.day === day && i.language === lang);
+
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 mb-6">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
+        <div>
+          <h2 className="font-semibold">📣 Pre-sale marketing (signup drip)</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            A photo or video sent on WhatsApp to people who started but haven&apos;t finished signup —
+            after 1, 2, 3 and 7 days of inactivity. One per day, per language.
+          </p>
+        </div>
+        <span className="text-zinc-400 shrink-0 ml-3">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5">
+          {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+          {saving && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 mb-2">
+              <Spinner className="w-3.5 h-3.5" /> Saving…
+            </div>
+          )}
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-3">
+              <Spinner className="w-4 h-4" /> Loading assets…
+            </div>
+          )}
+          {!loading && MARKETING_DAYS.map((day) => (
+            <div key={day} className="mb-4">
+              <div className="text-xs font-medium uppercase tracking-wide text-emerald-700 mb-2">
+                Day {day} <span className="text-zinc-400 font-normal normal-case">· sent after {day} day{day === 1 ? "" : "s"} idle</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {LANGUAGES.map((l) => {
+                  const a = assetFor(day, l.code);
+                  return (
+                    <div key={l.code} className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">{l.label}</span>
+                        {a && (
+                          <button className="text-[11px] text-red-500 hover:text-red-700"
+                            onClick={() => { if (window.confirm(`Remove the Day ${day} ${l.label} asset?`)) save(() => adminApi.deleteMarketingAsset(day, l.code)); }}>✕</button>
+                        )}
+                      </div>
+                      {a ? (
+                        <div className="mt-1">
+                          {a.mediaType === "image" ? (
+                            <a href={marketingImgThumb(a.cloudinaryPublicId)} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={marketingImgThumb(a.cloudinaryPublicId)} alt="" className="rounded-md w-full max-w-[160px] h-auto border border-zinc-200" />
+                            </a>
+                          ) : (
+                            <PreviewableId publicId={a.cloudinaryPublicId} className="block text-[11px] truncate max-w-full" />
+                          )}
+                          <span className="inline-block mt-1 text-[10px] rounded bg-zinc-200 text-zinc-600 px-1 py-0.5 uppercase">{a.mediaType}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">not set</p>
+                      )}
+                      <UploadButton
+                        label={a ? "Replace" : "Upload photo / video"} small
+                        accept="image/*,video/*" resourceType="auto"
+                        onUploaded={(pid, dur, rt) =>
+                          save(() => adminApi.setMarketingAsset(day, l.code, { media_type: rt, cloudinary_public_id: pid, duration_seconds: dur }))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <p className="text-[11px] text-zinc-400 mt-1">
+            Each cell accepts a photo <em>or</em> a video. ⚠️ WhatsApp only lets us message a user for free within 24 hours of
+            their last message; days 2/3/7 land outside that window and need approved Meta templates to actually deliver.
           </p>
         </div>
       )}
@@ -1451,10 +1563,12 @@ function AssignmentEditor({ initial, onSave, onCancel }: {
 }
 
 // ── Upload button (direct → Cloudinary, with progress) ───────────────────────────
-function UploadButton({ label, onUploaded, small }: {
+function UploadButton({ label, onUploaded, small, resourceType = "video", accept = "video/*" }: {
   label: string;
-  onUploaded: (publicId: string, durationSeconds: number | null) => void;
+  onUploaded: (publicId: string, durationSeconds: number | null, resourceType: "image" | "video") => void;
   small?: boolean;
+  resourceType?: "video" | "image" | "auto";
+  accept?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pct, setPct] = useState<number | null>(null);
@@ -1465,8 +1579,8 @@ function UploadButton({ label, onUploaded, small }: {
     if (!file) return;
     setErr(""); setPct(0);
     try {
-      const { publicId, durationSeconds } = await uploadVideoToCloudinary(file, setPct);
-      onUploaded(publicId, durationSeconds);
+      const res = await uploadMediaToCloudinary(file, resourceType, setPct);
+      onUploaded(res.publicId, res.durationSeconds, res.resourceType);
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Upload failed");
     } finally {
@@ -1484,7 +1598,7 @@ function UploadButton({ label, onUploaded, small }: {
       <label className={`${cls} inline-flex items-center gap-1.5`}>
         {pct !== null && <Spinner className="w-3 h-3" />}
         {pct !== null ? `Uploading ${pct}%` : label}
-        <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={onFile} disabled={pct !== null} />
+        <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onFile} disabled={pct !== null} />
       </label>
       {err && <span className="text-[11px] text-red-500" title={err}>⚠</span>}
     </span>

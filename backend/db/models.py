@@ -391,6 +391,21 @@ class IntroVideo(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class MarketingAsset(Base):
+    """Pre-sale marketing media (photo OR video) shown by the drip engine to
+    users who reached WhatsApp but haven't finished signup. One asset per
+    (day-bucket, language); day ∈ {1,2,3,7} = days idle before it's sent."""
+    __tablename__ = "marketing_assets"
+
+    id = Column(String(20), primary_key=True)              # "1_en", "7_kn"  (day_language)
+    day = Column(Integer, nullable=False)                  # 1 | 2 | 3 | 7
+    language = Column(String(10), nullable=False)          # en | hi | mr | te | ta | kn
+    media_type = Column(String(10), nullable=False)        # 'image' | 'video'
+    cloudinary_public_id = Column(String(500), nullable=False)
+    duration_seconds = Column(Integer, nullable=True)      # videos only
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Referral(Base):
     """One row per successful referral (the referred person joined via a code).
     Reward accrues to the REFERRER. Payout is automated but demo-mode by default

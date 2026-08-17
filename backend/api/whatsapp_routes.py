@@ -132,6 +132,25 @@ def _video_url(public_id: str) -> str:
             f"/video/upload/{VIDEO_TRANSFORM}/{public_id}.mp4")
 
 
+def _image_url(public_id: str) -> str:
+    # Auto format/quality, capped width — small and fast for WhatsApp.
+    return (f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}"
+            f"/image/upload/f_auto,q_auto,w_1080/{public_id}")
+
+
+async def send_image(to: str, public_id: str, caption: str = "") -> None:
+    """Send a Cloudinary image inline on WhatsApp (by link — images are small and
+    Cloudinary serves them instantly, so no upload-by-id dance is needed)."""
+    url = _image_url(public_id)
+    resp = await _post({
+        "messaging_product": "whatsapp", "to": to, "type": "image",
+        "image": {"link": url, "caption": caption[:1024]},
+    })
+    if resp is None or resp.status_code >= 400:
+        # Fallback: caption + clickable link so something still lands.
+        await send_text(to, f"{caption}\n\n🖼️ {url}" if caption else f"🖼️ {url}")
+
+
 async def _post(payload: dict) -> httpx.Response | None:
     if not _configured():
         print("⚠ WhatsApp not configured — skipping send")

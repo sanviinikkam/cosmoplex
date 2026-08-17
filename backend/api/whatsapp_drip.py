@@ -38,8 +38,22 @@ MIN_GAP_HOURS = 6
 REPEAT_GAP_HOURS = 20
 MAX_PER_KEY = 2
 
+# Stages that mean "reached WhatsApp but hasn't finished signup". These get the
+# day-based pre-sale MARKETING sequence below (media uploaded in the admin portal),
+# NOT the generic hourly nudges.
+SIGNUP_STAGES = {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}
+
+# The pre-sale marketing drip: (idle-DAYS threshold, nudge key). One touch each,
+# fired once, in order. Each sends the admin-uploaded photo/video for that
+# (day, language) if present — otherwise falls back to the finish_signup text.
+SIGNUP_TIERS = [
+    (1, "signup_d1"),
+    (2, "signup_d2"),
+    (3, "signup_d3"),
+    (7, "signup_d7"),
+]
+
 NUDGE_RULES = [
-    ("finish_signup",     {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}, 2),
     ("start_lesson",      {"onboarded"},                                             2),
     ("resume_lesson",     {"lesson"},                                                3),
     ("finish_quiz",       {"quiz", "quiz_failed"},                                   3),
@@ -123,18 +137,52 @@ def _parse_iso(v: str | None) -> datetime | None:
 
 
 def _pick_nudge(s: WhatsAppSession, now: datetime):
-    """Return (nudge_key, idle_hours) for this learner, or None."""
+    """Return (nudge_key, idle_hours, day) for this learner, or None.
+    `day` is the marketing-tier day for signup nudges, else None."""
     idle_hours = _idle_hours(s, now)
+    # Signup-incomplete → the day-based pre-sale marketing sequence. Send the tier
+    # for the CURRENT idle window (highest threshold reached), once. We deliberately
+    # don't backfill lower tiers if an earlier window was missed — just send the
+    # one that fits where they are now.
+    if s.stage in SIGNUP_STAGES:
+        idle_days = idle_hours / 24.0
+        tier = None
+        for day, key in SIGNUP_TIERS:   # ascending → ends on highest reached
+            if idle_days >= day:
+                tier = (day, key)
+        if tier:
+            day, key = tier
+            already = (s.nudge_log or {}).get(key, {}).get("n", 0)
+            if not already:
+                return key, idle_hours, day
+        return None
     for key, stages, threshold_hours in NUDGE_RULES:
         if s.stage in stages and idle_hours >= threshold_hours:
-            return key, idle_hours
+            return key, idle_hours, None
+    return None
+
+
+def _text_key(key: str) -> str:
+    """Signup marketing tiers all share the finish_signup copy (used as the media
+    caption, or the message when no media is uploaded for that day/language)."""
+    return "finish_signup" if key.startswith("signup_") else key
+
+
+def _tier_day(key: str) -> int | None:
+    """'signup_d3' → 3; anything else → None."""
+    if key.startswith("signup_d"):
+        try:
+            return int(key[len("signup_d"):])
+        except ValueError:
+            return None
     return None
 
 
 async def run_drip(force_to: str | None = None, force_key: str | None = None) -> dict:
     """Send due nudges. `force_to`/`force_key` bypass idle+dedupe for testing."""
     # Lazy import to avoid a circular import with whatsapp_routes.
-    from api.whatsapp_routes import send_text, send_template
+    from api.whatsapp_routes import send_text, send_template, send_image, send_video
+    from db.models import MarketingAsset
 
     now = datetime.utcnow()
     report = {"checked": 0, "sent": [], "skipped": 0, "errors": []}
@@ -150,12 +198,14 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
 
             if force_key:
                 key = force_key
+                day = _tier_day(key)
             else:
                 pick = _pick_nudge(s, now)
                 if not pick:
                     report["skipped"] += 1
                     continue
                 key = pick[0]
+                day = pick[2]
                 rec = (s.nudge_log or {}).get(key) or {}
                 sent_count = rec.get("n", 0)
                 # This nudge has already been shown the max number of times.
@@ -178,18 +228,33 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     report["skipped"] += 1
                     continue
 
-            if key not in NUDGE_TEXT:
+            text_key = _text_key(key)   # signup tiers reuse the finish_signup copy
+            if text_key not in NUDGE_TEXT:
                 report["errors"].append(f"unknown nudge key {key}")
                 continue
 
             lang = s.language or "en"
             name = (s.name or "").strip() or "there"
-            text = NUDGE_TEXT[key].get(lang, NUDGE_TEXT[key]["en"]).format(name=name)
+            text = NUDGE_TEXT[text_key].get(lang, NUDGE_TEXT[text_key]["en"]).format(name=name)
             try:
+                sent_as = "text"
                 if settings.whatsapp_templates_enabled:
-                    await send_template(s.phone, NUDGE_TEMPLATE[key], lang, [name])
+                    # NOTE: outside the 24h window only approved templates deliver.
+                    # Media-over-template isn't wired yet, so this sends the text
+                    # template; the uploaded photo/video sends via free-form below.
+                    await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
                 else:
-                    await send_text(s.phone, text)
+                    # Marketing tier with an uploaded photo/video for this (day, lang)?
+                    # Send the media with the copy as caption. Otherwise, plain text.
+                    asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
+                    if asset:
+                        if asset.media_type == "image":
+                            await send_image(s.phone, asset.cloudinary_public_id, text)
+                        else:
+                            await send_video(s.phone, asset.cloudinary_public_id, text)
+                        sent_as = f"media:{asset.media_type}"
+                    else:
+                        await send_text(s.phone, text)
                 s.last_nudge_at = now
                 s.last_nudge_key = key
                 # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).
@@ -197,7 +262,7 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 prev = log.get(key) or {}
                 log[key] = {"n": prev.get("n", 0) + 1, "at": now.isoformat()}
                 s.nudge_log = log
-                report["sent"].append({"phone": "…" + s.phone[-4:], "key": key, "lang": lang})
+                report["sent"].append({"phone": "…" + s.phone[-4:], "key": key, "lang": lang, "as": sent_as})
             except Exception as e:  # never let one bad send kill the run
                 report["errors"].append(f"{s.phone[-4:]}: {e}")
 

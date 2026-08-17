@@ -39,7 +39,7 @@ from core.config import settings
 from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
-    QuizQuestion, AssignmentPrompt, IntroVideo,
+    QuizQuestion, AssignmentPrompt, IntroVideo, MarketingAsset,
     LearnerProfile, WhatsAppSession, Certificate,
     ExamAttempt, LessonAssignmentSubmission, ModuleProgress, Referral,
 )
@@ -716,6 +716,7 @@ async def delete_variant(video_id: str, language: str, _: bool = Depends(require
 # ── Cloudinary signed direct upload ───────────────────────────────────────────────
 class SignatureBody(BaseModel):
     folder: Optional[str] = None
+    resource_type: Optional[str] = "video"   # 'video' | 'image' | 'auto'
 
 
 @router.post("/cloudinary/signature")
@@ -727,7 +728,11 @@ async def cloudinary_signature(body: SignatureBody, _: bool = Depends(require_ad
                             detail="Cloudinary upload is not configured on the server (missing API key/secret).")
     ts = int(time.time())
     folder = body.folder or "cosmoplex/lessons"
-    # Sign the params Cloudinary will receive (alphabetical), then append api_secret.
+    rtype = (body.resource_type or "video").lower()
+    if rtype not in ("video", "image", "auto"):
+        raise HTTPException(status_code=400, detail="resource_type must be video, image, or auto")
+    # resource_type is part of the URL, not a signed param — only folder+timestamp
+    # are signed. Sign the params Cloudinary will receive (alphabetical), then append secret.
     to_sign = f"folder={folder}&timestamp={ts}{settings.cloudinary_api_secret}"
     signature = hashlib.sha1(to_sign.encode()).hexdigest()
     return {
@@ -736,7 +741,7 @@ async def cloudinary_signature(body: SignatureBody, _: bool = Depends(require_ad
         "apiKey": settings.cloudinary_api_key,
         "cloudName": settings.cloudinary_cloud_name,
         "folder": folder,
-        "uploadUrl": f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/video/upload",
+        "uploadUrl": f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/{rtype}/upload",
     }
 
 
@@ -889,6 +894,63 @@ async def delete_intro_video(language: str, _: bool = Depends(require_admin), db
     await db.delete(iv)
     await db.commit()
     return {"deleted": True, "language": language}
+
+
+# ── Pre-sale marketing assets (drip media for stuck-at-signup users) ───────────
+# One photo OR video per (day-bucket, language). Days = idle-days before it fires.
+MARKETING_DAYS = [1, 2, 3, 7]
+
+
+class MarketingAssetBody(BaseModel):
+    media_type: str                        # 'image' | 'video'
+    cloudinary_public_id: str
+    duration_seconds: Optional[int] = None
+
+
+def _marketing_dict(a: MarketingAsset) -> dict:
+    return {"day": a.day, "language": a.language, "mediaType": a.media_type,
+            "cloudinaryPublicId": a.cloudinary_public_id, "durationSeconds": a.duration_seconds}
+
+
+@router.get("/marketing-assets")
+async def list_marketing_assets(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(MarketingAsset))
+    return {"days": MARKETING_DAYS, "languages": sorted(SUPPORTED_LANGUAGES),
+            "items": [_marketing_dict(a) for a in res.scalars().all()]}
+
+
+@router.put("/marketing-assets/{day}/{language}")
+async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
+                              _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if day not in MARKETING_DAYS:
+        raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
+    if language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {sorted(SUPPORTED_LANGUAGES)}")
+    if body.media_type not in ("image", "video"):
+        raise HTTPException(status_code=400, detail="media_type must be image or video")
+    if not body.cloudinary_public_id.strip():
+        raise HTTPException(status_code=400, detail="cloudinary_public_id is required")
+    key = f"{day}_{language}"
+    a = await db.get(MarketingAsset, key)
+    if a is None:
+        a = MarketingAsset(id=key, day=day, language=language)
+        db.add(a)
+    a.media_type = body.media_type
+    a.cloudinary_public_id = body.cloudinary_public_id.strip()
+    a.duration_seconds = body.duration_seconds
+    await db.commit()
+    return _marketing_dict(a)
+
+
+@router.delete("/marketing-assets/{day}/{language}")
+async def delete_marketing_asset(day: int, language: str,
+                                 _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    a = await db.get(MarketingAsset, f"{day}_{language}")
+    if not a:
+        raise HTTPException(status_code=404, detail="No asset for that day/language")
+    await db.delete(a)
+    await db.commit()
+    return {"deleted": True, "day": day, "language": language}
 
 
 # ── Bulk import: upload a doc of questions → Claude extracts + translates ───────

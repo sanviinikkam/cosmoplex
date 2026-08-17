@@ -64,6 +64,14 @@ export type ReferralsData = {
   total: number; paid: number; payoutTotal: number; demoMode: boolean; rewardEach: number; items: ReferralRow[];
 };
 
+export type MarketingAssetRow = {
+  day: number; language: string; mediaType: "image" | "video";
+  cloudinaryPublicId: string; durationSeconds: number | null;
+};
+export type MarketingAssetsData = {
+  days: number[]; languages: string[]; items: MarketingAssetRow[];
+};
+
 export type UsersPage<Row> = {
   channel: string; total: number; offset: number; limit: number; count: number; items: Row[];
 };
@@ -231,6 +239,13 @@ export const adminApi = {
   bulkAssignments: (videoId: string, input: { file?: File; text?: string; replace?: boolean }) =>
     adminUpload<{ added: number; replaced: boolean; items: AssignmentItem[] }>(`/admin/videos/${videoId}/assignments/bulk`, input),
 
+  listMarketingAssets: () =>
+    adminFetch<MarketingAssetsData>("/admin/marketing-assets"),
+  setMarketingAsset: (day: number, language: string, b: { media_type: "image" | "video"; cloudinary_public_id: string; duration_seconds?: number | null }) =>
+    adminFetch<MarketingAssetRow>(`/admin/marketing-assets/${day}/${language}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteMarketingAsset: (day: number, language: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/marketing-assets/${day}/${language}`, { method: "DELETE" }),
+
   listIntroVideos: () =>
     adminFetch<IntroVideoItem[]>("/admin/intro-videos"),
   setIntroVideo: (language: string, b: { cloudinary_public_id: string; duration_seconds?: number | null }) =>
@@ -242,17 +257,20 @@ export const adminApi = {
     adminFetch<{ videosSynced: number; quizzesAdded: number; assignmentsAdded: number }>(
       "/admin/sync-videos", { method: "POST" }),
 
-  uploadSignature: (folder?: string) =>
+  uploadSignature: (folder?: string, resourceType: "video" | "image" | "auto" = "video") =>
     adminFetch<{ timestamp: number; signature: string; apiKey: string; cloudName: string; folder: string; uploadUrl: string }>(
-      "/admin/cloudinary/signature", { method: "POST", body: JSON.stringify({ folder: folder ?? null }) }),
+      "/admin/cloudinary/signature", { method: "POST", body: JSON.stringify({ folder: folder ?? null, resource_type: resourceType }) }),
 };
 
-/** Direct browser → Cloudinary signed upload. Returns the new public_id + duration. */
-export async function uploadVideoToCloudinary(
+/** Direct browser → Cloudinary signed upload. `resourceType` picks the endpoint
+ *  (video for lessons/intros, image for photos, auto to detect). Returns the new
+ *  public_id, duration (videos), and the resource_type Cloudinary reported. */
+export async function uploadMediaToCloudinary(
   file: File,
+  resourceType: "video" | "image" | "auto" = "video",
   onProgress?: (pct: number) => void
-): Promise<{ publicId: string; durationSeconds: number | null }> {
-  const sig = await adminApi.uploadSignature();
+): Promise<{ publicId: string; durationSeconds: number | null; resourceType: "image" | "video" }> {
+  const sig = await adminApi.uploadSignature(undefined, resourceType);
   const form = new FormData();
   form.append("file", file);
   form.append("api_key", sig.apiKey);
@@ -269,7 +287,11 @@ export async function uploadVideoToCloudinary(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         const data = JSON.parse(xhr.responseText);
-        resolve({ publicId: data.public_id, durationSeconds: data.duration ? Math.round(data.duration) : null });
+        resolve({
+          publicId: data.public_id,
+          durationSeconds: data.duration ? Math.round(data.duration) : null,
+          resourceType: data.resource_type === "image" ? "image" : "video",
+        });
       } else {
         let msg = xhr.responseText;
         try { msg = JSON.parse(xhr.responseText).error?.message ?? msg; } catch { /* keep */ }
@@ -279,4 +301,13 @@ export async function uploadVideoToCloudinary(
     xhr.onerror = () => reject(new Error("Cloudinary upload failed (network error)"));
     xhr.send(form);
   });
+}
+
+/** Back-compat helper for video-only uploads. */
+export async function uploadVideoToCloudinary(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<{ publicId: string; durationSeconds: number | null }> {
+  const { publicId, durationSeconds } = await uploadMediaToCloudinary(file, "video", onProgress);
+  return { publicId, durationSeconds };
 }
