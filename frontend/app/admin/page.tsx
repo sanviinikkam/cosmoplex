@@ -881,8 +881,13 @@ function IntroVideosManager() {
 // ── Pre-sale marketing assets (signup drip) ──────────────────────────────────
 const MARKETING_DAYS = [1, 2, 3, 7];
 
+// Thumbnail: scaled down but NOT cropped (whole image, aspect kept).
 function marketingImgThumb(pid: string): string {
-  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/w_240,h_160,c_fill,q_auto,f_auto/${pid}`;
+  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/w_320,q_auto,f_auto/${pid}`;
+}
+// Full image (uncropped) — what actually gets sent on WhatsApp too.
+function marketingImgFull(pid: string): string {
+  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/q_auto,f_auto/${pid}`;
 }
 
 function MarketingAssetsManager() {
@@ -955,9 +960,9 @@ function MarketingAssetsManager() {
                       {a ? (
                         <div className="mt-1">
                           {a.mediaType === "image" ? (
-                            <a href={marketingImgThumb(a.cloudinaryPublicId)} target="_blank" rel="noreferrer">
+                            <a href={marketingImgFull(a.cloudinaryPublicId)} target="_blank" rel="noreferrer" title="Open full image">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={marketingImgThumb(a.cloudinaryPublicId)} alt="" className="rounded-md w-full max-w-[160px] h-auto border border-zinc-200" />
+                              <img src={marketingImgThumb(a.cloudinaryPublicId)} alt="" className="rounded-md w-full max-w-[200px] h-auto border border-zinc-200" />
                             </a>
                           ) : (
                             <PreviewableId publicId={a.cloudinaryPublicId} className="block text-[11px] truncate max-w-full" />
