@@ -392,17 +392,19 @@ class IntroVideo(Base):
 
 
 class MarketingAsset(Base):
-    """Pre-sale marketing media (photo OR video) shown by the drip engine to
-    users who reached WhatsApp but haven't finished signup. One asset per
-    (day-bucket, language); day ∈ {1,2,3,7} = days idle before it's sent."""
+    """Pre-sale marketing content shown by the drip engine to users who reached
+    WhatsApp but haven't finished signup. One row per (day-bucket, language) —
+    day ∈ {1,2,3,7} = days idle before it's sent. Each row holds THREE independent
+    optional fields (photo, video, text); how each is used is decided later."""
     __tablename__ = "marketing_assets"
 
     id = Column(String(20), primary_key=True)              # "1_en", "7_kn"  (day_language)
     day = Column(Integer, nullable=False)                  # 1 | 2 | 3 | 7
     language = Column(String(10), nullable=False)          # en | hi | mr | te | ta | kn
-    media_type = Column(String(10), nullable=False)        # 'image' | 'video'
-    cloudinary_public_id = Column(String(500), nullable=False)
-    duration_seconds = Column(Integer, nullable=True)      # videos only
+    image_public_id = Column(String(500), nullable=True)   # Cloudinary image
+    video_public_id = Column(String(500), nullable=True)   # Cloudinary video
+    video_duration_seconds = Column(Integer, nullable=True)
+    text = Column(Text, nullable=True)                      # marketing copy
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

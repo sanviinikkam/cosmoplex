@@ -244,17 +244,20 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     # template; the uploaded photo/video sends via free-form below.
                     await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
                 else:
-                    # Marketing tier with an uploaded photo/video for this (day, lang)?
-                    # Send the media with the copy as caption. Otherwise, plain text.
+                    # Marketing tier: the row has three independent fields (photo,
+                    # video, text). For now, prefer video → photo → text, using the
+                    # custom text as caption/message when set. (How we combine the
+                    # three is a product decision for later.)
                     asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
-                    if asset:
-                        if asset.media_type == "image":
-                            await send_image(s.phone, asset.cloudinary_public_id, text)
-                        else:
-                            await send_video(s.phone, asset.cloudinary_public_id, text)
-                        sent_as = f"media:{asset.media_type}"
+                    caption = (asset.text.strip() if asset and asset.text and asset.text.strip() else text)
+                    if asset and asset.video_public_id:
+                        await send_video(s.phone, asset.video_public_id, caption)
+                        sent_as = "media:video"
+                    elif asset and asset.image_public_id:
+                        await send_image(s.phone, asset.image_public_id, caption)
+                        sent_as = "media:image"
                     else:
-                        await send_text(s.phone, text)
+                        await send_text(s.phone, caption)
                 s.last_nudge_at = now
                 s.last_nudge_key = key
                 # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).

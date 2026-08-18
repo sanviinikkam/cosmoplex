@@ -886,6 +886,72 @@ function marketingImgFull(pid: string): string {
   return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/q_auto,f_auto/${pid}`;
 }
 
+// One (day, language) cell with three independent fields: Photo, Video, Text.
+function MarketingCell({ day, label, asset, onPatch }: {
+  day: number;
+  label: string;
+  asset: MarketingAssetRow | undefined;
+  onPatch: (patch: { image_public_id?: string | null; video_public_id?: string | null; video_duration_seconds?: number | null; text?: string | null }) => void;
+}) {
+  const [draft, setDraft] = useState(asset?.text ?? "");
+  // Keep the text box in sync when the underlying data reloads.
+  useEffect(() => { setDraft(asset?.text ?? ""); }, [asset?.text]);
+  const textDirty = draft !== (asset?.text ?? "");
+
+  return (
+    <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
+      <span className="text-xs font-medium">{label}</span>
+
+      {/* Photo */}
+      <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-400">Photo</span>
+          {asset?.imagePublicId && (
+            <button className="text-[11px] text-red-500 hover:text-red-700"
+              onClick={() => onPatch({ image_public_id: null })}>✕</button>
+          )}
+        </div>
+        {asset?.imagePublicId
+          ? <a href={marketingImgFull(asset.imagePublicId)} target="_blank" rel="noreferrer" title="Click to open full image"
+              className="block text-[11px] text-emerald-700 hover:underline truncate max-w-full">{asset.imagePublicId}</a>
+          : <p className="text-[11px] text-zinc-400">not set</p>}
+        <UploadButton label={asset?.imagePublicId ? "Replace photo" : "Upload photo"} small
+          accept="image/*" resourceType="image"
+          onUploaded={(pid) => onPatch({ image_public_id: pid })} />
+      </div>
+
+      {/* Video */}
+      <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-400">Video</span>
+          {asset?.videoPublicId && (
+            <button className="text-[11px] text-red-500 hover:text-red-700"
+              onClick={() => onPatch({ video_public_id: null, video_duration_seconds: null })}>✕</button>
+          )}
+        </div>
+        {asset?.videoPublicId
+          ? <PreviewableId publicId={asset.videoPublicId} className="block text-[11px] truncate max-w-full" />
+          : <p className="text-[11px] text-zinc-400">not set</p>}
+        <UploadButton label={asset?.videoPublicId ? "Replace video" : "Upload video"} small
+          accept="video/*" resourceType="video"
+          onUploaded={(pid, dur) => onPatch({ video_public_id: pid, video_duration_seconds: dur })} />
+      </div>
+
+      {/* Text */}
+      <div className="mt-2">
+        <span className="text-[10px] uppercase tracking-wide text-zinc-400">Text</span>
+        <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2}
+          placeholder="Marketing copy…"
+          className="mt-0.5 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-200 resize-y" />
+        {textDirty && (
+          <button className="mt-1 text-[11px] text-emerald-700 hover:text-emerald-900"
+            onClick={() => onPatch({ text: draft.trim() || null })}>Save text</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MarketingAssetsManager() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<MarketingAssetRow[]>([]);
@@ -942,48 +1008,18 @@ function MarketingAssetsManager() {
                 Day {day} <span className="text-zinc-400 font-normal normal-case">· sent after {day} day{day === 1 ? "" : "s"} idle</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {LANGUAGES.map((l) => {
-                  const a = assetFor(day, l.code);
-                  return (
-                    <div key={l.code} className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium">{l.label}</span>
-                        {a && (
-                          <button className="text-[11px] text-red-500 hover:text-red-700"
-                            onClick={() => { if (window.confirm(`Remove the Day ${day} ${l.label} asset?`)) save(() => adminApi.deleteMarketingAsset(day, l.code)); }}>✕</button>
-                        )}
-                      </div>
-                      {a ? (
-                        <div className="mt-0.5">
-                          {a.mediaType === "image" ? (
-                            <a href={marketingImgFull(a.cloudinaryPublicId)} target="_blank" rel="noreferrer"
-                              title="Click to open full image"
-                              className="block text-[11px] text-emerald-700 hover:underline truncate max-w-full">
-                              {a.cloudinaryPublicId}
-                            </a>
-                          ) : (
-                            <PreviewableId publicId={a.cloudinaryPublicId} className="block text-[11px] truncate max-w-full" />
-                          )}
-                          <span className="inline-block mt-1 text-[10px] rounded bg-zinc-200 text-zinc-600 px-1 py-0.5 uppercase">{a.mediaType}</span>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">not set</p>
-                      )}
-                      <UploadButton
-                        label={a ? "Replace" : "Upload photo / video"} small
-                        accept="image/*,video/*" resourceType="auto"
-                        onUploaded={(pid, dur, rt) =>
-                          save(() => adminApi.setMarketingAsset(day, l.code, { media_type: rt, cloudinary_public_id: pid, duration_seconds: dur }))}
-                      />
-                    </div>
-                  );
-                })}
+                {LANGUAGES.map((l) => (
+                  <MarketingCell key={l.code} day={day} label={l.label}
+                    asset={assetFor(day, l.code)}
+                    onPatch={(patch) => save(() => adminApi.setMarketingAsset(day, l.code, patch))} />
+                ))}
               </div>
             </div>
           ))}
           <p className="text-[11px] text-zinc-400 mt-1">
-            Each cell accepts a photo <em>or</em> a video. ⚠️ WhatsApp only lets us message a user for free within 24 hours of
-            their last message; days 2/3/7 land outside that window and need approved Meta templates to actually deliver.
+            Each cell has three independent fields — photo, video and text. Fill any or all; how each is used is decided later.
+            ⚠️ WhatsApp only lets us message a user for free within 24 hours of their last message; days 2/3/7 land outside that
+            window and need approved Meta templates to actually deliver.
           </p>
         </div>
       )}

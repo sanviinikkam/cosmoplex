@@ -65,8 +65,17 @@ export type ReferralsData = {
 };
 
 export type MarketingAssetRow = {
-  day: number; language: string; mediaType: "image" | "video";
-  cloudinaryPublicId: string; durationSeconds: number | null;
+  day: number; language: string;
+  imagePublicId: string | null;
+  videoPublicId: string | null;
+  videoDurationSeconds: number | null;
+  text: string | null;
+};
+export type MarketingAssetPatch = {
+  image_public_id?: string | null;
+  video_public_id?: string | null;
+  video_duration_seconds?: number | null;
+  text?: string | null;
 };
 export type MarketingAssetsData = {
   days: number[]; languages: string[]; items: MarketingAssetRow[];
@@ -241,7 +250,7 @@ export const adminApi = {
 
   listMarketingAssets: () =>
     adminFetch<MarketingAssetsData>("/admin/marketing-assets"),
-  setMarketingAsset: (day: number, language: string, b: { media_type: "image" | "video"; cloudinary_public_id: string; duration_seconds?: number | null }) =>
+  setMarketingAsset: (day: number, language: string, b: MarketingAssetPatch) =>
     adminFetch<MarketingAssetRow>(`/admin/marketing-assets/${day}/${language}`, { method: "PUT", body: JSON.stringify(b) }),
   deleteMarketingAsset: (day: number, language: string) =>
     adminFetch<{ deleted: boolean }>(`/admin/marketing-assets/${day}/${language}`, { method: "DELETE" }),

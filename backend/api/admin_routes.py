@@ -902,14 +902,17 @@ MARKETING_DAYS = [1, 2, 3, 7]
 
 
 class MarketingAssetBody(BaseModel):
-    media_type: str                        # 'image' | 'video'
-    cloudinary_public_id: str
-    duration_seconds: Optional[int] = None
+    # All optional — a PUT patches only the fields it includes (send null to clear one).
+    image_public_id: Optional[str] = None
+    video_public_id: Optional[str] = None
+    video_duration_seconds: Optional[int] = None
+    text: Optional[str] = None
 
 
 def _marketing_dict(a: MarketingAsset) -> dict:
-    return {"day": a.day, "language": a.language, "mediaType": a.media_type,
-            "cloudinaryPublicId": a.cloudinary_public_id, "durationSeconds": a.duration_seconds}
+    return {"day": a.day, "language": a.language,
+            "imagePublicId": a.image_public_id, "videoPublicId": a.video_public_id,
+            "videoDurationSeconds": a.video_duration_seconds, "text": a.text}
 
 
 @router.get("/marketing-assets")
@@ -926,18 +929,20 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
         raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
     if language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"language must be one of {sorted(SUPPORTED_LANGUAGES)}")
-    if body.media_type not in ("image", "video"):
-        raise HTTPException(status_code=400, detail="media_type must be image or video")
-    if not body.cloudinary_public_id.strip():
-        raise HTTPException(status_code=400, detail="cloudinary_public_id is required")
     key = f"{day}_{language}"
     a = await db.get(MarketingAsset, key)
     if a is None:
         a = MarketingAsset(id=key, day=day, language=language)
         db.add(a)
-    a.media_type = body.media_type
-    a.cloudinary_public_id = body.cloudinary_public_id.strip()
-    a.duration_seconds = body.duration_seconds
+    # Patch only the fields present in the request (exclude_unset), so each of the
+    # three fields — photo, video, text — can be set or cleared independently.
+    patch = body.model_dump(exclude_unset=True)
+    for field in ("image_public_id", "video_public_id", "video_duration_seconds", "text"):
+        if field in patch:
+            val = patch[field]
+            if isinstance(val, str):
+                val = val.strip() or None
+            setattr(a, field, val)
     await db.commit()
     return _marketing_dict(a)
 

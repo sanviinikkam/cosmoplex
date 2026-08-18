@@ -67,7 +67,33 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS referred_by_code VARCHAR(12)"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_language VARCHAR(10)"))
+            # Marketing assets: three independent fields per (day, language).
+            await conn.execute(text(
+                "ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS image_public_id VARCHAR(500)"))
+            await conn.execute(text(
+                "ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS video_public_id VARCHAR(500)"))
+            await conn.execute(text(
+                "ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS video_duration_seconds INTEGER"))
+            await conn.execute(text(
+                'ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS "text" TEXT'))
         print("✓ WhatsApp session columns ready")
+        # Legacy marketing_assets schema (single media_type/cloudinary_public_id) →
+        # migrate into the new per-field columns, then relax the old NOT NULLs. Guarded
+        # in its own transaction so a fresh DB (no legacy columns) doesn't fail the boot.
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(
+                    "UPDATE marketing_assets SET image_public_id = cloudinary_public_id "
+                    "WHERE media_type = 'image' AND image_public_id IS NULL"))
+                await conn.execute(text(
+                    "UPDATE marketing_assets SET video_public_id = cloudinary_public_id, "
+                    "video_duration_seconds = duration_seconds "
+                    "WHERE media_type = 'video' AND video_public_id IS NULL"))
+                await conn.execute(text("ALTER TABLE marketing_assets ALTER COLUMN media_type DROP NOT NULL"))
+                await conn.execute(text("ALTER TABLE marketing_assets ALTER COLUMN cloudinary_public_id DROP NOT NULL"))
+            print("✓ marketing_assets legacy migration done")
+        except Exception as e:
+            print(f"  (marketing_assets legacy migration skipped: {type(e).__name__})")
         # Seed the current hardcoded intro video as the 'default' so the admin
         # portal reflects reality (idempotent — only inserts if the table is empty).
         from sqlalchemy import select as _select
@@ -175,7 +201,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "marketing-assets-drip",
+        "build": "marketing-three-fields",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
