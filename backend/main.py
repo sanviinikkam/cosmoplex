@@ -206,7 +206,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "course-language-switch",
+        "build": "skip-tutorial-label",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

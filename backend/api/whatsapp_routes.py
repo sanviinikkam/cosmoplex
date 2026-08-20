@@ -822,7 +822,7 @@ HOWTO_STEPS = {
     ],
 }
 HOWTO_NEXT = {"en": "Next ▶️", "hi": "आगे ▶️", "mr": "पुढे ▶️", "te": "తదుపరి ▶️", "ta": "அடுத்து ▶️", "kn": "ಮುಂದೆ ▶️"}
-HOWTO_SKIP = {"en": "Skip ⏭️", "hi": "छोड़ें ⏭️", "mr": "वगळा ⏭️", "te": "వదిలేయి ⏭️", "ta": "தவிர் ⏭️", "kn": "ಬಿಟ್ಟುಬಿಡಿ ⏭️"}
+HOWTO_SKIP = {"en": "Skip Tutorial ⏭️", "hi": "Tutorial छोड़ें ⏭️", "mr": "Tutorial वगळा ⏭️", "te": "Tutorial దాటు ⏭️", "ta": "Tutorial தவிர் ⏭️", "kn": "Tutorial ಬಿಡಿ ⏭️"}
 HOWTO_START = {"en": "Let's start 🚀", "hi": "चलिए शुरू करें 🚀", "mr": "चला सुरू करूया 🚀", "te": "మొదలుపెడదాం 🚀", "ta": "ஆரம்பிக்கலாம் 🚀", "kn": "ಶುರುಮಾಡೋಣ 🚀"}
 
 
