@@ -750,37 +750,37 @@ HOWTO_STEPS = {
     "en": [
         "Here's how this works 👇\n\n📹 *Short video lessons* — about 2 minutes each, in your language. Watch anytime, anywhere.",
         "📝 *A quick quiz after every lesson* — just tap the right option. Clear it to unlock the next lesson.",
-        "✍️ *Mini assignments* on some lessons — type or send a voice note, and I'll grade it instantly. And any doubts? You can just ask me anytime. 💬",
+        "✍️ *Mini assignments* on some lessons — type or send a voice note, and I'll grade it instantly. And after any lesson, tap *❓ I have a doubt* to ask me anything you're unsure about. 💬",
         "🎓 *Finish all lessons → earn your certificate.* That's the whole journey. Ready to start?",
     ],
     "hi": [
         "ये ऐसे काम करता है 👇\n\n📹 *छोटे video lessons* — हर एक करीब 2 मिनट का, आपकी भाषा में। कभी भी, कहीं भी देखें।",
         "📝 *हर lesson के बाद एक quick quiz* — बस सही option पर tap करें। पास करके अगला lesson unlock करें।",
-        "✍️ *कुछ lessons में छोटे assignments* — type करें या voice note भेजें, मैं तुरंत grade कर दूँगा। और कोई doubt हो? मुझसे कभी भी पूछ सकते हैं। 💬",
+        "✍️ *कुछ lessons में छोटे assignments* — type करें या voice note भेजें, मैं तुरंत grade कर दूँगा। और किसी भी lesson के बाद *❓ मुझे सवाल है* पर tap करके जो समझ न आए वो पूछें। 💬",
         "🎓 *सारे lessons पूरे करें → अपना certificate पाएँ।* बस इतना ही सफर है। शुरू करें?",
     ],
     "mr": [
         "हे असं चालतं 👇\n\n📹 *छोटे video lessons* — प्रत्येक साधारण 2 मिनिटांचा, तुमच्या भाषेत. कधीही, कुठेही बघा.",
         "📝 *प्रत्येक lesson नंतर एक quick quiz* — फक्त योग्य option वर tap करा. पास करून पुढचा lesson unlock करा.",
-        "✍️ *काही lessons मध्ये छोटे assignments* — type करा किंवा voice note पाठवा, मी लगेच grade करतो. आणि काही doubt? मला कधीही विचारू शकता. 💬",
+        "✍️ *काही lessons मध्ये छोटे assignments* — type करा किंवा voice note पाठवा, मी लगेच grade करतो. आणि कोणत्याही lesson नंतर *❓ मला शंका आहे* वर tap करून न समजलेलं विचारा. 💬",
         "🎓 *सर्व lessons पूर्ण करा → तुमचं certificate मिळवा.* एवढाच प्रवास आहे. सुरू करूया?",
     ],
     "te": [
         "ఇది ఇలా పనిచేస్తుంది 👇\n\n📹 *చిన్న video lessons* — ఒక్కొక్కటి సుమారు 2 నిమిషాలు, మీ భాషలో. ఎప్పుడైనా, ఎక్కడైనా చూడండి.",
         "📝 *ప్రతి lesson తర్వాత ఒక quick quiz* — సరైన option పై tap చేయండి. పాస్ అయితే తదుపరి lesson unlock అవుతుంది.",
-        "✍️ *కొన్ని lessonsలో చిన్న assignments* — type చేయండి లేదా voice note పంపండి, నేను వెంటనే grade చేస్తా. ఏదైనా doubt? నన్ను ఎప్పుడైనా అడగవచ్చు. 💬",
+        "✍️ *కొన్ని lessonsలో చిన్న assignments* — type చేయండి లేదా voice note పంపండి, నేను వెంటనే grade చేస్తా. మరియు ఏదైనా lesson తర్వాత *❓ నాకు సందేహం ఉంది* పై tap చేసి తెలియనిది అడగండి. 💬",
         "🎓 *అన్ని lessons పూర్తి చేయండి → మీ certificate పొందండి.* ఇదే మొత్తం ప్రయాణం. మొదలుపెడదామా?",
     ],
     "ta": [
         "இது இப்படி வேலை செய்யும் 👇\n\n📹 *குறுகிய video lessons* — ஒவ்வொன்றும் சுமார் 2 நிமிடம், உங்கள் மொழியில். எப்போது வேண்டுமானாலும் பாருங்கள்.",
         "📝 *ஒவ்வொரு lesson-க்கும் பிறகு ஒரு quick quiz* — சரியான option-ஐ tap செய்யுங்கள். pass செய்தால் அடுத்த lesson unlock ஆகும்.",
-        "✍️ *சில lessons-ல் சிறிய assignments* — type செய்யுங்கள் அல்லது voice note அனுப்புங்கள், நான் உடனே grade செய்கிறேன். ஏதேனும் doubt? என்னை எப்போது வேண்டுமானாலும் கேட்கலாம். 💬",
+        "✍️ *சில lessons-ல் சிறிய assignments* — type செய்யுங்கள் அல்லது voice note அனுப்புங்கள், நான் உடனே grade செய்கிறேன். மேலும் எந்த lesson-க்கும் பிறகு *❓ எனக்கு சந்தேகம்* tap செய்து புரியாததைக் கேளுங்கள். 💬",
         "🎓 *எல்லா lessons-ஐயும் முடியுங்கள் → உங்கள் certificate பெறுங்கள்.* இதுதான் முழு பயணம். ஆரம்பிக்கலாமா?",
     ],
     "kn": [
         "ಇದು ಹೀಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ 👇\n\n📹 *ಚಿಕ್ಕ video lessons* — ಪ್ರತಿಯೊಂದೂ ಸುಮಾರು 2 ನಿಮಿಷ, ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ. ಯಾವಾಗ ಬೇಕಾದರೂ ನೋಡಿ.",
         "📝 *ಪ್ರತಿ lesson ನಂತರ ಒಂದು quick quiz* — ಸರಿಯಾದ option ಮೇಲೆ tap ಮಾಡಿ. ಪಾಸ್ ಆದರೆ ಮುಂದಿನ lesson unlock ಆಗುತ್ತದೆ.",
-        "✍️ *ಕೆಲವು lessons ನಲ್ಲಿ ಚಿಕ್ಕ assignments* — type ಮಾಡಿ ಅಥವಾ voice note ಕಳುಹಿಸಿ, ನಾನು ತಕ್ಷಣ grade ಮಾಡ್ತೀನಿ. ಯಾವುದೇ doubt? ನನ್ನನ್ನು ಯಾವಾಗ ಬೇಕಾದರೂ ಕೇಳಬಹುದು. 💬",
+        "✍️ *ಕೆಲವು lessons ನಲ್ಲಿ ಚಿಕ್ಕ assignments* — type ಮಾಡಿ ಅಥವಾ voice note ಕಳುಹಿಸಿ, ನಾನು ತಕ್ಷಣ grade ಮಾಡ್ತೀನಿ. ಮತ್ತು ಯಾವುದೇ lesson ನಂತರ *❓ ನನಗೆ ಸಂದೇಹವಿದೆ* tap ಮಾಡಿ ಗೊತ್ತಾಗದಿರುವುದನ್ನು ಕೇಳಿ. 💬",
         "🎓 *ಎಲ್ಲಾ lessons ಮುಗಿಸಿ → ನಿಮ್ಮ certificate ಪಡೆಯಿರಿ.* ಇಷ್ಟೇ ಪೂರ್ತಿ ಪ್ರಯಾಣ. ಶುರುಮಾಡೋಣ್ವಾ?",
     ],
 }
