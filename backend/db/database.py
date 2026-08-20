@@ -15,9 +15,14 @@ if _host not in ("localhost", "127.0.0.1", "", "::1"):
 engine = create_async_engine(
     settings.database_url,
     echo=settings.environment == "development",
+    # Serverless-DB (Neon) friendly pooling. pre_ping transparently reconnects
+    # after Neon resumes from scale-to-zero; pool_recycle drops connections older
+    # than 5 min (Neon will have closed them during a suspend) so we never hand
+    # out a dead one; a smaller pool means fewer lingering idle connections.
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_recycle=300,
+    pool_size=5,
+    max_overflow=10,
     connect_args=_connect_args,
 )
 

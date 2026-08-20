@@ -176,32 +176,37 @@ async def learn_ws(websocket: WebSocket, learner_id: str):
 
 
 @app.get("/health")
-async def health():
+async def health(db: int = 0):
+    """Liveness check. By DEFAULT it does NOT touch the database — so routine
+    health pings (Render's health check, uptime monitors) don't keep a
+    scale-to-zero Neon DB awake and burn compute. Pass ?db=1 for a deep check
+    that also verifies DB connectivity + counts (only exposes counts and the
+    error *type* — never credentials)."""
     from api.whatsapp_content import INTRO_VIDEO_ID
 
-    # Lightweight DB probe so we can confirm the connection (and that seeding ran)
-    # from outside. Only exposes counts + the error *type* — never credentials.
-    db_status: dict = {}
-    try:
-        from db.database import async_session_factory
-        from db.models import Course, IntroVideo
-        from sqlalchemy import select, func, text as _text
-        async with async_session_factory() as db:
-            await db.execute(_text("SELECT 1"))
-            db_status["connected"] = True
-            try:
-                db_status["courses"] = (await db.execute(select(func.count()).select_from(Course))).scalar()
-                db_status["intro_videos"] = (await db.execute(select(func.count()).select_from(IntroVideo))).scalar()
-            except Exception as e:  # tables not created yet
-                db_status["tables"] = f"pending ({type(e).__name__})"
-    except Exception as e:
-        db_status["connected"] = False
-        db_status["error"] = type(e).__name__   # e.g. InvalidPasswordError, OSError
+    db_status: dict = {"checked": False}
+    if db:
+        db_status = {}
+        try:
+            from db.database import async_session_factory
+            from db.models import Course, IntroVideo
+            from sqlalchemy import select, func, text as _text
+            async with async_session_factory() as session:
+                await session.execute(_text("SELECT 1"))
+                db_status["connected"] = True
+                try:
+                    db_status["courses"] = (await session.execute(select(func.count()).select_from(Course))).scalar()
+                    db_status["intro_videos"] = (await session.execute(select(func.count()).select_from(IntroVideo))).scalar()
+                except Exception as e:  # tables not created yet
+                    db_status["tables"] = f"pending ({type(e).__name__})"
+        except Exception as e:
+            db_status["connected"] = False
+            db_status["error"] = type(e).__name__   # e.g. InvalidPasswordError, OSError
 
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "howto-walkthrough",
+        "build": "neon-cost-optimize",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
