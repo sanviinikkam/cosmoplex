@@ -113,6 +113,31 @@ def _qlang(session) -> str:
     return session.quiz_language or session.language or "en"
 
 
+# ── Change the WHOLE course language (videos + quizzes + assignments + UI) ──────
+CLANG_BTN = {  # lesson-prompt button (≤20 chars)
+    "en": "🎬 Course language", "hi": "🎬 कोर्स भाषा", "mr": "🎬 कोर्स भाषा",
+    "te": "🎬 కోర్సు భాష", "ta": "🎬 பாட மொழி", "kn": "🎬 ಕೋರ್ಸ್ ಭಾಷೆ",
+}
+CLANG_WARN = {  # warning shown as the picker body
+    "en": "⚠️ This changes your *whole course* to the new language — videos, quizzes AND assignments. Choose the language 👇",
+    "hi": "⚠️ यह आपके *पूरे कोर्स* को नई भाषा में बदल देगा — videos, quizzes और assignments सब कुछ। भाषा चुनें 👇",
+    "mr": "⚠️ हे तुमचा *संपूर्ण कोर्स* नवीन भाषेत बदलेल — videos, quizzes आणि assignments सगळं. भाषा निवडा 👇",
+    "te": "⚠️ ఇది మీ *మొత్తం కోర్సును* కొత్త భాషలోకి మారుస్తుంది — videos, quizzes మరియు assignments అన్నీ. భాషను ఎంచుకోండి 👇",
+    "ta": "⚠️ இது உங்கள் *முழு பாடத்தையும்* புதிய மொழிக்கு மாற்றும் — videos, quizzes மற்றும் assignments அனைத்தும். மொழியைத் தேர்வுசெய்யுங்கள் 👇",
+    "kn": "⚠️ ಇದು ನಿಮ್ಮ *ಸಂಪೂರ್ಣ ಕೋರ್ಸ್* ಅನ್ನು ಹೊಸ ಭಾಷೆಗೆ ಬದಲಾಯಿಸುತ್ತದೆ — videos, quizzes ಮತ್ತು assignments ಎಲ್ಲವೂ. ಭಾಷೆ ಆಯ್ಕೆಮಾಡಿ 👇",
+}
+CLANG_APPLY_PROMPT = {  # after a language is picked → restart vs resume
+    "en": "Switch to *{label}*. Start from the beginning, or continue from your current lesson — in {label}?",
+    "hi": "*{label}* में बदलें। शुरू से शुरू करें, या अपने current lesson से आगे बढ़ें — {label} में?",
+    "mr": "*{label}* मध्ये बदला. सुरुवातीपासून सुरू करा, की तुमच्या current lesson पासून पुढे जा — {label} मध्ये?",
+    "te": "*{label}*కి మారండి. మొదటి నుండి ప్రారంభించాలా, లేదా మీ ప్రస్తుత lesson నుండి కొనసాగించాలా — {label}లో?",
+    "ta": "*{label}*க்கு மாறுங்கள். ஆரம்பத்திலிருந்து தொடங்கவா, அல்லது தற்போதைய lesson-ல் இருந்து தொடரவா — {label}-ல்?",
+    "kn": "*{label}*ಗೆ ಬದಲಿಸಿ. ಮೊದಲಿನಿಂದ ಪ್ರಾರಂಭಿಸಬೇಕೆ, ಅಥವಾ ನಿಮ್ಮ ಪ್ರಸ್ತುತ lesson ನಿಂದ ಮುಂದುವರಿಸಬೇಕೆ — {label}ನಲ್ಲಿ?",
+}
+CLANG_RESTART_BTN = {"en": "🔁 From the start", "hi": "🔁 शुरू से", "mr": "🔁 सुरुवातीपासून", "te": "🔁 మొదటి నుండి", "ta": "🔁 ஆரம்பம்", "kn": "🔁 ಮೊದಲಿನಿಂದ"}
+CLANG_RESUME_BTN = {"en": "▶️ Continue here", "hi": "▶️ यहीं से आगे", "mr": "▶️ इथूनच पुढे", "te": "▶️ ఇక్కడి నుండి", "ta": "▶️ இங்கிருந்து", "kn": "▶️ ಇಲ್ಲಿಂದ ಮುಂದೆ"}
+
+
 def _configured() -> bool:
     return bool(settings.whatsapp_token and settings.whatsapp_phone_number_id)
 
@@ -710,6 +735,18 @@ async def _send_quiz_language_picker(to: str, lang: str) -> None:
     )
 
 
+async def _send_course_language_picker(to: str, lang: str) -> None:
+    """Picker that changes the WHOLE course language. Body carries the warning;
+    rows use a distinct `clang_` id → then the learner chooses restart vs resume."""
+    rows = [(f"clang_{code}", label.split(" (")[0], label) for code, label in LANGS.items()]
+    await send_list(
+        to, header="Cosmoplex",
+        body=CLANG_WARN.get(lang, CLANG_WARN["en"]),
+        button=QLANG_CHOOSE.get(lang, QLANG_CHOOSE["en"]),
+        rows=rows, section_title="Languages",
+    )
+
+
 # ── Onboarding (pre-sale funnel) ─────────────────────────────────────────────
 STATUS_MAP = {
     "prof_student": "student",
@@ -1016,7 +1053,9 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
     # "Start quiz" prompt.
     await asyncio.sleep(LESSON_BUTTON_DELAY_SEC)
     await send_buttons(to, tr(lang, "after_text").format(name=name),
-                       [("quiz", tr(lang, "quiz_btn")), ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"]))])
+                       [("quiz", tr(lang, "quiz_btn")),
+                        ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
+                        ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
 
 
 def _reset_quiz_state(session) -> None:
@@ -1232,10 +1271,12 @@ async def _rerender_quiz_step(db, session, frm: str, lang: str, qlang: str) -> N
             skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
             await _send_assignment(frm, qlang, assignment, skippable=skippable)
     else:
-        # On the lesson video (pre-quiz) → re-offer Start-quiz + Quiz-language.
+        # On the lesson video (pre-quiz) → re-offer Start-quiz + Quiz/Course language.
         nm = (session.name or "").strip() or "friend"
         await send_buttons(frm, tr(lang, "after_text").format(name=nm),
-                           [("quiz", tr(lang, "quiz_btn")), ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"]))])
+                           [("quiz", tr(lang, "quiz_btn")),
+                            ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
+                            ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
 
 
 async def _start_quiz(db, session, frm: str, lang: str, practice: bool = False) -> None:
@@ -1420,6 +1461,47 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                 await send_text(frm, QLANG_SET.get(lang, QLANG_SET["en"]).format(
                     label=LANGS[chosen].split(" (")[0]))
                 await _rerender_quiz_step(db, session, frm, lang, chosen)
+            return
+
+        # "Course language" button → warn + picker (changes EVERYTHING).
+        if reply_id == "course_lang":
+            await db.commit()
+            await _send_course_language_picker(frm, lang)
+            return
+
+        # A course-language pick (clang_XX) → ask: restart from the beginning, or
+        # resume the current lesson, both in the new language.
+        if reply_id and reply_id.startswith("clang_"):
+            chosen = reply_id.split("_", 1)[1]
+            if chosen in LANGS:
+                await db.commit()
+                await send_buttons(
+                    frm, CLANG_APPLY_PROMPT.get(lang, CLANG_APPLY_PROMPT["en"]).format(
+                        label=LANGS[chosen].split(" (")[0]),
+                    [(f"cset_restart_{chosen}", CLANG_RESTART_BTN.get(lang, CLANG_RESTART_BTN["en"])),
+                     (f"cset_resume_{chosen}", CLANG_RESUME_BTN.get(lang, CLANG_RESUME_BTN["en"]))])
+            return
+
+        # Apply the course-language switch (cset_restart_XX / cset_resume_XX).
+        if reply_id and reply_id.startswith("cset_"):
+            parts = reply_id.split("_")   # ["cset", "restart"|"resume", "<lang>"]
+            mode = parts[1] if len(parts) > 1 else ""
+            newlang = parts[2] if len(parts) > 2 else ""
+            if newlang in LANGS and mode in ("restart", "resume"):
+                session.language = newlang
+                session.quiz_language = None   # whole course is now newlang
+                if mode == "restart":
+                    session.lesson_index = 0
+                    _reset_quiz_state(session)
+                    session.assignment_draft = None
+                else:  # resume — clamp the index to the new language's lesson count
+                    lessons = await _db_lessons(db, newlang)
+                    session.lesson_index = min(session.lesson_index or 0, max(0, len(lessons) - 1))
+                session.stage = "lesson"
+                await db.commit()
+                nm2 = (session.name or "").strip() or "friend"
+                await send_text(frm, tr(newlang, "picker_done"))
+                await _send_lesson(db, frm, newlang, nm2, session.lesson_index or 0)
             return
 
         # Onboarding: capture the learner's name → then begin the funnel

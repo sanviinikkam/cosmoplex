@@ -206,7 +206,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "howto-doubt-copy-fix",
+        "build": "course-language-switch",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
