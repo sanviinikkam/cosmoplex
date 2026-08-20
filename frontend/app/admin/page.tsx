@@ -937,15 +937,21 @@ function MarketingCell({ day, label, asset, onPatch }: {
           onUploaded={(pid, dur) => onPatch({ video_public_id: pid, video_duration_seconds: dur })} />
       </div>
 
-      {/* Text */}
+      {/* Text — auto-saves on click-away (blur); explicit Save button too. */}
       <div className="mt-2">
         <span className="text-[10px] uppercase tracking-wide text-zinc-400">Text</span>
         <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2}
           placeholder="Marketing copy…"
+          onBlur={() => { if (draft !== (asset?.text ?? "")) onPatch({ text: draft.trim() || null }); }}
           className="mt-0.5 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-200 resize-y" />
-        {textDirty && (
-          <button className="mt-1 text-[11px] text-emerald-700 hover:text-emerald-900"
-            onClick={() => onPatch({ text: draft.trim() || null })}>Save text</button>
+        {textDirty ? (
+          <div className="mt-1 flex items-center gap-2">
+            <button className="text-[11px] rounded bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5"
+              onClick={() => onPatch({ text: draft.trim() || null })}>Save</button>
+            <span className="text-[10px] text-zinc-400">also saves when you click away</span>
+          </div>
+        ) : (
+          asset?.text ? <span className="mt-1 inline-block text-[10px] text-emerald-600">✓ saved</span> : null
         )}
       </div>
     </div>
