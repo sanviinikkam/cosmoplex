@@ -743,6 +743,65 @@ async def _send_goal_question(to: str, lang: str) -> None:
                     button=ob(lang, "select_btn"), rows=rows, section_title=ob(lang, "select_btn"))
 
 
+# ── "How the course works" walkthrough (shown once, right after signup) ────────
+# A skippable, multi-step primer. Each step is one message with buttons; the
+# button carries the NEXT step index (stateless — no stored progress needed).
+HOWTO_STEPS = {
+    "en": [
+        "Here's how this works 👇\n\n📹 *Short video lessons* — about 2 minutes each, in your language. Watch anytime, anywhere.",
+        "📝 *A quick quiz after every lesson* — just tap the right option. Clear it to unlock the next lesson.",
+        "✍️ *Mini assignments* on some lessons — type or send a voice note, and I'll grade it instantly. And any doubts? You can just ask me anytime. 💬",
+        "🎓 *Finish all lessons → earn your certificate.* That's the whole journey. Ready to start?",
+    ],
+    "hi": [
+        "ये ऐसे काम करता है 👇\n\n📹 *छोटे video lessons* — हर एक करीब 2 मिनट का, आपकी भाषा में। कभी भी, कहीं भी देखें।",
+        "📝 *हर lesson के बाद एक quick quiz* — बस सही option पर tap करें। पास करके अगला lesson unlock करें।",
+        "✍️ *कुछ lessons में छोटे assignments* — type करें या voice note भेजें, मैं तुरंत grade कर दूँगा। और कोई doubt हो? मुझसे कभी भी पूछ सकते हैं। 💬",
+        "🎓 *सारे lessons पूरे करें → अपना certificate पाएँ।* बस इतना ही सफर है। शुरू करें?",
+    ],
+    "mr": [
+        "हे असं चालतं 👇\n\n📹 *छोटे video lessons* — प्रत्येक साधारण 2 मिनिटांचा, तुमच्या भाषेत. कधीही, कुठेही बघा.",
+        "📝 *प्रत्येक lesson नंतर एक quick quiz* — फक्त योग्य option वर tap करा. पास करून पुढचा lesson unlock करा.",
+        "✍️ *काही lessons मध्ये छोटे assignments* — type करा किंवा voice note पाठवा, मी लगेच grade करतो. आणि काही doubt? मला कधीही विचारू शकता. 💬",
+        "🎓 *सर्व lessons पूर्ण करा → तुमचं certificate मिळवा.* एवढाच प्रवास आहे. सुरू करूया?",
+    ],
+    "te": [
+        "ఇది ఇలా పనిచేస్తుంది 👇\n\n📹 *చిన్న video lessons* — ఒక్కొక్కటి సుమారు 2 నిమిషాలు, మీ భాషలో. ఎప్పుడైనా, ఎక్కడైనా చూడండి.",
+        "📝 *ప్రతి lesson తర్వాత ఒక quick quiz* — సరైన option పై tap చేయండి. పాస్ అయితే తదుపరి lesson unlock అవుతుంది.",
+        "✍️ *కొన్ని lessonsలో చిన్న assignments* — type చేయండి లేదా voice note పంపండి, నేను వెంటనే grade చేస్తా. ఏదైనా doubt? నన్ను ఎప్పుడైనా అడగవచ్చు. 💬",
+        "🎓 *అన్ని lessons పూర్తి చేయండి → మీ certificate పొందండి.* ఇదే మొత్తం ప్రయాణం. మొదలుపెడదామా?",
+    ],
+    "ta": [
+        "இது இப்படி வேலை செய்யும் 👇\n\n📹 *குறுகிய video lessons* — ஒவ்வொன்றும் சுமார் 2 நிமிடம், உங்கள் மொழியில். எப்போது வேண்டுமானாலும் பாருங்கள்.",
+        "📝 *ஒவ்வொரு lesson-க்கும் பிறகு ஒரு quick quiz* — சரியான option-ஐ tap செய்யுங்கள். pass செய்தால் அடுத்த lesson unlock ஆகும்.",
+        "✍️ *சில lessons-ல் சிறிய assignments* — type செய்யுங்கள் அல்லது voice note அனுப்புங்கள், நான் உடனே grade செய்கிறேன். ஏதேனும் doubt? என்னை எப்போது வேண்டுமானாலும் கேட்கலாம். 💬",
+        "🎓 *எல்லா lessons-ஐயும் முடியுங்கள் → உங்கள் certificate பெறுங்கள்.* இதுதான் முழு பயணம். ஆரம்பிக்கலாமா?",
+    ],
+    "kn": [
+        "ಇದು ಹೀಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ 👇\n\n📹 *ಚಿಕ್ಕ video lessons* — ಪ್ರತಿಯೊಂದೂ ಸುಮಾರು 2 ನಿಮಿಷ, ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ. ಯಾವಾಗ ಬೇಕಾದರೂ ನೋಡಿ.",
+        "📝 *ಪ್ರತಿ lesson ನಂತರ ಒಂದು quick quiz* — ಸರಿಯಾದ option ಮೇಲೆ tap ಮಾಡಿ. ಪಾಸ್ ಆದರೆ ಮುಂದಿನ lesson unlock ಆಗುತ್ತದೆ.",
+        "✍️ *ಕೆಲವು lessons ನಲ್ಲಿ ಚಿಕ್ಕ assignments* — type ಮಾಡಿ ಅಥವಾ voice note ಕಳುಹಿಸಿ, ನಾನು ತಕ್ಷಣ grade ಮಾಡ್ತೀನಿ. ಯಾವುದೇ doubt? ನನ್ನನ್ನು ಯಾವಾಗ ಬೇಕಾದರೂ ಕೇಳಬಹುದು. 💬",
+        "🎓 *ಎಲ್ಲಾ lessons ಮುಗಿಸಿ → ನಿಮ್ಮ certificate ಪಡೆಯಿರಿ.* ಇಷ್ಟೇ ಪೂರ್ತಿ ಪ್ರಯಾಣ. ಶುರುಮಾಡೋಣ್ವಾ?",
+    ],
+}
+HOWTO_NEXT = {"en": "Next ▶️", "hi": "आगे ▶️", "mr": "पुढे ▶️", "te": "తదుపరి ▶️", "ta": "அடுத்து ▶️", "kn": "ಮುಂದೆ ▶️"}
+HOWTO_SKIP = {"en": "Skip ⏭️", "hi": "छोड़ें ⏭️", "mr": "वगळा ⏭️", "te": "వదిలేయి ⏭️", "ta": "தவிர் ⏭️", "kn": "ಬಿಟ್ಟುಬಿಡಿ ⏭️"}
+HOWTO_START = {"en": "Let's start 🚀", "hi": "चलिए शुरू करें 🚀", "mr": "चला सुरू करूया 🚀", "te": "మొదలుపెడదాం 🚀", "ta": "ஆரம்பிக்கலாம் 🚀", "kn": "ಶುರುಮಾಡೋಣ 🚀"}
+
+
+async def _send_howto_step(to: str, lang: str, idx: int) -> None:
+    """Send one walkthrough step. Middle steps get Next+Skip; the last gets a
+    single 'Let's start' (reuses reply_id 'start_lesson' → delivers lesson 1)."""
+    steps = HOWTO_STEPS.get(lang, HOWTO_STEPS["en"])
+    idx = max(0, min(idx, len(steps) - 1))
+    if idx < len(steps) - 1:
+        buttons = [(f"howto_{idx + 1}", HOWTO_NEXT.get(lang, HOWTO_NEXT["en"])),
+                   ("howto_skip", HOWTO_SKIP.get(lang, HOWTO_SKIP["en"]))]
+    else:
+        buttons = [("start_lesson", HOWTO_START.get(lang, HOWTO_START["en"]))]
+    await send_buttons(to, steps[idx], buttons)
+
+
 async def _intro_video_for(db, lang: str) -> str:
     """Intro video for this language, from the admin-managed DB. A specific
     language row wins over 'default'; falls back to the built-in intro if the
@@ -1428,11 +1487,33 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
                                [("confirm_number", ob(lang, "confirm_btn"))])
             return
 
-        # Sign-up: number confirmed → ask if they're ready to start the course
+        # Sign-up: number confirmed → run the "how the course works" walkthrough,
+        # which ends in a "Let's start" button that launches lesson 1.
         if reply_id == "confirm_number":
+            session.stage = "howto"
             await db.commit()
-            await send_buttons(frm, ob(lang, "ready_prompt").format(name=nm),
-                               [("start_lesson", ob(lang, "ready_btn"))])
+            await _send_howto_step(frm, lang, 0)
+            return
+
+        # "How it works" walkthrough navigation (skippable, stateless via reply_id).
+        if reply_id and reply_id.startswith("howto_"):
+            if reply_id == "howto_skip":
+                session.stage = "lesson"
+                await db.commit()
+                await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+                return
+            try:
+                idx = int(reply_id.split("_", 1)[1])
+            except ValueError:
+                idx = 0
+            await db.commit()
+            await _send_howto_step(frm, lang, idx)
+            return
+
+        # Typed a message mid-walkthrough → re-show the first step.
+        if reply_id is None and session.stage == "howto" and (text or "").strip():
+            await db.commit()
+            await _send_howto_step(frm, lang, 0)
             return
 
         # Start the (free) lesson from the onboarding CTA

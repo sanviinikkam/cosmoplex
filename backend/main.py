@@ -201,7 +201,7 @@ async def health():
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "marketing-three-fields",
+        "build": "howto-walkthrough",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
