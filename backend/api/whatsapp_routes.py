@@ -1308,12 +1308,12 @@ def _extract_ref_code(text: str | None) -> str | None:
     return t if re.fullmatch(r"[A-HJ-NP-Z2-9]{8}", t) else None
 
 REFERRAL_MSG = {
-    "en": "🎁 Invite friends & earn ₹{reward} each!\nYour code: *{code}*\nSo far: {paid} joined, ₹{earned} earned.\nShare 👇",
-    "hi": "🎁 दोस्तों को बुलाएँ और हर एक पर ₹{reward} कमाएँ!\nआपका कोड: *{code}*\nअब तक: {paid} जुड़े, ₹{earned} कमाए।\nशेयर करें 👇",
-    "mr": "🎁 मित्रांना आमंत्रित करा, प्रत्येकी ₹{reward} कमवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: {paid} जोडले, ₹{earned} कमावले.\nशेअर करा 👇",
-    "te": "🎁 స్నేహితులను ఆహ్వానించి ఒక్కొక్కరికి ₹{reward} సంపాదించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: {paid} చేరారు, ₹{earned} సంపాదించారు.\nషేర్ చేయండి 👇",
-    "ta": "🎁 நண்பர்களை அழைத்து ஒவ்வொருவருக்கும் ₹{reward} சம்பாதியுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: {paid} சேர்ந்தனர், ₹{earned} சம்பாதித்தீர்கள்.\nபகிருங்கள் 👇",
-    "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} ಸೇರಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
+    "en": "🎁 Invite friends & earn ₹{reward} each!\n⚠️ You get ₹{reward} *only when your friend signs up and pays* for the course.\nYour code: *{code}*\nSo far: {paid} paid, ₹{earned} earned.\nShare 👇",
+    "hi": "🎁 दोस्तों को बुलाएँ और हर एक पर ₹{reward} कमाएँ!\n⚠️ ₹{reward} तभी मिलेंगे *जब आपका दोस्त साइन अप करके कोर्स का payment करे*।\nआपका कोड: *{code}*\nअब तक: {paid} ने payment किया, ₹{earned} कमाए।\nशेयर करें 👇",
+    "mr": "🎁 मित्रांना आमंत्रित करा, प्रत्येकी ₹{reward} कमवा!\n⚠️ ₹{reward} तेव्हाच मिळतील *जेव्हा तुमचा मित्र साइन अप करून कोर्सचे payment करेल*.\nतुमचा कोड: *{code}*\nआतापर्यंत: {paid} ने payment केले, ₹{earned} कमावले.\nशेअर करा 👇",
+    "te": "🎁 స్నేహితులను ఆహ్వానించి ఒక్కొక్కరికి ₹{reward} సంపాదించండి!\n⚠️ మీ స్నేహితుడు *సైన్ అప్ చేసి కోర్సుకు payment చేసినప్పుడే* ₹{reward} వస్తాయి.\nమీ కోడ్: *{code}*\nఇప్పటివరకు: {paid} payment చేశారు, ₹{earned} సంపాదించారు.\nషేర్ చేయండి 👇",
+    "ta": "🎁 நண்பர்களை அழைத்து ஒவ்வொருவருக்கும் ₹{reward} சம்பாதியுங்கள்!\n⚠️ உங்கள் நண்பர் *பதிவு செய்து பாடத்திற்குப் பணம் செலுத்தினால் மட்டுமே* ₹{reward} கிடைக்கும்.\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: {paid} பணம் செலுத்தினர், ₹{earned} சம்பாதித்தீர்கள்.\nபகிருங்கள் 👇",
+    "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\n⚠️ ನಿಮ್ಮ ಸ್ನೇಹಿತ *ಸೈನ್ ಅಪ್ ಮಾಡಿ ಕೋರ್ಸ್‌ಗೆ payment ಮಾಡಿದಾಗ ಮಾತ್ರ* ₹{reward} ಸಿಗುತ್ತದೆ.\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} payment ಮಾಡಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
 }
 
 # Sent to the REFERRER when their code lands a signup.

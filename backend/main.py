@@ -206,7 +206,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "price-699",
+        "build": "refer-paid-condition",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
