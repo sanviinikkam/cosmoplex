@@ -146,12 +146,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000"],
-    # Accept any first-party origin: every Vercel deploy URL (production alias +
-    # per-deploy previews on .vercel.app) AND any cosmoplex.ai subdomain
-    # (e.g. ailiteracy.cosmoplex.ai). Anchored via fullmatch by Starlette, so it
-    # can't match look-alikes like cosmoplex.ai.evil.com.
-    allow_origin_regex=r"https://([a-z0-9-]+\.)*(vercel\.app|cosmoplex\.ai)",
+    # LOCKED to the single production domain (2026-08). The .vercel.app URLs and
+    # every other origin are intentionally blocked — everyone uses the custom
+    # domain. Hardcoded (not via FRONTEND_URL) so an env typo can't lock out the
+    # one origin that must always work.
+    allow_origins=["https://ailiteracy.cosmoplex.ai"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -208,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cors-cosmoplex-ai",
+        "build": "cors-locked-ailiteracy",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
