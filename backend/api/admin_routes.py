@@ -20,15 +20,17 @@ Everything except /admin/login requires a valid admin token (require_admin).
 """
 import asyncio
 import hashlib
+import hmac
 import httpx
 import io
 import json
 import re
 import time
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,10 +73,51 @@ class LoginBody(BaseModel):
     password: str
 
 
+# ── Brute-force throttle for /admin/login ─────────────────────────────────────
+# In-memory, per-process (same caveat as core/rate_limit.py — fine for the single
+# Render instance; move to Redis if this ever scales horizontally). After
+# _LOGIN_MAX_FAILS failed attempts from one IP within a sliding window, further
+# attempts are rejected with 429 until the oldest failure ages out.
+_LOGIN_WINDOW = 900        # 15-minute sliding window
+_LOGIN_MAX_FAILS = 5       # lock the IP after this many failures in the window
+_login_fails: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    # Behind Render/Vercel the real client IP is the first X-Forwarded-For entry.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _login_locked(ip: str, now: float) -> bool:
+    dq = _login_fails[ip]
+    while dq and now - dq[0] > _LOGIN_WINDOW:
+        dq.popleft()
+    if not dq:
+        _login_fails.pop(ip, None)
+        return False
+    return len(dq) >= _LOGIN_MAX_FAILS
+
+
 @router.post("/login")
-async def admin_login(body: LoginBody):
-    if not settings.admin_password or body.password != settings.admin_password:
+async def admin_login(body: LoginBody, request: Request):
+    ip = _client_ip(request)
+    now = time.time()
+    if _login_locked(ip, now):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed attempts. Please wait a few minutes and try again.",
+            headers={"Retry-After": str(_LOGIN_WINDOW)},
+        )
+    # Constant-time compare so response timing can't leak the password.
+    ok = bool(settings.admin_password) and hmac.compare_digest(
+        body.password.encode("utf-8"), settings.admin_password.encode("utf-8"))
+    if not ok:
+        _login_fails[ip].append(now)
         raise HTTPException(status_code=401, detail="Incorrect password")
+    _login_fails.pop(ip, None)   # reset the counter on a successful login
     return {"access_token": create_admin_token(), "token_type": "bearer"}
 
 
