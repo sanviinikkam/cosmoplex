@@ -212,7 +212,7 @@ Go to `/admin`, log in with `ADMIN_PASSWORD`.
 
 ## 11. WhatsApp specifics
 
-- **Flow:** language pick → name → brief + intro video → profile + goal questions → ₹499 limited-time
+- **Flow:** language pick → name → brief + intro video → profile + goal questions → ₹699 limited-time
   free offer → **Sign up → confirm number → Start course** → lesson video → quiz (pass 3/5) →
   assignment (submit button, multi-message answer, pass **60/100**) → done.
 - **Voice notes** work (Groq Whisper) — transcribed then handled like text. Needs `GROQ_API_KEY`.
