@@ -147,9 +147,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url, "http://localhost:3000"],
-    # Accept any Vercel deployment URL for this project (production alias +
-    # per-deploy preview URLs all end in .vercel.app).
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Accept any first-party origin: every Vercel deploy URL (production alias +
+    # per-deploy previews on .vercel.app) AND any cosmoplex.ai subdomain
+    # (e.g. ailiteracy.cosmoplex.ai). Anchored via fullmatch by Starlette, so it
+    # can't match look-alikes like cosmoplex.ai.evil.com.
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*(vercel\.app|cosmoplex\.ai)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -206,7 +208,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "security-hardening",
+        "build": "cors-cosmoplex-ai",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
