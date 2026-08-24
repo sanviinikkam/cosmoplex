@@ -321,31 +321,43 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
         try:
             url = f"https://graph.facebook.com/{settings.graph_api_version}/{settings.whatsapp_phone_number_id}"
             async with httpx.AsyncClient(timeout=10) as h:
-                r = await h.get(url, params={"fields": "verified_name,quality_rating"},
+                r = await h.get(url, params={"fields": "verified_name,quality_rating,messaging_limit_tier"},
                                 headers={"Authorization": f"Bearer {settings.whatsapp_token}"})
             if r.status_code < 400:
                 j = r.json()
+                tier = (j.get("messaging_limit_tier") or "?").replace("TIER_", "")
                 checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "ok",
-                               "detail": f"token valid · {j.get('verified_name', 'number')} · quality: {j.get('quality_rating', '?')}"})
+                               "detail": f"token valid · {j.get('verified_name', 'number')} · quality: {j.get('quality_rating', '?')} · daily tier: {tier}"})
             else:
                 checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "error",
                                "detail": f"token rejected (HTTP {r.status_code}) — the bot cannot send/receive until this is fixed"})
         except Exception as e:
             checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "error", "detail": f"unreachable ({type(e).__name__})"})
 
-    # 5. Cloudinary — credentials present + cloud reachable
+    # 5. Cloudinary — real usage / quota via the Admin API
     if not (settings.cloudinary_cloud_name and settings.cloudinary_api_key and settings.cloudinary_api_secret):
         checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "warn", "detail": "credentials incomplete"})
     else:
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as h:
-                r = await h.head(f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}/image/upload/sample")
-            reachable = r.status_code < 500
-            checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "ok",
-                           "detail": f"configured · cloud '{settings.cloudinary_cloud_name}'" + ("" if reachable else " (CDN slow)")})
-        except Exception:
-            checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "ok",
-                           "detail": f"configured · cloud '{settings.cloudinary_cloud_name}'"})
+            async with httpx.AsyncClient(timeout=10) as h:
+                r = await h.get(f"https://api.cloudinary.com/v1_1/{settings.cloudinary_cloud_name}/usage",
+                                auth=(settings.cloudinary_api_key, settings.cloudinary_api_secret))
+            if r.status_code < 400:
+                j = r.json()
+                plan = j.get("plan", "?")
+                pct = ((j.get("credits") or {}).get("used_percent"))
+                if pct is None:
+                    status, detail = "ok", f"reachable · plan '{plan}'"
+                else:
+                    status = "error" if pct >= 95 else "warn" if pct >= 80 else "ok"
+                    detail = f"{pct:.0f}% of monthly quota used · plan '{plan}'"
+                checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": status, "detail": detail})
+            else:
+                checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "warn",
+                               "detail": f"configured, but usage API returned HTTP {r.status_code}"})
+        except Exception as e:
+            checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "warn",
+                           "detail": f"configured · usage check failed ({type(e).__name__})"})
 
     # 6. Webhook signature verification
     if settings.whatsapp_app_secret:
@@ -360,7 +372,24 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
     checks.append({"key": "scheduler", "label": "Nudge scheduler", "status": "ok" if running else "warn",
                    "detail": "hourly drip running" if running else "not running (nudges won't auto-fire in-process)"})
 
-    # 8. AI spend budget (today)
+    # 8. Recent AI call failures — the reactive signal for Anthropic/Groq credit/quota
+    # problems (there's no balance API to read proactively).
+    try:
+        from core.ai_health import recent_errors
+        errs = recent_errors()
+        if not errs:
+            checks.append({"key": "ai_errors", "label": "AI call failures", "status": "ok",
+                           "detail": "no AI errors in the last hour"})
+        else:
+            billing = any(v["billingLikely"] for v in errs.values())
+            parts = [f"{p}: {v['error'][:70]} ({v['minutesAgo']}m ago)" for p, v in errs.items()]
+            checks.append({"key": "ai_errors", "label": "AI call failures",
+                           "status": "error" if billing else "warn",
+                           "detail": ("⚠ looks credit/billing/quota-related — " if billing else "") + "; ".join(parts)})
+    except Exception:
+        pass
+
+    # 9. AI spend budget (today)
     try:
         from core import spend_guard
         used = spend_guard._count if spend_guard._day_key == spend_guard._today() else 0
