@@ -163,6 +163,22 @@ def _image_url(public_id: str) -> str:
             f"/image/upload/f_auto,q_auto,w_1080/{public_id}")
 
 
+async def _log_wa_message(phone: str, role: str, msg_type: str, content: str) -> None:
+    """Persist one WhatsApp message to the transcript (whatsapp_messages).
+    Non-fatal — a logging failure must never break sending/receiving."""
+    if not phone:
+        return
+    try:
+        from db.database import async_session_factory
+        from db.models import WhatsAppMessage
+        async with async_session_factory() as _db:
+            _db.add(WhatsAppMessage(phone=phone, role=role, msg_type=msg_type,
+                                    content=(content or "")[:8000]))
+            await _db.commit()
+    except Exception as e:
+        print(f"⚠ wa transcript log failed: {e}")
+
+
 async def send_image(to: str, public_id: str, caption: str = "") -> None:
     """Send a Cloudinary image inline on WhatsApp (by link — images are small and
     Cloudinary serves them instantly, so no upload-by-id dance is needed)."""
@@ -171,6 +187,7 @@ async def send_image(to: str, public_id: str, caption: str = "") -> None:
         "messaging_product": "whatsapp", "to": to, "type": "image",
         "image": {"link": url, "caption": caption[:1024]},
     })
+    await _log_wa_message(to, "bot", "image", f"[image] {caption}".strip())
     if resp is None or resp.status_code >= 400:
         # Fallback: caption + clickable link so something still lands.
         await send_text(to, f"{caption}\n\n🖼️ {url}" if caption else f"🖼️ {url}")
@@ -200,6 +217,7 @@ async def send_text(to: str, body: str) -> None:
         "messaging_product": "whatsapp", "to": to, "type": "text",
         "text": {"body": body[:4096]},
     })
+    await _log_wa_message(to, "bot", "text", body)
 
 
 async def send_buttons(to: str, text: str, buttons: list[tuple[str, str]]) -> None:
@@ -215,6 +233,8 @@ async def send_buttons(to: str, text: str, buttons: list[tuple[str, str]]) -> No
             ]},
         },
     })
+    await _log_wa_message(to, "bot", "button",
+                          f"{text}  ⟦buttons: " + ", ".join(t for _, t in buttons[:3]) + "⟧")
 
 
 async def send_list(to: str, header: str, body: str, button: str,
@@ -238,6 +258,8 @@ async def send_list(to: str, header: str, body: str, button: str,
             },
         },
     })
+    await _log_wa_message(to, "bot", "list",
+                          f"{body}  ⟦list: " + ", ".join(t for _, t, _d in rows[:10]) + "⟧")
 
 
 async def _download(url: str, timeout: int = 60) -> bytes | None:
@@ -349,9 +371,11 @@ async def send_template(to: str, name: str, lang_code: str, body_params: list[st
             "type": "body",
             "parameters": [{"type": "text", "text": p} for p in body_params],
         }]
-    return await _post({
+    resp = await _post({
         "messaging_product": "whatsapp", "to": to, "type": "template", "template": template,
     })
+    await _log_wa_message(to, "bot", "template", f"[template:{name}] " + ", ".join(body_params or []))
+    return resp
 
 
 async def send_video(to: str, public_id: str, caption: str) -> None:
@@ -362,6 +386,7 @@ async def send_video(to: str, public_id: str, caption: str) -> None:
     clickable link if the video can't be fetched/uploaded.
     """
     url = _video_url(public_id)
+    await _log_wa_message(to, "bot", "video", f"[video] {caption}".strip())
     # A cold Cloudinary derivative (first-ever request for a video) is still
     # transcoding — the first fetch triggers generation but may 4xx/hang, so a
     # single attempt would silently drop the video and jump straight to the quiz.
@@ -1367,6 +1392,9 @@ async def _send_referral_info(db, session, frm: str) -> None:
 
 # ── Main handler ──────────────────────────────────────────────────────────────
 async def _handle_message(frm: str, reply_id: str | None, text: str | None, name: str | None) -> None:
+    # Log the inbound message to the transcript (text, or the tapped button id).
+    await _log_wa_message(frm, "user", "button" if reply_id else "text",
+                          text if text else f"[tap:{reply_id}]")
     async with async_session_factory() as db:
         session = await db.get(WhatsAppSession, frm)
         if session is None:

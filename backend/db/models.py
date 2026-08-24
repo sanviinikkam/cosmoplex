@@ -379,6 +379,19 @@ class WhatsAppSession(Base):
     referred_by_code = Column(String(12), nullable=True)            # code they arrived with (pending until signup)
 
 
+class WhatsAppMessage(Base):
+    """Full WhatsApp transcript — one row per inbound/outbound message, keyed by
+    phone. Lets us keep the complete conversation history per user."""
+    __tablename__ = "whatsapp_messages"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    phone = Column(String(30), index=True, nullable=False)   # learner's number
+    role = Column(String(12), nullable=False)                # 'user' | 'bot'
+    msg_type = Column(String(20), nullable=True)             # text|button|list|video|image|audio|template
+    content = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class IntroVideo(Base):
     """WhatsApp onboarding intro video, managed from the admin portal.
     language 'default' plays for every learner; a specific language row
