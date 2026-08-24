@@ -207,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "presale-media-caption",
+        "build": "drip-window-cost-aware",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

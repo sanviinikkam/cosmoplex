@@ -80,7 +80,8 @@ PRESALE_IMAGE_TEMPLATE = "cosmoplex_presale_image"
 PRESALE_VIDEO_TEMPLATE = "cosmoplex_presale_video"
 # The pre-sales media templates carry the correct-language photo/video in the
 # HEADER (passed at send time), so ONE approved template serves every language —
-# always sent in this fixed language. Only the tiny body ({{1}} = name) is fixed.
+# always sent in this fixed language. The body is a short fixed brand caption with
+# NO variable (e.g. "Cosmoplex 🎓"), so no body params are sent.
 PRESALE_TEMPLATE_LANG = "en"
 
 # Free-form fallback text (used while templates aren't approved), per language.
@@ -257,44 +258,34 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 caption = (asset.text.strip() if (asset and asset.text and asset.text.strip()) else text)
                 in_window = _idle_hours(s, now) < WINDOW_HOURS
 
-                if settings.whatsapp_templates_enabled:
-                    # Outside the 24h window only templates deliver. The correct-language
-                    # media goes in the header, so ONE media template (in a fixed language)
-                    # serves every language.
-                    try:
-                        if asset and asset.video_public_id:
-                            resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, PRESALE_TEMPLATE_LANG, [name],
-                                                       header_media={"type": "video", "link": _video_url(asset.video_public_id)})
-                            sent_as = "template:video"
-                        elif asset and asset.image_public_id:
-                            resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, PRESALE_TEMPLATE_LANG, [name],
-                                                       header_media={"type": "image", "link": _image_url(asset.image_public_id)})
-                            sent_as = "template:image"
-                        else:  # no media → the per-language approved text template ({{1}} = name)
-                            resp = await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
-                            sent_as = "template:text"
-                        if resp is None or getattr(resp, "status_code", 500) >= 400:
-                            raise RuntimeError(f"template rejected (HTTP {getattr(resp, 'status_code', '?')})")
-                    except Exception as te:
-                        # Template failed (often: not yet approved). Inside the window we
-                        # can still free-form; outside, nothing else can reach them.
-                        if not in_window:
-                            raise
-                        report["errors"].append(f"template fallback {s.phone[-4:]}: {te}")
-                        if asset and asset.video_public_id:
-                            await send_video(s.phone, asset.video_public_id, caption); sent_as = "media:video(fb)"
-                        elif asset and asset.image_public_id:
-                            await send_image(s.phone, asset.image_public_id, caption); sent_as = "media:image(fb)"
-                        else:
-                            await send_text(s.phone, caption); sent_as = "text(fb)"
-                else:
-                    # In-window free-form: media with the admin's text as caption (or text alone).
+                if in_window:
+                    # Inside the 24h window → FREE-FORM, which is FREE. Media with the
+                    # admin's text as caption (or text alone). Used regardless of the
+                    # templates flag, so in-window nudges never cost a paid template.
                     if asset and asset.video_public_id:
                         await send_video(s.phone, asset.video_public_id, caption); sent_as = "media:video"
                     elif asset and asset.image_public_id:
                         await send_image(s.phone, asset.image_public_id, caption); sent_as = "media:image"
                     else:
                         await send_text(s.phone, caption); sent_as = "text"
+                else:
+                    # Outside the window → only a (paid) template can deliver. We only
+                    # reach here when templates are enabled (the gate above skips
+                    # outside-window sends when they're off). Correct-language media
+                    # rides in the header, so one media template serves all languages.
+                    if asset and asset.video_public_id:
+                        resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, PRESALE_TEMPLATE_LANG,
+                                                   header_media={"type": "video", "link": _video_url(asset.video_public_id)})
+                        sent_as = "template:video"
+                    elif asset and asset.image_public_id:
+                        resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, PRESALE_TEMPLATE_LANG,
+                                                   header_media={"type": "image", "link": _image_url(asset.image_public_id)})
+                        sent_as = "template:image"
+                    else:  # no media → the per-language approved text template ({{1}} = name)
+                        resp = await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
+                        sent_as = "template:text"
+                    if resp is None or getattr(resp, "status_code", 500) >= 400:
+                        raise RuntimeError(f"template rejected (HTTP {getattr(resp, 'status_code', '?')})")
                 s.last_nudge_at = now
                 s.last_nudge_key = key
                 # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).
