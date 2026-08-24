@@ -7,6 +7,9 @@ export interface LandingCopy {
   heroTitle3: string;
   heroSubtitle: string;
   startLearning: string;
+  startWhatsApp: string;
+  startWeb: string;
+  whatsappNote: string;
   signIn: string;
   statLabels: [string, string, string];
   demoTeacher1: string;
@@ -40,6 +43,9 @@ const en: LandingCopy = {
   heroSubtitle:
     "Five specialist agents teach concepts, generate visuals, test your understanding, assign practice tasks, and issue a verified certificate — in your language.",
   startLearning: "Start learning",
+  startWhatsApp: "Start on WhatsApp",
+  startWeb: "Start on the web",
+  whatsappNote: "📱 Lessons are delivered right inside WhatsApp — or learn on the web.",
   signIn: "Sign in",
   statLabels: ["Specialist agents", "Languages supported", "Learners certified"],
   demoTeacher1:
@@ -101,6 +107,9 @@ const hi: LandingCopy = {
   heroSubtitle:
     "पाँच विशेषज्ञ एजेंट कॉन्सेप्ट सिखाते हैं, विज़ुअल बनाते हैं, आपकी समझ परखते हैं, प्रैक्टिस टास्क देते हैं, और एक verified सर्टिफिकेट जारी करते हैं — आपकी भाषा में।",
   startLearning: "सीखना शुरू करें",
+  startWhatsApp: "WhatsApp पर शुरू करें",
+  startWeb: "वेब पर शुरू करें",
+  whatsappNote: "📱 पाठ सीधे WhatsApp पर मिलते हैं — या वेब पर सीखें।",
   signIn: "साइन इन करें",
   statLabels: ["विशेषज्ञ एजेंट", "समर्थित भाषाएं", "प्रमाणित शिक्षार्थी"],
   demoTeacher1:
@@ -162,6 +171,9 @@ const mr: LandingCopy = {
   heroSubtitle:
     "पाच तज्ज्ञ एजंट संकल्पना शिकवतात, व्हिज्युअल तयार करतात, तुमची समज तपासतात, सराव टास्क देतात आणि verified सर्टिफिकेट देतात — तुमच्या भाषेत.",
   startLearning: "शिकायला सुरुवात करा",
+  startWhatsApp: "WhatsApp वर सुरू करा",
+  startWeb: "वेबवर सुरू करा",
+  whatsappNote: "📱 धडे थेट WhatsApp वर मिळतात — किंवा वेबवर शिका.",
   signIn: "साइन इन करा",
   statLabels: ["तज्ज्ञ एजंट", "समर्थित भाषा", "प्रमाणित विद्यार्थी"],
   demoTeacher1:
@@ -223,6 +235,9 @@ const te: LandingCopy = {
   heroSubtitle:
     "ఐదు స్పెషలిస్ట్ ఏజెంట్లు కాన్సెప్ట్‌లు నేర్పిస్తారు, విజువల్స్ తయారు చేస్తారు, మీ అవగాహనను టెస్ట్ చేస్తారు, ప్రాక్టీస్ టాస్క్‌లు ఇస్తారు, verified సర్టిఫికెట్ ఇస్తారు — మీ భాషలో.",
   startLearning: "నేర్చుకోవడం మొదలుపెట్టండి",
+  startWhatsApp: "WhatsApp లో మొదలుపెట్టండి",
+  startWeb: "వెబ్‌లో మొదలుపెట్టండి",
+  whatsappNote: "📱 పాఠాలు నేరుగా WhatsApp లో అందుతాయి — లేదా వెబ్‌లో నేర్చుకోండి.",
   signIn: "సైన్ ఇన్ చేయండి",
   statLabels: ["స్పెషలిస్ట్ ఏజెంట్లు", "సపోర్ట్ ఉన్న భాషలు", "సర్టిఫై అయిన లెర్నర్లు"],
   demoTeacher1:
@@ -284,6 +299,9 @@ const ta: LandingCopy = {
   heroSubtitle:
     "ஐந்து நிபுணர் ஏஜென்ட்கள் கருத்துகளை கற்பிக்கிறார்கள், விஷுவல்ஸ் உருவாக்குகிறார்கள், உங்கள் புரிதலை சோதிக்கிறார்கள், பயிற்சி பணிகளை வழங்குகிறார்கள், verified சான்றிதழ் வழங்குகிறார்கள் — உங்கள் மொழியில்.",
   startLearning: "கற்க தொடங்குங்கள்",
+  startWhatsApp: "WhatsApp-ல் தொடங்கு",
+  startWeb: "வெப்-ல் தொடங்கு",
+  whatsappNote: "📱 பாடங்கள் நேரடியாக WhatsApp-ல் வழங்கப்படும் — அல்லது வெப்-ல் கற்றுக்கொள்ளுங்கள்.",
   signIn: "உள்நுழைக",
   statLabels: ["நிபுணர் ஏஜென்ட்கள்", "ஆதரிக்கப்படும் மொழிகள்", "சான்றளிக்கப்பட்ட கற்பவர்கள்"],
   demoTeacher1:
@@ -345,6 +363,9 @@ const kn: LandingCopy = {
   heroSubtitle:
     "ಐದು ತಜ್ಞ ಏಜೆಂಟ್‌ಗಳು ಕಾನ್ಸೆಪ್ಟ್‌ಗಳನ್ನು ಕಲಿಸುತ್ತಾರೆ, ವಿಷುಯಲ್ಸ್ ತಯಾರಿಸುತ್ತಾರೆ, ನಿಮ್ಮ ತಿಳಿವಳಿಕೆಯನ್ನು ಪರೀಕ್ಷಿಸುತ್ತಾರೆ, ಪ್ರಾಕ್ಟೀಸ್ ಟಾಸ್ಕ್‌ಗಳನ್ನು ನೀಡುತ್ತಾರೆ, verified ಪ್ರಮಾಣಪತ್ರ ನೀಡುತ್ತಾರೆ — ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ.",
   startLearning: "ಕಲಿಕೆ ಪ್ರಾರಂಭಿಸಿ",
+  startWhatsApp: "WhatsApp ನಲ್ಲಿ ಪ್ರಾರಂಭಿಸಿ",
+  startWeb: "ವೆಬ್‌ನಲ್ಲಿ ಪ್ರಾರಂಭಿಸಿ",
+  whatsappNote: "📱 ಪಾಠಗಳು ನೇರವಾಗಿ WhatsApp ನಲ್ಲಿ ಸಿಗುತ್ತವೆ — ಅಥವಾ ವೆಬ್‌ನಲ್ಲಿ ಕಲಿಯಿರಿ.",
   signIn: "ಸೈನ್ ಇನ್ ಮಾಡಿ",
   statLabels: ["ತಜ್ಞ ಏಜೆಂಟ್‌ಗಳು", "ಬೆಂಬಲಿತ ಭಾಷೆಗಳು", "ಪ್ರಮಾಣೀಕೃತ ಕಲಿಯುವವರು"],
   demoTeacher1:

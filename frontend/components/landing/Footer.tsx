@@ -24,8 +24,6 @@ export function Footer() {
           <Link href="/login" className="hover:text-zinc-900 transition-colors">
             {t.signIn}
           </Link>
-          <span className="text-zinc-300">|</span>
-          <span className="text-zinc-400 text-xs self-center">{t.builtWith}</span>
         </nav>
       </div>
     </footer>

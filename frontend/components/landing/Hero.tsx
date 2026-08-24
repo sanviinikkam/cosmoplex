@@ -9,6 +9,7 @@ import {
   Certificate,
   CheckCircle,
   Sparkle,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
 
 import { useLang } from "@/lib/use-lang";
@@ -120,13 +121,24 @@ export function Hero() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.35, ease }}
-          className="flex flex-wrap gap-3 mb-16"
+          className="flex flex-wrap gap-3 mb-3"
         >
+          {/* Primary: learn on WhatsApp (the main delivery channel) */}
+          <a
+            href="https://wa.me/917204419938?text=Hi"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 bg-emerald-600 text-white text-sm font-medium px-5 py-3 rounded-xl hover:bg-emerald-500 transition-colors duration-200 active:scale-[0.98]"
+          >
+            <WhatsappLogo size={18} weight="fill" />
+            {t.startWhatsApp}
+          </a>
+          {/* Secondary: sign up on the web */}
           <Link
             href="/signup"
             className="inline-flex items-center gap-2 bg-zinc-900 text-white text-sm font-medium px-5 py-3 rounded-xl hover:bg-zinc-700 transition-colors duration-200 active:scale-[0.98]"
           >
-            {t.startLearning}
+            {t.startWeb}
             <ArrowRight size={16} weight="bold" />
           </Link>
           <Link
@@ -136,6 +148,15 @@ export function Hero() {
             {t.signIn}
           </Link>
         </motion.div>
+
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.45, ease }}
+          className="text-sm text-emerald-700 font-medium mb-16"
+        >
+          {t.whatsappNote}
+        </motion.p>
 
         <motion.div
           initial={{ opacity: 0 }}
