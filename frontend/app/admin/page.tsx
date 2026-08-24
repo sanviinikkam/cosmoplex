@@ -5,7 +5,7 @@ import {
   adminApi, uploadMediaToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
-  type WebLearnerRow, type WaSessionRow, type MarketingAssetRow,
+  type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -293,6 +293,69 @@ function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: stri
         </div>
       </div>
     </div>
+  );
+}
+
+// ── One-click health check across all systems ────────────────────────────────
+function SystemCheckPanel() {
+  const [data, setData] = useState<SystemCheck | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function run() {
+    setLoading(true); setErr("");
+    try { setData(await adminApi.systemCheck()); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Health check failed"); }
+    finally { setLoading(false); }
+  }
+
+  const dot = (s: string) => s === "ok" ? "bg-emerald-500" : s === "warn" ? "bg-amber-500" : "bg-red-500";
+
+  return (
+    <section className="bg-zinc-50 rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-lg font-semibold">Health check</h2>
+          <p className="text-sm text-zinc-500">Verify every system — DB, Claude, Groq, WhatsApp, Cloudinary, scheduler.</p>
+        </div>
+        <button onClick={run} disabled={loading}
+          className="text-sm rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0">
+          {loading ? <Spinner className="w-3.5 h-3.5" /> : "🩺"} Run health check
+        </button>
+      </div>
+
+      {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
+
+      {data && (
+        <div className="flex flex-col gap-3">
+          <div className={`rounded-lg px-4 py-2 text-sm font-medium border ${
+            data.overall === "ok" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : data.overall === "warn" ? "bg-amber-50 text-amber-700 border-amber-200"
+            : "bg-red-50 text-red-700 border-red-200"}`}>
+            {data.overall === "ok" ? "✅ All systems operational"
+              : data.overall === "warn" ? "⚠️ Operational — with warnings"
+              : "❌ Problems detected — action needed"}
+          </div>
+          <div className="bg-white rounded-xl border border-zinc-200 divide-y divide-zinc-100">
+            {data.checks.map((c) => (
+              <div key={c.key} className="flex items-start gap-3 px-4 py-2.5">
+                <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dot(c.status)}`} />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-zinc-800">{c.label}</div>
+                  <div className="text-xs text-zinc-500">{c.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] text-zinc-400">
+            Checked {data.generatedAt ? new Date(data.generatedAt + "Z").toLocaleString() : "—"} · env: {data.environment}
+          </div>
+        </div>
+      )}
+      {!data && !loading && !err && (
+        <p className="text-sm text-zinc-400">Tap “Run health check” to test every connected system.</p>
+      )}
+    </section>
   );
 }
 
@@ -744,6 +807,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {tab === "analytics" && (<>
+        <SystemCheckPanel />
         <SystemStatus />
         <UserDirectory />
         <ReferralsPanel />

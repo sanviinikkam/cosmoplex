@@ -261,6 +261,120 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
     return {"generatedAt": now.isoformat(), "content": content, "web": web, "whatsapp": whatsapp}
 
 
+@router.get("/system-check")
+async def system_check(request: Request, _: bool = Depends(require_admin),
+                       db: AsyncSession = Depends(get_db)):
+    """One-shot health check across every dependency. Each entry is
+    {key, label, status: ok|warn|error, detail}. `overall` = worst status.
+    External calls are cheap/free (validation pings) and time-boxed."""
+    from datetime import datetime
+    from sqlalchemy import text as _text
+    checks: list[dict] = []
+
+    def rank(s): return {"ok": 0, "warn": 1, "error": 2}.get(s, 2)
+
+    # 1. Database
+    try:
+        await db.execute(_text("SELECT 1"))
+        c = {m.__name__: (await db.execute(select(func.count()).select_from(m))).scalar() or 0
+             for m in (Course, Video, QuizQuestion, AssignmentPrompt)}
+        checks.append({"key": "database", "label": "Database (Neon)", "status": "ok",
+                       "detail": f"connected · {c['Course']} courses, {c['Video']} videos, "
+                                 f"{c['QuizQuestion']} quizzes, {c['AssignmentPrompt']} assignments"})
+    except Exception as e:
+        checks.append({"key": "database", "label": "Database (Neon)", "status": "error",
+                       "detail": f"cannot connect ({type(e).__name__})"})
+
+    # 2. Anthropic (Claude) — free key-validation ping
+    if not settings.anthropic_api_key:
+        checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "warn", "detail": "API key not set"})
+    else:
+        try:
+            from anthropic import AsyncAnthropic
+            cl = AsyncAnthropic(api_key=settings.anthropic_api_key)
+            await asyncio.wait_for(cl.models.list(), timeout=10)
+            checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "ok", "detail": "key valid, API reachable"})
+        except Exception as e:
+            checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "error",
+                           "detail": f"key invalid or unreachable ({type(e).__name__})"})
+
+    # 3. Groq (voice → text) — free models list
+    if not settings.groq_api_key:
+        checks.append({"key": "groq", "label": "Groq (voice)", "status": "warn", "detail": "API key not set (voice notes disabled)"})
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=10) as h:
+                r = await h.get("https://api.groq.com/openai/v1/models",
+                                headers={"Authorization": f"Bearer {settings.groq_api_key}"})
+            checks.append({"key": "groq", "label": "Groq (voice)", "status": "ok" if r.status_code < 400 else "error",
+                           "detail": "key valid, API reachable" if r.status_code < 400 else f"HTTP {r.status_code}"})
+        except Exception as e:
+            checks.append({"key": "groq", "label": "Groq (voice)", "status": "error", "detail": f"unreachable ({type(e).__name__})"})
+
+    # 4. WhatsApp (Meta Cloud API) — validate the token against the phone-number node
+    if not (settings.whatsapp_token and settings.whatsapp_phone_number_id):
+        checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "warn", "detail": "token / phone number id not set"})
+    else:
+        try:
+            url = f"https://graph.facebook.com/{settings.graph_api_version}/{settings.whatsapp_phone_number_id}"
+            async with httpx.AsyncClient(timeout=10) as h:
+                r = await h.get(url, params={"fields": "verified_name,quality_rating"},
+                                headers={"Authorization": f"Bearer {settings.whatsapp_token}"})
+            if r.status_code < 400:
+                j = r.json()
+                checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "ok",
+                               "detail": f"token valid · {j.get('verified_name', 'number')} · quality: {j.get('quality_rating', '?')}"})
+            else:
+                checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "error",
+                               "detail": f"token rejected (HTTP {r.status_code}) — the bot cannot send/receive until this is fixed"})
+        except Exception as e:
+            checks.append({"key": "whatsapp", "label": "WhatsApp (Meta)", "status": "error", "detail": f"unreachable ({type(e).__name__})"})
+
+    # 5. Cloudinary — credentials present + cloud reachable
+    if not (settings.cloudinary_cloud_name and settings.cloudinary_api_key and settings.cloudinary_api_secret):
+        checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "warn", "detail": "credentials incomplete"})
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as h:
+                r = await h.head(f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}/image/upload/sample")
+            reachable = r.status_code < 500
+            checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "ok",
+                           "detail": f"configured · cloud '{settings.cloudinary_cloud_name}'" + ("" if reachable else " (CDN slow)")})
+        except Exception:
+            checks.append({"key": "cloudinary", "label": "Cloudinary (media)", "status": "ok",
+                           "detail": f"configured · cloud '{settings.cloudinary_cloud_name}'"})
+
+    # 6. Webhook signature verification
+    if settings.whatsapp_app_secret:
+        checks.append({"key": "webhook_security", "label": "Webhook signature", "status": "ok", "detail": "verification ON"})
+    else:
+        checks.append({"key": "webhook_security", "label": "Webhook signature", "status": "warn",
+                       "detail": "WHATSAPP_APP_SECRET not set — inbound webhook signature check is OFF"})
+
+    # 7. Drip / nudge scheduler
+    sched = getattr(request.app.state, "scheduler", None)
+    running = bool(sched and getattr(sched, "running", False))
+    checks.append({"key": "scheduler", "label": "Nudge scheduler", "status": "ok" if running else "warn",
+                   "detail": "hourly drip running" if running else "not running (nudges won't auto-fire in-process)"})
+
+    # 8. AI spend budget (today)
+    try:
+        from core import spend_guard
+        used = spend_guard._count if spend_guard._day_key == spend_guard._today() else 0
+        limit = settings.daily_ai_call_limit
+        checks.append({"key": "ai_budget", "label": "AI spend budget", "status": "warn" if used >= limit else "ok",
+                       "detail": f"{used}/{limit} AI calls used today" + (" — cap reached" if used >= limit else "")})
+    except Exception:
+        pass
+
+    overall = "ok"
+    for c in checks:
+        if rank(c["status"]) > rank(overall):
+            overall = c["status"]
+    return {"generatedAt": datetime.utcnow().isoformat(), "environment": settings.environment,
+            "overall": overall, "checks": checks}
+
+
 @router.get("/users")
 async def all_users(
     channel: str = "web",

@@ -81,6 +81,12 @@ export type MarketingAssetsData = {
   days: number[]; languages: string[]; items: MarketingAssetRow[];
 };
 
+export type SystemCheckItem = { key: string; label: string; status: "ok" | "warn" | "error"; detail: string };
+export type SystemCheck = {
+  generatedAt: string; environment: string;
+  overall: "ok" | "warn" | "error"; checks: SystemCheckItem[];
+};
+
 export type UsersPage<Row> = {
   channel: string; total: number; offset: number; limit: number; count: number; items: Row[];
 };
@@ -173,6 +179,7 @@ export const adminApi = {
   },
 
   dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
+  systemCheck: () => adminFetch<SystemCheck>("/admin/system-check"),
   users: (channel: "web" | "whatsapp", opts?: { q?: string; limit?: number; offset?: number }) => {
     const p = new URLSearchParams({ channel });
     if (opts?.q) p.set("q", opts.q);
