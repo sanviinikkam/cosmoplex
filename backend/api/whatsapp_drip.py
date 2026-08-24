@@ -11,6 +11,7 @@ template. Until those are approved, set whatsapp_templates_enabled=False and the
 engine sends free-form text (delivers only to learners still inside the 24h
 window — enough to test end-to-end). Flip the flag on once templates are live.
 """
+import random
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -246,52 +247,59 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
             name = (s.name or "").strip() or "there"
             text = NUDGE_TEXT[text_key].get(lang, NUDGE_TEXT[text_key]["en"]).format(name=name)
             try:
-                sent_as = "text"
-                # Pre-sales tiers carry an admin-uploaded photo/video/text for (day, lang).
+                # Pre-sales tiers carry admin-uploaded photo/video/text for (day, lang).
                 asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
-                caption = (asset.text.strip() if asset and asset.text and asset.text.strip() else text)
+                custom_text = asset.text.strip() if (asset and asset.text and asset.text.strip()) else None
                 in_window = _idle_hours(s, now) < WINDOW_HOURS
+
+                # Randomly pick ONE content kind from whatever the admin actually
+                # uploaded for this (day, language) — never combine them. Falls back
+                # to the default nudge copy when nothing is uploaded.
+                opts = []
+                if custom_text:
+                    opts.append("text")
+                if asset and asset.image_public_id:
+                    opts.append("image")
+                if asset and asset.video_public_id:
+                    opts.append("video")
+                pick = random.choice(opts) if opts else "default"
+
+                async def _send_freeform() -> str:
+                    # In-window free-form: send just the one picked item (no combining).
+                    if pick == "video":
+                        await send_video(s.phone, asset.video_public_id, ""); return "media:video"
+                    if pick == "image":
+                        await send_image(s.phone, asset.image_public_id, ""); return "media:image"
+                    if pick == "text":
+                        await send_text(s.phone, custom_text); return "text:custom"
+                    await send_text(s.phone, text); return "text:default"
 
                 if settings.whatsapp_templates_enabled:
                     # Templates are the ONLY thing that delivers outside the 24h window.
-                    # Attach pre-sales media as the template header when present.
                     try:
-                        if asset and asset.video_public_id:
+                        if pick == "video":
                             resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, lang, [name],
                                                        header_media={"type": "video", "link": _video_url(asset.video_public_id)})
                             sent_as = "template:video"
-                        elif asset and asset.image_public_id:
+                        elif pick == "image":
                             resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, lang, [name],
                                                        header_media={"type": "image", "link": _image_url(asset.image_public_id)})
                             sent_as = "template:image"
-                        else:
+                        else:  # text / default → the approved text template ({{1}} = name)
                             resp = await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
                             sent_as = "template:text"
                         if resp is None or getattr(resp, "status_code", 500) >= 400:
                             raise RuntimeError(f"template rejected (HTTP {getattr(resp, 'status_code', '?')})")
                     except Exception as te:
-                        # Template failed (often: not yet approved). If we're still
-                        # inside the 24h window, fall back to free-form so in-window
-                        # nudges still land; outside the window, nothing else can send.
+                        # Template failed (often: not yet approved). Inside the window we
+                        # can still free-form; outside, nothing else can reach them.
                         if not in_window:
                             raise
                         report["errors"].append(f"template fallback {s.phone[-4:]}: {te}")
-                        if asset and asset.video_public_id:
-                            await send_video(s.phone, asset.video_public_id, caption); sent_as = "media:video(fb)"
-                        elif asset and asset.image_public_id:
-                            await send_image(s.phone, asset.image_public_id, caption); sent_as = "media:image(fb)"
-                        else:
-                            await send_text(s.phone, caption); sent_as = "text(fb)"
+                        sent_as = (await _send_freeform()) + "(fb)"
                 else:
                     # Free-form (in-window only; the >=24h skip above already gated this).
-                    if asset and asset.video_public_id:
-                        await send_video(s.phone, asset.video_public_id, caption)
-                        sent_as = "media:video"
-                    elif asset and asset.image_public_id:
-                        await send_image(s.phone, asset.image_public_id, caption)
-                        sent_as = "media:image"
-                    else:
-                        await send_text(s.phone, caption)
+                    sent_as = await _send_freeform()
                 s.last_nudge_at = now
                 s.last_nudge_key = key
                 # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).

@@ -207,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "presale-templates-ready",
+        "build": "presale-random-pick",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
