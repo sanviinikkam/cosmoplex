@@ -80,8 +80,9 @@ PRESALE_IMAGE_TEMPLATE = "cosmoplex_presale_image"
 PRESALE_VIDEO_TEMPLATE = "cosmoplex_presale_video"
 # The pre-sales media templates carry the correct-language photo/video in the
 # HEADER (passed at send time), so ONE approved template serves every language —
-# always sent in this fixed language. The body is a short fixed brand caption with
-# NO variable (e.g. "Cosmoplex 🎓"), so no body params are sent.
+# always sent in this fixed language. The body carries {{1}} = the admin's
+# per-language caption for that day (single line), plus fixed brand text so Meta
+# approves it (a body that is ONLY a variable is rejected).
 PRESALE_TEMPLATE_LANG = "en"
 
 # Free-form fallback text (used while templates aren't approved), per language.
@@ -271,14 +272,18 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 else:
                     # Outside the window → only a (paid) template can deliver. We only
                     # reach here when templates are enabled (the gate above skips
-                    # outside-window sends when they're off). Correct-language media
-                    # rides in the header, so one media template serves all languages.
+                    # outside-window sends when they're off). Correct-language media rides
+                    # in the header, and the admin's per-language caption goes into the
+                    # template's {{1}}. WhatsApp rejects params with newlines/tabs, so
+                    # flatten to one line; fall back to a default if the admin left it empty.
+                    cap = (caption or "").replace("\n", " ").replace("\t", " ").strip()[:600] \
+                        or "Your free AI lessons are waiting 🎓"
                     if asset and asset.video_public_id:
-                        resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, PRESALE_TEMPLATE_LANG,
+                        resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, PRESALE_TEMPLATE_LANG, [cap],
                                                    header_media={"type": "video", "link": _video_url(asset.video_public_id)})
                         sent_as = "template:video"
                     elif asset and asset.image_public_id:
-                        resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, PRESALE_TEMPLATE_LANG,
+                        resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, PRESALE_TEMPLATE_LANG, [cap],
                                                    header_media={"type": "image", "link": _image_url(asset.image_public_id)})
                         sent_as = "template:image"
                     else:  # no media → the per-language approved text template ({{1}} = name)
