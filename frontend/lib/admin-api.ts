@@ -49,6 +49,9 @@ export type WaDetail = {
   quiz: { index: number; correct: number }; nudgesSent: number;
   createdAt: string | null; lastActive: string | null;
 };
+export type WaMessage = { role: "user" | "bot"; type: string | null; content: string | null; at: string | null };
+export type WaTranscript = { phone: string; total: number; shown: number; messages: WaMessage[] };
+
 export type WebDetail = {
   type: "web"; name: string | null; email: string; language: string; isTest: boolean;
   enrolledAt: string | null; currentModule: string | null; totalScore: number | null; certificate: boolean;
@@ -189,6 +192,7 @@ export const adminApi = {
   },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
   whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
+  whatsappMessages: (phone: string) => adminFetch<WaTranscript>(`/admin/whatsapp/${encodeURIComponent(phone)}/messages`),
   learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),
 
   listCourses: () => adminFetch<AdminCourse[]>("/admin/courses"),

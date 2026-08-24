@@ -42,7 +42,7 @@ from db.database import get_db
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo, MarketingAsset,
-    LearnerProfile, WhatsAppSession, Certificate,
+    LearnerProfile, WhatsAppSession, WhatsAppMessage, Certificate,
     ExamAttempt, LessonAssignmentSubmission, ModuleProgress, Referral,
 )
 
@@ -502,6 +502,29 @@ async def whatsapp_detail(phone: str, _: bool = Depends(require_admin), db: Asyn
         "nudgesSent": nudges,
         "createdAt": s.created_at.isoformat() if s.created_at else None,
         "lastActive": s.last_active_at.isoformat() if s.last_active_at else None,
+    }
+
+
+@router.get("/whatsapp/{phone}/messages")
+async def whatsapp_messages(phone: str, limit: int = 500,
+                            _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Full WhatsApp transcript for one phone, oldest→newest. Returns the most
+    recent `limit` messages (capped), then chronologically ordered for display."""
+    limit = max(1, min(limit, 2000))
+    total = (await db.execute(
+        select(func.count()).select_from(WhatsAppMessage).where(WhatsAppMessage.phone == phone))).scalar() or 0
+    # Grab the newest `limit`, then reverse to chronological order for the chat view.
+    rows = (await db.execute(
+        select(WhatsAppMessage).where(WhatsAppMessage.phone == phone)
+        .order_by(WhatsAppMessage.created_at.desc()).limit(limit))).scalars().all()
+    rows = list(reversed(rows))
+    return {
+        "phone": ("•••• " + phone[-4:]) if len(phone) >= 4 else phone,
+        "total": total, "shown": len(rows),
+        "messages": [{
+            "role": m.role, "type": m.msg_type, "content": m.content,
+            "at": m.created_at.isoformat() if m.created_at else None,
+        } for m in rows],
     }
 
 

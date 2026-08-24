@@ -207,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "wa-transcript-store",
+        "build": "wa-transcript-view",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

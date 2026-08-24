@@ -5,6 +5,7 @@ import {
   adminApi, uploadMediaToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
+  type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
 } from "@/lib/admin-api";
 
@@ -173,16 +174,20 @@ function Field({ label, value }: { label: string; value: string | number | null 
 function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: string }; onClose: () => void }) {
   const [wa, setWa] = useState<WaDetail | null>(null);
   const [web, setWeb] = useState<WebDetail | null>(null);
+  const [tx, setTx] = useState<WaTranscript | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      setLoading(true); setErr(""); setWa(null); setWeb(null);
+      setLoading(true); setErr(""); setWa(null); setWeb(null); setTx(null);
       try {
-        if (sel.kind === "wa") { const d = await adminApi.whatsappDetail(sel.id); if (alive) setWa(d); }
-        else { const d = await adminApi.learnerDetail(sel.id); if (alive) setWeb(d); }
+        if (sel.kind === "wa") {
+          const d = await adminApi.whatsappDetail(sel.id); if (alive) setWa(d);
+          // Transcript is best-effort — don't fail the whole modal if it errors.
+          try { const t = await adminApi.whatsappMessages(sel.id); if (alive) setTx(t); } catch { /* ignore */ }
+        } else { const d = await adminApi.learnerDetail(sel.id); if (alive) setWeb(d); }
       } catch (e) { if (alive) setErr(e instanceof Error ? e.message : "Failed to load user"); }
       finally { if (alive) setLoading(false); }
     })();
@@ -232,6 +237,32 @@ function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: stri
                 <Field label="Last active" value={timeAgo(wa.lastActive)} />
               </div>
               {wa.goal && <Field label="Their goal" value={wa.goal} />}
+
+              {/* Full conversation transcript */}
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1.5">
+                  Conversation{tx && tx.total > tx.shown ? ` · showing last ${tx.shown} of ${tx.total}` : tx ? ` · ${tx.total} messages` : ""}
+                </div>
+                {!tx ? (
+                  <div className="text-xs text-zinc-400">Loading transcript…</div>
+                ) : tx.messages.length === 0 ? (
+                  <div className="text-xs text-zinc-400">No messages logged yet.</div>
+                ) : (
+                  <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 max-h-72 overflow-y-auto flex flex-col gap-2">
+                    {tx.messages.map((m, i) => (
+                      <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-xs leading-relaxed whitespace-pre-wrap break-words ${
+                          m.role === "user" ? "bg-emerald-600 text-white rounded-tr-sm" : "bg-white border border-zinc-200 text-zinc-700 rounded-tl-sm"}`}>
+                          {m.content || <span className="italic opacity-60">[{m.type}]</span>}
+                          <div className={`text-[9px] mt-0.5 ${m.role === "user" ? "text-emerald-100" : "text-zinc-400"}`}>
+                            {m.at ? new Date(m.at + "Z").toLocaleString() : ""}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : web ? (
             <div className="flex flex-col gap-5">
