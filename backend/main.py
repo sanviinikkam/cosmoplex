@@ -207,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "healthcheck-quota-alerts",
+        "build": "presale-templates-ready",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

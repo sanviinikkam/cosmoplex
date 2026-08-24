@@ -363,18 +363,27 @@ async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
     await send_text(frm, VOICE_FAIL.get(lang, VOICE_FAIL["en"]))
 
 
-async def send_template(to: str, name: str, lang_code: str, body_params: list[str] | None = None) -> httpx.Response | None:
-    """Send a pre-approved WhatsApp template (for messages outside the 24h window)."""
-    template: dict = {"name": name, "language": {"code": lang_code}}
+async def send_template(to: str, name: str, lang_code: str, body_params: list[str] | None = None,
+                        header_media: dict | None = None) -> httpx.Response | None:
+    """Send a pre-approved WhatsApp template (the only thing that delivers outside
+    the 24h window). Optional header_media={'type':'image'|'video','link':url} adds
+    a media header — used to attach the admin-uploaded pre-sales photo/video."""
+    components: list[dict] = []
+    if header_media and header_media.get("link"):
+        mt = header_media["type"]   # 'image' | 'video'
+        components.append({"type": "header",
+                           "parameters": [{"type": mt, mt: {"link": header_media["link"]}}]})
     if body_params:
-        template["components"] = [{
-            "type": "body",
-            "parameters": [{"type": "text", "text": p} for p in body_params],
-        }]
+        components.append({"type": "body",
+                           "parameters": [{"type": "text", "text": p} for p in body_params]})
+    template: dict = {"name": name, "language": {"code": lang_code}}
+    if components:
+        template["components"] = components
     resp = await _post({
         "messaging_product": "whatsapp", "to": to, "type": "template", "template": template,
     })
-    await _log_wa_message(to, "bot", "template", f"[template:{name}] " + ", ".join(body_params or []))
+    media_note = f" +{header_media['type']}" if header_media and header_media.get("link") else ""
+    await _log_wa_message(to, "bot", "template", f"[template:{name}{media_note}] " + ", ".join(body_params or []))
     return resp
 
 

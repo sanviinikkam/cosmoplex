@@ -71,6 +71,14 @@ NUDGE_TEMPLATE = {
     "keep_learning": "cosmoplex_keep_learning",
 }
 
+# Media-header templates for the pre-sales signup drip (photo/video attached as the
+# template header). These must be created + approved in WhatsApp Manager, per
+# language, with a text body containing {{1}} = the learner's name. Once approved,
+# set WHATSAPP_TEMPLATES_ENABLED=true and the day-1/2/3/7 media goes out even
+# outside the 24h window.
+PRESALE_IMAGE_TEMPLATE = "cosmoplex_presale_image"
+PRESALE_VIDEO_TEMPLATE = "cosmoplex_presale_video"
+
 # Free-form fallback text (used while templates aren't approved), per language.
 NUDGE_TEXT = {
     "finish_signup": {
@@ -181,7 +189,8 @@ def _tier_day(key: str) -> int | None:
 async def run_drip(force_to: str | None = None, force_key: str | None = None) -> dict:
     """Send due nudges. `force_to`/`force_key` bypass idle+dedupe for testing."""
     # Lazy import to avoid a circular import with whatsapp_routes.
-    from api.whatsapp_routes import send_text, send_template, send_image, send_video
+    from api.whatsapp_routes import (send_text, send_template, send_image, send_video,
+                                     _image_url, _video_url)
     from db.models import MarketingAsset
 
     now = datetime.utcnow()
@@ -238,18 +247,43 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
             text = NUDGE_TEXT[text_key].get(lang, NUDGE_TEXT[text_key]["en"]).format(name=name)
             try:
                 sent_as = "text"
+                # Pre-sales tiers carry an admin-uploaded photo/video/text for (day, lang).
+                asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
+                caption = (asset.text.strip() if asset and asset.text and asset.text.strip() else text)
+                in_window = _idle_hours(s, now) < WINDOW_HOURS
+
                 if settings.whatsapp_templates_enabled:
-                    # NOTE: outside the 24h window only approved templates deliver.
-                    # Media-over-template isn't wired yet, so this sends the text
-                    # template; the uploaded photo/video sends via free-form below.
-                    await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
+                    # Templates are the ONLY thing that delivers outside the 24h window.
+                    # Attach pre-sales media as the template header when present.
+                    try:
+                        if asset and asset.video_public_id:
+                            resp = await send_template(s.phone, PRESALE_VIDEO_TEMPLATE, lang, [name],
+                                                       header_media={"type": "video", "link": _video_url(asset.video_public_id)})
+                            sent_as = "template:video"
+                        elif asset and asset.image_public_id:
+                            resp = await send_template(s.phone, PRESALE_IMAGE_TEMPLATE, lang, [name],
+                                                       header_media={"type": "image", "link": _image_url(asset.image_public_id)})
+                            sent_as = "template:image"
+                        else:
+                            resp = await send_template(s.phone, NUDGE_TEMPLATE.get(text_key, NUDGE_TEMPLATE["finish_signup"]), lang, [name])
+                            sent_as = "template:text"
+                        if resp is None or getattr(resp, "status_code", 500) >= 400:
+                            raise RuntimeError(f"template rejected (HTTP {getattr(resp, 'status_code', '?')})")
+                    except Exception as te:
+                        # Template failed (often: not yet approved). If we're still
+                        # inside the 24h window, fall back to free-form so in-window
+                        # nudges still land; outside the window, nothing else can send.
+                        if not in_window:
+                            raise
+                        report["errors"].append(f"template fallback {s.phone[-4:]}: {te}")
+                        if asset and asset.video_public_id:
+                            await send_video(s.phone, asset.video_public_id, caption); sent_as = "media:video(fb)"
+                        elif asset and asset.image_public_id:
+                            await send_image(s.phone, asset.image_public_id, caption); sent_as = "media:image(fb)"
+                        else:
+                            await send_text(s.phone, caption); sent_as = "text(fb)"
                 else:
-                    # Marketing tier: the row has three independent fields (photo,
-                    # video, text). For now, prefer video → photo → text, using the
-                    # custom text as caption/message when set. (How we combine the
-                    # three is a product decision for later.)
-                    asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
-                    caption = (asset.text.strip() if asset and asset.text and asset.text.strip() else text)
+                    # Free-form (in-window only; the >=24h skip above already gated this).
                     if asset and asset.video_public_id:
                         await send_video(s.phone, asset.video_public_id, caption)
                         sent_as = "media:video"
