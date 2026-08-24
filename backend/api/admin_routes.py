@@ -285,18 +285,21 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
         checks.append({"key": "database", "label": "Database (Neon)", "status": "error",
                        "detail": f"cannot connect ({type(e).__name__})"})
 
-    # 2. Anthropic (Claude) — free key-validation ping
+    # 2. Anthropic (Claude) — free key-validation ping via the models endpoint
     if not settings.anthropic_api_key:
         checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "warn", "detail": "API key not set"})
     else:
         try:
-            from anthropic import AsyncAnthropic
-            cl = AsyncAnthropic(api_key=settings.anthropic_api_key)
-            await asyncio.wait_for(cl.models.list(), timeout=10)
-            checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "ok", "detail": "key valid, API reachable"})
+            async with httpx.AsyncClient(timeout=10) as h:
+                r = await h.get("https://api.anthropic.com/v1/models",
+                                headers={"x-api-key": settings.anthropic_api_key,
+                                         "anthropic-version": "2023-06-01"})
+            ok = r.status_code < 400
+            checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "ok" if ok else "error",
+                           "detail": "key valid, API reachable" if ok else f"key rejected (HTTP {r.status_code})"})
         except Exception as e:
             checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "error",
-                           "detail": f"key invalid or unreachable ({type(e).__name__})"})
+                           "detail": f"unreachable ({type(e).__name__})"})
 
     # 3. Groq (voice → text) — free models list
     if not settings.groq_api_key:
