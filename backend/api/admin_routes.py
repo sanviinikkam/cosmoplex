@@ -366,6 +366,17 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
         checks.append({"key": "webhook_security", "label": "Webhook signature", "status": "warn",
                        "detail": "WHATSAPP_APP_SECRET not set — inbound webhook signature check is OFF"})
 
+    # 6b. Ops-endpoint key. Without it the ops endpoints (/run-drip, /setup,
+    # /register, /subscribe, /diag*) refuse everything — including an external
+    # cron job — so surface it here rather than letting it fail silently.
+    if settings.whatsapp_ops_key:
+        checks.append({"key": "ops_key", "label": "Ops endpoints", "status": "ok",
+                       "detail": "protected by WHATSAPP_OPS_KEY"})
+    else:
+        checks.append({"key": "ops_key", "label": "Ops endpoints", "status": "warn",
+                       "detail": "WHATSAPP_OPS_KEY not set — /run-drip, /setup, /register, "
+                                 "/subscribe and /diag* refuse every request"})
+
     # 7. Drip / nudge scheduler
     sched = getattr(request.app.state, "scheduler", None)
     running = bool(sched and getattr(sched, "running", False))

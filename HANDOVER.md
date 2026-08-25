@@ -264,7 +264,8 @@ voice, grading, and drip.
 - [ ] Complete **Meta Business Verification** before scaling WhatsApp volume.
 - [ ] Landing page still shows "12+ languages" / "4.8k learners certified" — update when convenient
   (`frontend/app/page.tsx`).
-- [ ] Temporary `/whatsapp/diag` endpoint is deployed for debugging — safe (token-guarded) but can be removed later.
+- [ ] Temporary `/whatsapp/diag` endpoint is deployed for debugging — safe (guarded by
+  `WHATSAPP_OPS_KEY`) but can be removed later.
 
 ---
 

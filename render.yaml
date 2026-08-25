@@ -33,6 +33,12 @@ services:
     sync: false
   - key: SECRET_KEY
     sync: false
+  - key: WHATSAPP_OPS_KEY
+    sync: false
+  - key: WHATSAPP_APP_SECRET
+    sync: false
+  - key: BACKEND_URL
+    sync: false
   region: singapore
   healthCheckPath: /health
   dockerContext: .

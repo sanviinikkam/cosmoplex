@@ -558,12 +558,24 @@ _OPS_FORBIDDEN = Response(status_code=403, content="forbidden")
 
 
 def _ops_authorized(key: str | None) -> bool:
-    """Constant-time check of the ops key (no early-exit timing leak)."""
+    """Constant-time check of the ops key (no early-exit timing leak).
+
+    Compares BYTES, not str: hmac.compare_digest raises TypeError on str
+    arguments containing non-ASCII, which would surface as an unhandled 500.
+    That 500-vs-403 split also leaked whether the key was configured at all,
+    and a non-ASCII configured key would have 500'd every legitimate call.
+    Encoding both sides keeps the comparison constant-time (the loop length
+    follows the second argument) and makes every wrong key a plain 403."""
     expected = settings.whatsapp_ops_key
     if not expected:
-        print("⚠ Ops endpoint refused: WHATSAPP_OPS_KEY is not set on the server.")
+        print("Ops endpoint refused: WHATSAPP_OPS_KEY is not set on the server.")
         return False
-    return hmac.compare_digest(str(key or ""), expected)
+    ok = hmac.compare_digest(str(key or "").encode("utf-8"), expected.encode("utf-8"))
+    if not ok:
+        # Log refusals so a brute-force probe is visible. Never log the supplied
+        # key or its length — only that an attempt happened.
+        print("Ops endpoint refused: invalid key.")
+    return ok
 
 
 # ── One-time helper: register a phone number on the Cloud API ────────────────
