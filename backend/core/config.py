@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     pass_threshold: float = 0.70
 
+    # Web learning channel (signup/login, course APIs, learn WebSocket). OFF:
+    # WhatsApp is the only learner channel. Those endpoints had unauthenticated
+    # holes, so the whole surface stays disabled rather than partially patched.
+    # Does NOT affect the admin portal or the WhatsApp webhook.
+    web_channel_enabled: bool = False
+
     # WhatsApp Cloud API (Meta direct) — all optional; set in production to enable the channel
     whatsapp_token: str = ""              # permanent System User access token
     whatsapp_phone_number_id: str = ""    # from the WhatsApp > API setup screen

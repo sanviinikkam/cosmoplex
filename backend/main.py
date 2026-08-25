@@ -159,12 +159,23 @@ app.add_middleware(
 )
 
 # REST routes
-app.include_router(auth_router)
-app.include_router(learner_router)
-app.include_router(course_router)
-app.include_router(admin_router)
-app.include_router(onboarding_router)
-app.include_router(whatsapp_router)
+# The web learning channel is DISABLED (2026-08): WhatsApp is the only learner
+# channel, and the web learner APIs carried unauthenticated endpoints (learn
+# WebSocket, quiz answer key, client-supplied assignment rubric). Rather than
+# patch each one, the whole surface is switched off at the router level — hiding
+# the buttons on the site would not have stopped direct API calls.
+# Set WEB_CHANNEL_ENABLED=true to bring it back (fix the auth issues first).
+if settings.web_channel_enabled:
+    app.include_router(auth_router)
+    app.include_router(learner_router)
+    app.include_router(course_router)
+    app.include_router(onboarding_router)
+    print("⚠ Web learner channel ENABLED")
+else:
+    print("✓ Web learner channel disabled (WhatsApp-only)")
+
+app.include_router(admin_router)      # admin portal — always on
+app.include_router(whatsapp_router)   # WhatsApp webhook — always on
 
 # Serve generated certificates
 certs_dir = Path("certificates")
@@ -172,10 +183,15 @@ certs_dir.mkdir(exist_ok=True)
 app.mount("/certificates", StaticFiles(directory="certificates"), name="certificates")
 
 
-# WebSocket
-@app.websocket("/ws/learn/{learner_id}")
-async def learn_ws(websocket: WebSocket, learner_id: str):
-    await handle_learn_websocket(websocket, learner_id)
+# WebSocket — part of the web learner channel, so it follows the same flag.
+# While disabled the socket is refused outright. This was the highest-risk
+# endpoint: it took the learner id straight from the URL with no token, and its
+# agent calls (Sonnet + image generation) bypassed the daily AI spend guard, so
+# anyone could open it and burn paid AI unmetered.
+if settings.web_channel_enabled:
+    @app.websocket("/ws/learn/{learner_id}")
+    async def learn_ws(websocket: WebSocket, learner_id: str):
+        await handle_learn_websocket(websocket, learner_id)
 
 
 @app.get("/health")
@@ -209,7 +225,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-no-greeting",
+        "build": "web-channel-off",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

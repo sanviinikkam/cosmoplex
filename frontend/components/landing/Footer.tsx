@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useLang } from "@/lib/use-lang";
 import { getLanding } from "@/lib/landing-i18n";
 
@@ -17,13 +16,16 @@ export function Footer() {
           <div className="text-sm text-zinc-500">{t.footerTagline}</div>
         </div>
 
+        {/* WhatsApp-only: web signup/login links removed with the web channel. */}
         <nav className="flex flex-wrap gap-6 text-sm text-zinc-500">
-          <Link href="/signup" className="hover:text-zinc-900 transition-colors">
-            {t.getStarted}
-          </Link>
-          <Link href="/login" className="hover:text-zinc-900 transition-colors">
-            {t.signIn}
-          </Link>
+          <a
+            href="https://wa.me/917204419938?text=Hi%20I%20am%20interested%20and%20would%20like%20to%20start%20my%20AI%20learning%20journey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-zinc-900 transition-colors"
+          >
+            {t.startWhatsApp}
+          </a>
         </nav>
       </div>
     </footer>

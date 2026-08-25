@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Link from "next/link";
 import {
   ArrowRight,
   Books,
@@ -123,7 +122,8 @@ export function Hero() {
           transition={{ duration: 0.5, delay: 0.35, ease }}
           className="flex flex-wrap gap-3 mb-3"
         >
-          {/* Primary: learn on WhatsApp (the main delivery channel) */}
+          {/* WhatsApp is the only learner channel — the web signup/login CTAs
+              were removed along with the web learning flow. */}
           <a
             href="https://wa.me/917204419938?text=Hi%20I%20am%20interested%20and%20would%20like%20to%20start%20my%20AI%20learning%20journey"
             target="_blank"
@@ -133,20 +133,6 @@ export function Hero() {
             <WhatsappLogo size={18} weight="fill" />
             {t.startWhatsApp}
           </a>
-          {/* Secondary: sign up on the web */}
-          <Link
-            href="/signup"
-            className="inline-flex items-center gap-2 bg-zinc-900 text-white text-sm font-medium px-5 py-3 rounded-xl hover:bg-zinc-700 transition-colors duration-200 active:scale-[0.98]"
-          >
-            {t.startWeb}
-            <ArrowRight size={16} weight="bold" />
-          </Link>
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-2 bg-white border border-zinc-200 text-zinc-700 text-sm font-medium px-5 py-3 rounded-xl hover:bg-zinc-50 transition-colors duration-200 active:scale-[0.98]"
-          >
-            {t.signIn}
-          </Link>
         </motion.div>
 
         <motion.p
