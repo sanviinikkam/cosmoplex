@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, Response
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -178,23 +178,6 @@ async def learn_ws(websocket: WebSocket, learner_id: str):
     await handle_learn_websocket(websocket, learner_id)
 
 
-@app.get("/cert-preview")
-async def cert_preview(key: str = "", name: str = "Rayaan Somaiah"):
-    """TEMP diagnostic: render the certificate with the real WeasyPrint pipeline
-    and return the PDF, so layout can be verified without sending over WhatsApp.
-    Guarded by the verify token; returns a fixed sample (no learner data)."""
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=404)
-    import io
-    from datetime import datetime as _dt
-    from agents.certifier import _generate_certificate_html
-    from weasyprint import HTML as _WP
-    html_doc = _generate_certificate_html(name, _dt(2026, 8, 25))
-    buf = io.BytesIO()
-    _WP(string=html_doc).write_pdf(buf)
-    return Response(content=buf.getvalue(), media_type="application/pdf")
-
-
 @app.get("/health")
 async def health(db: int = 0):
     """Liveness check. By DEFAULT it does NOT touch the database — so routine
@@ -226,7 +209,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-seal-svg",
+        "build": "cert-final",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
