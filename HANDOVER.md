@@ -159,7 +159,8 @@ Edit the blue cells (active learners, USD→INR rate) and every number recalcula
 
 **Render (backend)** — Environment tab:
 `ANTHROPIC_API_KEY`, `DATABASE_URL` (→ Neon), `GROQ_API_KEY`, `SECRET_KEY`,
-`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `GRAPH_API_VERSION`,
+`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_OPS_KEY`,
+`WHATSAPP_APP_SECRET`, `BACKEND_URL`, `GRAPH_API_VERSION`,
 `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
 `WHATSAPP_TEMPLATES_ENABLED` (currently `false`), `ADMIN_PASSWORD`, `ENVIRONMENT=production`,
 `FRONTEND_URL`. (Optional/unused: `REDIS_URL`, `FAL_API_KEY`, `OPENAI_API_KEY`.)
@@ -221,12 +222,14 @@ Go to `/admin`, log in with `ADMIN_PASSWORD`.
   ~3/day with one repeat. To re-engage learners idle **>24h**, you must enable approved **templates**
   (paid ~₹0.11 each) and set the flag `true`.
 - **If Render sleeps** (free tier), the hourly scheduler won't fire — add a **Render Cron Job** hitting
-  `GET /whatsapp/run-drip?key=<WHATSAPP_VERIFY_TOKEN>` hourly, or upgrade Render.
+  `GET /whatsapp/run-drip?key=<WHATSAPP_OPS_KEY>` hourly, or upgrade Render.
 - **Meta messaging limits (scaling):** new numbers start at **250–1,000 unique users/day**. They rise
   (1K → 10K → 100K → unlimited) automatically with good "quality rating," **but you must complete
   Meta Business Verification** to go past the low tiers. Do this before a big push.
 
-**Useful endpoints (all guarded by `WHATSAPP_VERIFY_TOKEN` as `?key=`):**
+**Useful endpoints (ops endpoints are guarded by `WHATSAPP_OPS_KEY` as `?key=` — a
+high-entropy secret separate from `WHATSAPP_VERIFY_TOKEN`, which is only Meta's public
+webhook handshake. If `WHATSAPP_OPS_KEY` is unset the ops endpoints refuse everything):**
 - `GET /health` — status, build marker, DB health.
 - `GET /whatsapp/run-drip?key=…` — run the nudge pass now (`&to=<num>&force_key=<nudge>` to test one).
 - `GET /whatsapp/diag?key=…&lang=hi` — check a language's intro + Lesson-1 video (resolves, downloads, uploads).

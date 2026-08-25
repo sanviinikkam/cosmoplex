@@ -21,7 +21,9 @@
 - [ ] **P0 — Strong `ADMIN_PASSWORD`.** The whole admin portal is one shared password. Use a long
   random value; change the default; consider per-person accounts later.
 - [x] Admin API routes are auth-guarded (`require_admin`), Cloudinary upload is signed server-side. ✅
-- [x] Diagnostic/ops endpoints (`/run-drip`, `/diag`) require the verify-token key. ✅
+- [x] Diagnostic/ops endpoints (`/run-drip`, `/setup`, `/register`, `/subscribe`, `/diag*`) require
+  the dedicated high-entropy `WHATSAPP_OPS_KEY` (constant-time compare, fails closed if unset).
+  They previously reused the low-entropy `WHATSAPP_VERIFY_TOKEN`, which is semi-public. ✅
 - [x] **CORS is already restricted** — not a wildcard; scoped to `FRONTEND_URL` + `*.vercel.app`
   preview deploys. Verified in `main.py`. ✅
 - [ ] **P1 — Remove or keep-gated the temporary `/whatsapp/diag`** endpoint (debug tool).
@@ -127,7 +129,7 @@
 - [ ] `curl /health` → `db.connected: true`, expected build marker.
 - [ ] One full dry-run per **ready** language: web (signup→lesson→quiz→assignment→certificate) and
   WhatsApp (language→signup→lesson→quiz→assignment→next-lesson).
-- [ ] Send yourself a nudge test (`/run-drip?...&to=<you>&force_key=start_lesson`).
+- [ ] Send yourself a nudge test (`/run-drip?key=<WHATSAPP_OPS_KEY>&to=<you>&force_key=start_lesson`).
 - [ ] Confirm the shareable `wa.me` link opens with the right prefilled text.
 - [ ] Watch Render logs live for the first real users.
 

@@ -121,7 +121,9 @@ async def lifespan(app: FastAPI):
     # learner is still inside WhatsApp's 24h window (idle thresholds are a few
     # hours — see whatsapp_drip.py). Runs in-process (works when the backend is
     # always-on). On the free tier the instance sleeps, so also drive it with a
-    # Render Cron Job hitting GET /whatsapp/run-drip hourly as the reliable path.
+    # Render Cron Job hitting GET /whatsapp/run-drip?key=<WHATSAPP_OPS_KEY> hourly
+    # as the reliable path. NOTE: that endpoint now requires WHATSAPP_OPS_KEY (not
+    # the old verify token) — an existing cron using the old key must be updated.
     scheduler = None
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
