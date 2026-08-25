@@ -72,6 +72,8 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
 <head>
 <meta charset="utf-8">
 <style>
+  /* NOTE: WeasyPrint's flexbox/grid support is unreliable — this layout uses
+     only block flow, text-align, absolute positioning and CSS tables. */
   @page {{ size: A4 landscape; margin: 0; }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   html, body {{ width: 297mm; height: 210mm; }}
@@ -81,14 +83,11 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
   }}
   .serif {{ font-family: 'Noto Serif', 'DejaVu Serif', Georgia, 'Times New Roman', serif; }}
 
-  .page {{ width: 297mm; height: 210mm; padding: 12mm; }}
-  /* Double frame: outer thin rule + inner emerald border */
-  .frame {{
-    width: 100%; height: 100%;
-    border: 1.5mm solid #059669;
-    outline: 0.3mm solid #a7f3d0; outline-offset: 2mm;
-    padding: 13mm 20mm;
-    display: flex; flex-direction: column; align-items: center;
+  .page {{ width: 297mm; height: 210mm; padding: 10mm; }}
+  .frame {{ width: 100%; height: 100%; border: 1.4mm solid #059669; padding: 2.6mm; }}
+  .inner {{
+    position: relative; width: 100%; height: 100%;
+    border: 0.3mm solid #a7f3d0; padding: 15mm 24mm;
     text-align: center;
   }}
 
@@ -96,91 +95,90 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
     font-size: 15pt; font-weight: 700; letter-spacing: 0.42em;
     color: #059669; text-transform: uppercase; padding-left: 0.42em;
   }}
-  .brand-rule {{ width: 26mm; height: 2.4pt; background: #059669; border-radius: 2pt; margin: 3.5mm auto 0; }}
+  .brand-rule {{ width: 26mm; height: 2.2pt; background: #059669; margin: 3.5mm auto 0; }}
 
   .eyebrow {{
-    margin-top: 12mm; font-size: 10.5pt; letter-spacing: 0.34em;
+    margin-top: 11mm; font-size: 10.5pt; letter-spacing: 0.34em;
     text-transform: uppercase; color: #71717a;
   }}
   .heading {{
-    margin-top: 3mm; font-size: 27pt; font-weight: 700;
-    letter-spacing: 0.02em; color: #111827;
+    margin-top: 3.5mm; font-size: 26pt; font-weight: 700; color: #111827;
   }}
 
-  .present {{ margin-top: 11mm; font-size: 11.5pt; color: #6b7280; }}
+  .present {{ margin-top: 10mm; font-size: 11.5pt; color: #6b7280; }}
   .name {{
-    margin-top: 3mm; font-size: 40pt; font-weight: 700;
-    color: #111827; line-height: 1.1;
+    margin-top: 3mm; font-size: 38pt; font-weight: 700; color: #111827; line-height: 1.1;
   }}
-  .name-rule {{ width: 95mm; height: 0.4pt; background: #d1d5db; margin: 6mm auto 0; }}
+  .name-rule {{ width: 95mm; height: 0.5pt; background: #d1d5db; margin: 6mm auto 0; }}
 
   .desc {{
-    margin-top: 7mm; max-width: 195mm; font-size: 11.5pt;
+    margin: 7mm auto 0; max-width: 200mm; font-size: 11.5pt;
     line-height: 1.75; color: #3f3f46;
   }}
   .desc strong {{ color: #059669; }}
 
-  .spacer {{ flex: 1; }}
-
+  /* Footer pinned to the bottom of the inner frame, laid out as a 3-col table */
   .footer {{
-    width: 100%; display: flex; align-items: flex-end;
-    justify-content: space-between;
+    position: absolute; left: 24mm; right: 24mm; bottom: 14mm;
+    width: auto; border-collapse: collapse; display: table; table-layout: fixed;
   }}
-  .foot-col {{ width: 33%; }}
-  .foot-val {{ font-size: 12pt; color: #18181b; font-weight: 600; }}
-  .foot-line {{ border-top: 0.4pt solid #9ca3af; margin: 0 6mm; padding-top: 2mm; }}
-  .foot-label {{ font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
+  .foot-row {{ display: table-row; }}
+  .foot-col {{ display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; }}
+  .foot-val {{ font-size: 12pt; color: #18181b; font-weight: 700; }}
+  .foot-line {{ border-top: 0.5pt solid #9ca3af; margin: 1.5mm 8mm 0; }}
+  .foot-label {{ font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
 
-  /* Verification seal */
+  /* Verification seal — fixed circle, text vertically placed with padding */
   .seal {{
-    width: 26mm; height: 26mm; border-radius: 50%;
+    width: 25mm; height: 25mm; border-radius: 50%;
     border: 1mm solid #059669; background: #ecfdf5;
-    margin: 0 auto; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
+    margin: 0 auto; padding-top: 6.4mm;
   }}
-  .seal-top {{ font-size: 7pt; letter-spacing: 0.2em; color: #047857; text-transform: uppercase; }}
-  .seal-check {{ font-size: 15pt; color: #059669; line-height: 1; margin: 0.6mm 0; }}
-  .seal-bottom {{ font-size: 6.5pt; letter-spacing: 0.12em; color: #047857; text-transform: uppercase; }}
+  .seal-top {{ font-size: 7pt; letter-spacing: 0.18em; color: #047857; text-transform: uppercase; }}
+  .seal-check {{ font-size: 15pt; color: #059669; line-height: 1.1; }}
+  .seal-bottom {{ font-size: 6.5pt; letter-spacing: 0.1em; color: #047857; text-transform: uppercase; }}
 </style>
 </head>
 <body>
   <div class="page">
     <div class="frame">
-      <div class="brand">Cosmoplex</div>
-      <div class="brand-rule"></div>
+      <div class="inner">
+        <div class="brand">Cosmoplex</div>
+        <div class="brand-rule"></div>
 
-      <div class="eyebrow">Certificate of Completion</div>
-      <div class="heading serif">AI Literacy Certification</div>
+        <div class="eyebrow">Certificate of Completion</div>
+        <div class="heading serif">AI Literacy Certification</div>
 
-      <div class="present">This certificate is proudly presented to</div>
-      <div class="name serif">{name}</div>
-      <div class="name-rule"></div>
+        <div class="present">This certificate is proudly presented to</div>
+        <div class="name serif">{name}</div>
+        <div class="name-rule"></div>
 
-      <div class="desc">
-        for successfully completing the <strong>AI Literacy Certification</strong> course on the
-        Cosmoplex platform — passing every module examination above the required threshold and
-        completing all assigned practical tasks.
-      </div>
-
-      <div class="spacer"></div>
-
-      <div class="footer">
-        <div class="foot-col">
-          <div class="foot-val">{issued}</div>
-          <div class="foot-line"></div>
-          <div class="foot-label">Date of Issue</div>
+        <div class="desc">
+          for successfully completing the <strong>AI Literacy Certification</strong> course on the
+          Cosmoplex platform — passing every module examination above the required threshold and
+          completing all assigned practical tasks.
         </div>
-        <div class="foot-col">
-          <div class="seal">
-            <div class="seal-top">Verified</div>
-            <div class="seal-check">&#10003;</div>
-            <div class="seal-bottom">Cosmoplex</div>
+
+        <div class="footer">
+          <div class="foot-row">
+            <div class="foot-col">
+              <div class="foot-val">{issued}</div>
+              <div class="foot-line"></div>
+              <div class="foot-label">Date of Issue</div>
+            </div>
+            <div class="foot-col">
+              <div class="seal">
+                <div class="seal-top">Verified</div>
+                <div class="seal-check">&#10003;</div>
+                <div class="seal-bottom">Cosmoplex</div>
+              </div>
+            </div>
+            <div class="foot-col">
+              <div class="foot-val serif">Cosmoplex</div>
+              <div class="foot-line"></div>
+              <div class="foot-label">Issuing Authority</div>
+            </div>
           </div>
-        </div>
-        <div class="foot-col">
-          <div class="foot-val serif">Cosmoplex</div>
-          <div class="foot-line"></div>
-          <div class="foot-label">Issuing Authority</div>
         </div>
       </div>
     </div>
