@@ -209,7 +209,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "whatsapp-certificate-backfill",
+        "build": "cert-pydyf-fix",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

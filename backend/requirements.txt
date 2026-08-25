@@ -37,6 +37,10 @@ pillow==11.0.0
 
 # Certificate generation
 weasyprint==62.3
+# WeasyPrint 62.x has no upper bound on pydyf; pydyf>=0.11 breaks it with
+# "AttributeError: 'super' object has no attribute 'transform'" (Kozea/WeasyPrint#2620).
+# Pin below 0.11 so the PDF renderer keeps working.
+pydyf==0.10.0
 
 # Document text extraction for assignment evaluation
 pypdf==5.1.0
