@@ -1185,7 +1185,15 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
         session.certificate_pdf = filename
         await db.commit()
     except Exception as e:
-        print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
+        import traceback as _tb
+        detail = f"{type(e).__name__}: {e}"
+        print(f"⚠ WhatsApp certificate generation failed: {detail}")
+        # TEMP DIAG: persist the traceback so it can be inspected without Render log access.
+        try:
+            await _log_wa_message(frm, "bot", "debug",
+                                  f"CERTFAIL {detail}\n{_tb.format_exc()[:1600]}")
+        except Exception:
+            pass
         filename = None
 
     # Announce, then deliver the file (if we have a public URL to serve it from).
