@@ -62,43 +62,129 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
     # HTML and rendered by WeasyPrint, so a raw name could inject markup/CSS (or
     # a resource-fetching tag). Names are display-only here; escaping is safe.
     name = html.escape((name or "").strip()) or "Learner"
+    # Format without a zero-padded day, portably (%-d isn't supported on Windows).
+    try:
+        issued = issued_at.strftime("%B %d, %Y").replace(" 0", " ")
+    except Exception:
+        issued = str(issued_at)
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+  @page {{ size: A4 landscape; margin: 0; }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'Inter', sans-serif; background: white; }}
-  .cert {{ width: 842px; height: 595px; padding: 60px 80px; display: flex; flex-direction: column; justify-content: space-between; border: 3px solid #059669; }}
-  .header {{ font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: #71717a; }}
-  .title {{ font-size: 13px; color: #3f3f46; margin-top: 24px; }}
-  .name {{ font-size: 48px; font-weight: 700; color: #18181b; margin-top: 8px; letter-spacing: -1px; }}
-  .body {{ font-size: 14px; color: #52525b; line-height: 1.6; max-width: 560px; margin-top: 16px; }}
-  .footer {{ display: flex; justify-content: space-between; align-items: flex-end; }}
-  .date {{ font-size: 12px; color: #71717a; }}
-  .brand {{ font-size: 18px; font-weight: 700; color: #18181b; }}
-  .verified {{ display: inline-block; background: #d1fae5; color: #065f46; font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-top: 20px; }}
-  .stripe {{ height: 6px; background: #059669; margin-bottom: 40px; }}
+  html, body {{ width: 297mm; height: 210mm; }}
+  body {{
+    font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif;
+    color: #18181b; background: #ffffff;
+  }}
+  .serif {{ font-family: 'Noto Serif', 'DejaVu Serif', Georgia, 'Times New Roman', serif; }}
+
+  .page {{ width: 297mm; height: 210mm; padding: 12mm; }}
+  /* Double frame: outer thin rule + inner emerald border */
+  .frame {{
+    width: 100%; height: 100%;
+    border: 1.5mm solid #059669;
+    outline: 0.3mm solid #a7f3d0; outline-offset: 2mm;
+    padding: 13mm 20mm;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+  }}
+
+  .brand {{
+    font-size: 15pt; font-weight: 700; letter-spacing: 0.42em;
+    color: #059669; text-transform: uppercase; padding-left: 0.42em;
+  }}
+  .brand-rule {{ width: 26mm; height: 2.4pt; background: #059669; border-radius: 2pt; margin: 3.5mm auto 0; }}
+
+  .eyebrow {{
+    margin-top: 12mm; font-size: 10.5pt; letter-spacing: 0.34em;
+    text-transform: uppercase; color: #71717a;
+  }}
+  .heading {{
+    margin-top: 3mm; font-size: 27pt; font-weight: 700;
+    letter-spacing: 0.02em; color: #111827;
+  }}
+
+  .present {{ margin-top: 11mm; font-size: 11.5pt; color: #6b7280; }}
+  .name {{
+    margin-top: 3mm; font-size: 40pt; font-weight: 700;
+    color: #111827; line-height: 1.1;
+  }}
+  .name-rule {{ width: 95mm; height: 0.4pt; background: #d1d5db; margin: 6mm auto 0; }}
+
+  .desc {{
+    margin-top: 7mm; max-width: 195mm; font-size: 11.5pt;
+    line-height: 1.75; color: #3f3f46;
+  }}
+  .desc strong {{ color: #059669; }}
+
+  .spacer {{ flex: 1; }}
+
+  .footer {{
+    width: 100%; display: flex; align-items: flex-end;
+    justify-content: space-between;
+  }}
+  .foot-col {{ width: 33%; }}
+  .foot-val {{ font-size: 12pt; color: #18181b; font-weight: 600; }}
+  .foot-line {{ border-top: 0.4pt solid #9ca3af; margin: 0 6mm; padding-top: 2mm; }}
+  .foot-label {{ font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
+
+  /* Verification seal */
+  .seal {{
+    width: 26mm; height: 26mm; border-radius: 50%;
+    border: 1mm solid #059669; background: #ecfdf5;
+    margin: 0 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }}
+  .seal-top {{ font-size: 7pt; letter-spacing: 0.2em; color: #047857; text-transform: uppercase; }}
+  .seal-check {{ font-size: 15pt; color: #059669; line-height: 1; margin: 0.6mm 0; }}
+  .seal-bottom {{ font-size: 6.5pt; letter-spacing: 0.12em; color: #047857; text-transform: uppercase; }}
 </style>
 </head>
 <body>
-<div class="cert">
-  <div>
-    <div class="header">Certificate of Completion</div>
-    <div class="title">This certifies that</div>
-    <div class="name">{name}</div>
-    <div class="body">
-      has successfully completed the <strong>AI Literacy Certification</strong> course on the Cosmoplexx platform,
-      passing all module examinations above the required threshold and completing all assigned practical tasks.
+  <div class="page">
+    <div class="frame">
+      <div class="brand">Cosmoplex</div>
+      <div class="brand-rule"></div>
+
+      <div class="eyebrow">Certificate of Completion</div>
+      <div class="heading serif">AI Literacy Certification</div>
+
+      <div class="present">This certificate is proudly presented to</div>
+      <div class="name serif">{name}</div>
+      <div class="name-rule"></div>
+
+      <div class="desc">
+        for successfully completing the <strong>AI Literacy Certification</strong> course on the
+        Cosmoplex platform — passing every module examination above the required threshold and
+        completing all assigned practical tasks.
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="footer">
+        <div class="foot-col">
+          <div class="foot-val">{issued}</div>
+          <div class="foot-line"></div>
+          <div class="foot-label">Date of Issue</div>
+        </div>
+        <div class="foot-col">
+          <div class="seal">
+            <div class="seal-top">Verified</div>
+            <div class="seal-check">&#10003;</div>
+            <div class="seal-bottom">Cosmoplex</div>
+          </div>
+        </div>
+        <div class="foot-col">
+          <div class="foot-val serif">Cosmoplex</div>
+          <div class="foot-line"></div>
+          <div class="foot-label">Issuing Authority</div>
+        </div>
+      </div>
     </div>
-    <div class="verified">Verified by Cosmoplexx</div>
   </div>
-  <div class="footer">
-    <div class="date">Issued: {issued_at.strftime("%B %d, %Y")}</div>
-    <div class="brand">Cosmoplexx</div>
-  </div>
-</div>
 </body>
 </html>"""
 
