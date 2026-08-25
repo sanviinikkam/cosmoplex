@@ -225,7 +225,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "web-channel-off",
+        "build": "ops-key",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
