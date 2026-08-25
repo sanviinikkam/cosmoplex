@@ -57,6 +57,20 @@ async def is_eligible_for_certificate(
     return True, "All requirements met"
 
 
+# Embedded SVG award medallion (ribboned seal with a checkmark). WeasyPrint
+# renders inline SVG, so this stays crisp at any size. No external assets.
+_SEAL_SVG = """<svg width="23mm" height="30.4mm" viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg">
+  <path d="M41,70 L31,126 L40,118 L49,126 L49,76 Z" fill="#065f46"/>
+  <path d="M59,70 L69,126 L60,118 L51,126 L51,76 Z" fill="#047857"/>
+  <circle cx="50" cy="46" r="44" fill="#059669"/>
+  <circle cx="50" cy="46" r="39.5" fill="none" stroke="#ecfdf5" stroke-width="1.4" stroke-dasharray="1.4 3.1"/>
+  <circle cx="50" cy="46" r="35" fill="#ecfdf5"/>
+  <circle cx="50" cy="46" r="30" fill="none" stroke="#059669" stroke-width="1.2"/>
+  <path d="M39,45 L46,53 L61,34" fill="none" stroke="#059669" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="50" y="68" text-anchor="middle" font-family="'Noto Sans','DejaVu Sans',sans-serif" font-size="8.5" font-weight="700" letter-spacing="1.4" fill="#047857">VERIFIED</text>
+</svg>"""
+
+
 def _generate_certificate_html(name: str, issued_at: datetime) -> str:
     # Escape the learner-supplied name — it is interpolated into the certificate
     # HTML and rendered by WeasyPrint, so a raw name could inject markup/CSS (or
@@ -117,26 +131,17 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
   }}
   .desc strong {{ color: #059669; }}
 
-  /* Footer pinned to the bottom of the inner frame, laid out as a 3-col table */
-  .footer {{
-    position: absolute; left: 24mm; right: 24mm; bottom: 14mm;
-    width: auto; border-collapse: collapse; display: table; table-layout: fixed;
-  }}
-  .foot-row {{ display: table-row; }}
+  /* Footer pinned to the bottom of the inner frame. Outer block spans the full
+     content width (left+right both set); inner table (width:100%) lays out the
+     three evenly-centred columns so the seal sits dead-centre on the page. */
+  .footer {{ position: absolute; left: 24mm; right: 24mm; bottom: 12mm; }}
+  .foot-table {{ display: table; width: 100%; table-layout: fixed; }}
   .foot-col {{ display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; }}
   .foot-val {{ font-size: 12pt; color: #18181b; font-weight: 700; }}
-  .foot-line {{ border-top: 0.5pt solid #9ca3af; margin: 1.5mm 8mm 0; }}
+  .foot-line {{ border-top: 0.5pt solid #9ca3af; margin: 1.5mm 10mm 0; }}
   .foot-label {{ font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
-
-  /* Verification seal — fixed circle, text vertically placed with padding */
-  .seal {{
-    width: 25mm; height: 25mm; border-radius: 50%;
-    border: 1mm solid #059669; background: #ecfdf5;
-    margin: 0 auto; padding-top: 6.4mm;
-  }}
-  .seal-top {{ font-size: 7pt; letter-spacing: 0.18em; color: #047857; text-transform: uppercase; }}
-  .seal-check {{ font-size: 15pt; color: #059669; line-height: 1.1; }}
-  .seal-bottom {{ font-size: 6.5pt; letter-spacing: 0.1em; color: #047857; text-transform: uppercase; }}
+  .seal-wrap {{ text-align: center; }}
+  .seal-wrap svg {{ display: inline-block; }}
 </style>
 </head>
 <body>
@@ -160,18 +165,14 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
         </div>
 
         <div class="footer">
-          <div class="foot-row">
+          <div class="foot-table">
             <div class="foot-col">
               <div class="foot-val">{issued}</div>
               <div class="foot-line"></div>
               <div class="foot-label">Date of Issue</div>
             </div>
             <div class="foot-col">
-              <div class="seal">
-                <div class="seal-top">Verified</div>
-                <div class="seal-check">&#10003;</div>
-                <div class="seal-bottom">Cosmoplex</div>
-              </div>
+              <div class="seal-wrap">{_SEAL_SVG}</div>
             </div>
             <div class="foot-col">
               <div class="foot-val serif">Cosmoplex</div>
