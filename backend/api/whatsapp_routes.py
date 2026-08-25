@@ -193,9 +193,10 @@ async def send_image(to: str, public_id: str, caption: str = "") -> None:
         await send_text(to, f"{caption}\n\n🖼️ {url}" if caption else f"🖼️ {url}")
 
 
-async def send_document(to: str, link: str, filename: str, caption: str = "") -> None:
+async def send_document(to: str, link: str, filename: str, caption: str = "") -> bool:
     """Send a PDF/document by public link (e.g. the completion certificate).
-    Meta's servers fetch `link`, so it must be publicly reachable."""
+    Meta's servers fetch `link`, so it must be publicly reachable.
+    Returns True only if WhatsApp accepted the document (HTTP < 400)."""
     resp = await _post({
         "messaging_product": "whatsapp", "to": to, "type": "document",
         "document": {"link": link, "filename": filename[:240], "caption": caption[:1024]},
@@ -204,6 +205,8 @@ async def send_document(to: str, link: str, filename: str, caption: str = "") ->
     if resp is None or resp.status_code >= 400:
         # Fallback: send the link as text so the learner can still download it.
         await send_text(to, f"{caption}\n\n📄 {link}" if caption else f"📄 {link}")
+        return False
+    return True
 
 
 async def _post(payload: dict) -> httpx.Response | None:
@@ -1186,22 +1189,34 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
         filename = f"cert_wa_{_uuid.uuid4().hex}.pdf"   # unguessable → not enumerable by phone
         html_doc = _generate_certificate_html(name, datetime.utcnow())
         WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
-        session.certificate_pdf = filename
-        await db.commit()
     except Exception as e:
         print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
+        return   # certificate_pdf stays unset → retries on the learner's next message
+
+    base = (settings.backend_url or "").rstrip("/")
+    if not base:
+        # Misconfiguration: we can't hand WhatsApp a fetchable link. Mark issued
+        # anyway so we don't re-announce forever; a log tells the operator to fix it.
+        print("⚠ Certificate generated but BACKEND_URL is unset — cannot deliver the "
+              "PDF over WhatsApp. Set BACKEND_URL to this backend's public URL.")
+        session.certificate_pdf = filename
+        await db.commit()
+        await send_text(frm, tr(lang, "cert_ready").format(name=name))
         return
 
-    # Success → announce once and deliver the document (needs a public URL to serve from).
+    # Announce, then deliver. Only mark the certificate "issued" once WhatsApp
+    # ACCEPTS the document — so a send failure leaves it unissued and the learner's
+    # next message retries delivery instead of losing the certificate silently.
     await send_text(frm, tr(lang, "cert_ready").format(name=name))
-    base = (settings.backend_url or "").rstrip("/")
-    if base:
-        link = f"{base}/certificates/{filename}"
-        await send_document(frm, link, "Cosmoplex_AI_Literacy_Certificate.pdf",
-                            tr(lang, "cert_caption"))
+    delivered = await send_document(
+        frm, f"{base}/certificates/{filename}",
+        "Cosmoplex_AI_Literacy_Certificate.pdf", tr(lang, "cert_caption"))
+    if delivered:
+        session.certificate_pdf = filename
+        await db.commit()
     else:
-        print("⚠ Certificate generated but BACKEND_URL is unset — cannot send the "
-              "PDF over WhatsApp. Set BACKEND_URL to this backend's public URL.")
+        print("⚠ Certificate document not accepted by WhatsApp — will retry on the "
+              "learner's next message.")
 
 
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
