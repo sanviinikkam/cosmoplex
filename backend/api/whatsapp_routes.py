@@ -1171,7 +1171,11 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
     name = (session.name or nm or "").strip() or "Learner"
 
     # Generate the PDF (same design as the web certificate; name is escaped inside).
-    filename = None
+    # We only mark the certificate "issued" — and only announce it — once the PDF
+    # actually renders. If generation fails we stay SILENT (no congrats text) and
+    # leave certificate_pdf unset, so the message falls through to normal chat and
+    # a future message can retry. This prevents a done-learner who keeps chatting
+    # from being spammed with the congrats line while generation is broken.
     try:
         from weasyprint import HTML as WP_HTML
         from agents.certifier import _generate_certificate_html
@@ -1185,25 +1189,17 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
         session.certificate_pdf = filename
         await db.commit()
     except Exception as e:
-        import traceback as _tb
-        detail = f"{type(e).__name__}: {e}"
-        print(f"⚠ WhatsApp certificate generation failed: {detail}")
-        # TEMP DIAG: persist the traceback so it can be inspected without Render log access.
-        try:
-            await _log_wa_message(frm, "bot", "debug",
-                                  f"CERTFAIL {detail}\n{_tb.format_exc()[:1600]}")
-        except Exception:
-            pass
-        filename = None
+        print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
+        return
 
-    # Announce, then deliver the file (if we have a public URL to serve it from).
+    # Success → announce once and deliver the document (needs a public URL to serve from).
     await send_text(frm, tr(lang, "cert_ready").format(name=name))
     base = (settings.backend_url or "").rstrip("/")
-    if filename and base:
+    if base:
         link = f"{base}/certificates/{filename}"
         await send_document(frm, link, "Cosmoplex_AI_Literacy_Certificate.pdf",
                             tr(lang, "cert_caption"))
-    elif filename and not base:
+    else:
         print("⚠ Certificate generated but BACKEND_URL is unset — cannot send the "
               "PDF over WhatsApp. Set BACKEND_URL to this backend's public URL.")
 

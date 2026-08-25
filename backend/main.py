@@ -209,7 +209,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-pydyf-fix",
+        "build": "cert-once-on-success",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
