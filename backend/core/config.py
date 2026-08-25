@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     fal_api_key: str = ""
     openai_api_key: str = ""
     frontend_url: str = "http://localhost:3000"
+    # Public base URL of THIS backend (Render), e.g. https://cosmoplex-api.onrender.com
+    # — used to build public links to generated files (e.g. the WhatsApp certificate
+    # PDF, which Meta's servers must be able to fetch). No trailing slash.
+    backend_url: str = ""
     environment: str = "development"
     pass_threshold: float = 0.70
 

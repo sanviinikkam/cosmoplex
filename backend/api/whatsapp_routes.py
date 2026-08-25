@@ -193,6 +193,19 @@ async def send_image(to: str, public_id: str, caption: str = "") -> None:
         await send_text(to, f"{caption}\n\n🖼️ {url}" if caption else f"🖼️ {url}")
 
 
+async def send_document(to: str, link: str, filename: str, caption: str = "") -> None:
+    """Send a PDF/document by public link (e.g. the completion certificate).
+    Meta's servers fetch `link`, so it must be publicly reachable."""
+    resp = await _post({
+        "messaging_product": "whatsapp", "to": to, "type": "document",
+        "document": {"link": link, "filename": filename[:240], "caption": caption[:1024]},
+    })
+    await _log_wa_message(to, "bot", "document", f"[document] {filename} {caption}".strip())
+    if resp is None or resp.status_code >= 400:
+        # Fallback: send the link as text so the learner can still download it.
+        await send_text(to, f"{caption}\n\n📄 {link}" if caption else f"📄 {link}")
+
+
 async def _post(payload: dict) -> httpx.Response | None:
     if not _configured():
         print("⚠ WhatsApp not configured — skipping send")
@@ -1145,6 +1158,48 @@ def _is_last_in_module(lessons: list[dict], idx: int) -> bool:
     return lessons[idx].get("module_id") != lessons[idx + 1].get("module_id")
 
 
+async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> None:
+    """Issue + send the completion certificate when a WhatsApp learner finishes
+    the whole course. Idempotent and deterministic:
+      • Gate: session.stage must be 'done' (reached only after passing every
+        lesson's quiz). No LLM decides eligibility — golden rule #2.
+      • Runs at most once per learner (guarded by session.certificate_pdf).
+    Degrades gracefully: if WeasyPrint or BACKEND_URL is missing, the learner
+    still gets a congratulations message; only the PDF attachment is skipped."""
+    if session.stage != "done" or session.certificate_pdf:
+        return
+    name = (session.name or nm or "").strip() or "Learner"
+
+    # Generate the PDF (same design as the web certificate; name is escaped inside).
+    filename = None
+    try:
+        from weasyprint import HTML as WP_HTML
+        from agents.certifier import _generate_certificate_html
+        from pathlib import Path
+        import uuid as _uuid
+        cert_dir = Path("certificates")
+        cert_dir.mkdir(exist_ok=True)
+        filename = f"cert_wa_{_uuid.uuid4().hex}.pdf"   # unguessable → not enumerable by phone
+        html_doc = _generate_certificate_html(name, datetime.utcnow())
+        WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
+        session.certificate_pdf = filename
+        await db.commit()
+    except Exception as e:
+        print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
+        filename = None
+
+    # Announce, then deliver the file (if we have a public URL to serve it from).
+    await send_text(frm, tr(lang, "cert_ready").format(name=name))
+    base = (settings.backend_url or "").rstrip("/")
+    if filename and base:
+        link = f"{base}/certificates/{filename}"
+        await send_document(frm, link, "Cosmoplex_AI_Literacy_Certificate.pdf",
+                            tr(lang, "cert_caption"))
+    elif filename and not base:
+        print("⚠ Certificate generated but BACKEND_URL is unset — cannot send the "
+              "PDF over WhatsApp. Set BACKEND_URL to this backend's public URL.")
+
+
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     """After finishing the current lesson, move to the next and auto-deliver it.
     Returns True if a next lesson was sent, False if the course is complete."""
@@ -1161,6 +1216,7 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     session.stage = "done"
     await db.commit()
     await send_text(frm, tr(lang, "done").format(name=nm))
+    await _deliver_certificate(db, session, frm, lang, nm)
     return False
 
 
@@ -1189,6 +1245,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
              ("get_referral", INVITE_BTN.get(lang, INVITE_BTN["en"])),
              ("ask_doubt", tr(lang, "doubt_btn"))],
         )
+        await _deliver_certificate(db, session, frm, lang, nm)
 
 
 async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) -> None:

@@ -5,6 +5,7 @@ The agent never decides if a learner passed — it only generates the artifact.
 """
 import uuid
 import os
+import html
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +58,10 @@ async def is_eligible_for_certificate(
 
 
 def _generate_certificate_html(name: str, issued_at: datetime) -> str:
+    # Escape the learner-supplied name — it is interpolated into the certificate
+    # HTML and rendered by WeasyPrint, so a raw name could inject markup/CSS (or
+    # a resource-fetching tag). Names are display-only here; escaping is safe.
+    name = html.escape((name or "").strip()) or "Learner"
     return f"""<!DOCTYPE html>
 <html>
 <head>

@@ -182,6 +182,8 @@ CONTENT = {
         "assign_fail": "📝 {name}, you scored {s}/100 — you need {p}/100 to pass.\n\n💬 {f}\n\n✍️ Read the feedback and send an improved answer.",
         "done": "🎉 {name}, you've completed Lesson 1! More lessons are on the way. Meanwhile, ask me anything about what you learned.",
         "no_more": "🎉 That's all for now — more lessons are coming soon! Ask me anything about what you learned.",
+        "cert_ready": "🎓 Incredible, {name} — you've completed the *entire AI Literacy course*! Here's your certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
     },
     "hi": {
         "picker_done": "बढ़िया! अब हम हिंदी में सीखेंगे। 🎉",
@@ -217,6 +219,8 @@ CONTENT = {
         "assign_pass": "✅ {name}, आपका स्कोर: {s}/100 — असाइनमेंट स्वीकृत! 🎉\n\n💬 {f}",
         "assign_fail": "📝 {name}, आपका स्कोर: {s}/100 — पास होने के लिए {p}/100 चाहिए।\n\n💬 {f}\n\n✍️ फीडबैक पढ़ें और बेहतर जवाब भेजें।",
         "done": "🎉 {name}, आपने पाठ 1 पूरा कर लिया! और पाठ जल्द आ रहे हैं। तब तक, आपने जो सीखा उसके बारे में मुझसे कुछ भी पूछें।",
+        "cert_ready": "🎓 शानदार, {name} — आपने *पूरा AI Literacy कोर्स* पूरा कर लिया! ये रहा आपका certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "no_more": "🎉 फ़िलहाल इतना ही — और पाठ जल्द आ रहे हैं! आपने जो सीखा उसके बारे में मुझसे कुछ भी पूछें।",
     },
     "mr": {
@@ -253,6 +257,8 @@ CONTENT = {
         "assign_pass": "✅ {name}, तुमचा स्कोर: {s}/100 — असाइनमेंट स्वीकारले! 🎉\n\n💬 {f}",
         "assign_fail": "📝 {name}, तुमचा स्कोर: {s}/100 — पास होण्यासाठी {p}/100 हवे.\n\n💬 {f}\n\n✍️ अभिप्राय वाचा आणि सुधारित उत्तर पाठवा.",
         "done": "🎉 {name}, तुम्ही धडा 1 पूर्ण केला! आणखी धडे लवकरच येत आहेत. तोपर्यंत, तुम्ही जे शिकलात त्याबद्दल मला काहीही विचारा.",
+        "cert_ready": "🎓 अप्रतिम, {name} — तुम्ही *संपूर्ण AI Literacy कोर्स* पूर्ण केला! हे घ्या तुमचं certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "no_more": "🎉 सध्या एवढेच — आणखी धडे लवकरच! तुम्ही जे शिकलात त्याबद्दल मला काहीही विचारा.",
     },
     "te": {
@@ -289,6 +295,8 @@ CONTENT = {
         "assign_pass": "✅ {name}, మీ స్కోర్: {s}/100 — అసైన్‌మెంట్ ఆమోదించబడింది! 🎉\n\n💬 {f}",
         "assign_fail": "📝 {name}, మీ స్కోర్: {s}/100 — పాస్ అవ్వడానికి {p}/100 కావాలి.\n\n💬 {f}\n\n✍️ ఫీడ్‌బ్యాక్ చదివి మెరుగైన సమాధానం పంపండి.",
         "done": "🎉 {name}, మీరు పాఠం 1 పూర్తి చేశారు! మరిన్ని పాఠాలు త్వరలో వస్తున్నాయి. అప్పటివరకు, మీరు నేర్చుకున్నదాని గురించి నన్ను ఏదైనా అడగండి.",
+        "cert_ready": "🎓 అద్భుతం, {name} — మీరు *పూర్తి AI Literacy కోర్సు* పూర్తి చేశారు! ఇదిగో మీ certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "no_more": "🎉 ప్రస్తుతానికి ఇంతే — మరిన్ని పాఠాలు త్వరలో! మీరు నేర్చుకున్నదాని గురించి నన్ను ఏదైనా అడగండి.",
     },
     "ta": {
@@ -325,6 +333,8 @@ CONTENT = {
         "assign_pass": "✅ {name}, உங்கள் மதிப்பெண்: {s}/100 — பணி ஏற்றுக்கொள்ளப்பட்டது! 🎉\n\n💬 {f}",
         "assign_fail": "📝 {name}, உங்கள் மதிப்பெண்: {s}/100 — தேர்ச்சி பெற {p}/100 தேவை.\n\n💬 {f}\n\n✍️ கருத்தைப் படித்து மேம்படுத்திய பதில் அனுப்புங்கள்.",
         "done": "🎉 {name}, பாடம் 1 ஐ முடித்தீர்கள்! மேலும் பாடங்கள் விரைவில் வரும். அதுவரை, நீங்கள் கற்றது பற்றி என்னிடம் எதையும் கேளுங்கள்.",
+        "cert_ready": "🎓 அருமை, {name} — நீங்கள் *முழு AI Literacy பாடநெறியையும்* முடித்துவிட்டீர்கள்! இதோ உங்கள் certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "no_more": "🎉 தற்போதைக்கு இத்துடன் — மேலும் பாடங்கள் விரைவில்! நீங்கள் கற்றது பற்றி என்னிடம் எதையும் கேளுங்கள்.",
     },
     "kn": {
@@ -361,6 +371,8 @@ CONTENT = {
         "assign_pass": "✅ {name}, ನಿಮ್ಮ ಅಂಕ: {s}/100 — ನಿಯೋಜನೆ ಸ್ವೀಕರಿಸಲಾಗಿದೆ! 🎉\n\n💬 {f}",
         "assign_fail": "📝 {name}, ನಿಮ್ಮ ಅಂಕ: {s}/100 — ಪಾಸ್ ಆಗಲು {p}/100 ಬೇಕು.\n\n💬 {f}\n\n✍️ ಫೀಡ್‌ಬ್ಯಾಕ್ ಓದಿ ಸುಧಾರಿತ ಉತ್ತರ ಕಳುಹಿಸಿ.",
         "done": "🎉 {name}, ನೀವು ಪಾಠ 1 ಪೂರ್ಣಗೊಳಿಸಿದ್ದೀರಿ! ಇನ್ನಷ್ಟು ಪಾಠಗಳು ಶೀಘ್ರದಲ್ಲೇ ಬರಲಿವೆ. ಅಲ್ಲಿಯವರೆಗೆ, ನೀವು ಕಲಿತದ್ದರ ಬಗ್ಗೆ ನನ್ನನ್ನು ಏನಾದರೂ ಕೇಳಿ.",
+        "cert_ready": "🎓 ಅದ್ಭುತ, {name} — ನೀವು *ಸಂಪೂರ್ಣ AI Literacy ಕೋರ್ಸ್* ಮುಗಿಸಿದ್ದೀರಿ! ಇದೋ ನಿಮ್ಮ certificate 👇",
+        "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "no_more": "🎉 ಸದ್ಯಕ್ಕೆ ಇಷ್ಟೇ — ಇನ್ನಷ್ಟು ಪಾಠಗಳು ಶೀಘ್ರದಲ್ಲೇ! ನೀವು ಕಲಿತದ್ದರ ಬಗ್ಗೆ ನನ್ನನ್ನು ಏನಾದರೂ ಕೇಳಿ.",
     },
 }

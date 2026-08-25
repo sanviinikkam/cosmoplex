@@ -377,6 +377,7 @@ class WhatsAppSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     referral_code = Column(String(12), unique=True, nullable=True)  # this user's own code to share
     referred_by_code = Column(String(12), nullable=True)            # code they arrived with (pending until signup)
+    certificate_pdf = Column(String(500), nullable=True)            # filename of the issued completion certificate (set once, on course completion)
 
 
 class WhatsAppMessage(Base):
