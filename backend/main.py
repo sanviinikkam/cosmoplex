@@ -207,7 +207,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "presale-caption-variable",
+        "build": "rate-limit-cooldown",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

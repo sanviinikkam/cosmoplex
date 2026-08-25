@@ -723,8 +723,11 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                         continue
                     # Per-phone rate limit — bounds flood/cost abuse before any AI
                     # or DB work is even queued. Generous limits, real users never hit it.
-                    if check_rate_limit(frm):
-                        if should_notify(frm):
+                    limit_reason = check_rate_limit(frm)
+                    if limit_reason:
+                        # Notify on the trip only — stay silent during the lockout so we
+                        # don't burn (paid) replies on an abuser who keeps hammering.
+                        if limit_reason != "cooldown" and should_notify(frm):
                             background_tasks.add_task(_send_rate_limit_notice, frm)
                         continue
                     # Voice notes: transcribe, then treat as a typed message.

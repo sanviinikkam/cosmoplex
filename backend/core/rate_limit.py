@@ -16,14 +16,28 @@ WINDOW_MAX = 20     # generous: real taps/messages rarely exceed this in a minut
 DAY_MAX = 500       # generous daily cap per phone
 NOTICE_COOLDOWN = 300   # only send the "slow down" notice at most once per 5 min
 
+# Escalating lockout: tripping the per-minute limit blocks the phone entirely for
+# a growing period, so flooding has teeth — an abuser can't just resume at 20/min.
+# Consecutive offenses step up; good behaviour for OFFENSE_DECAY forgives them.
+COOLDOWN_STEPS = [600, 1800, 3600]   # 10 min → 30 min → 60 min (then stays at 60)
+OFFENSE_DECAY = 21600                # forget prior offenses after 6h without one
+
 _hits: dict[str, deque] = defaultdict(deque)
 _last_notice: dict[str, float] = {}
+_cooldown_until: dict[str, float] = {}
+_offense_count: dict[str, int] = {}
+_last_offense: dict[str, float] = {}
 
 
 def check_rate_limit(phone: str, now: float | None = None) -> str | None:
-    """Record this inbound message. Returns None if allowed, else 'window' or
-    'day' naming which limit was hit (caller should skip all processing)."""
+    """Record this inbound message. Returns None if allowed, else a reason string
+    ('cooldown' | 'day' | 'window') — the caller should skip all processing."""
     now = now if now is not None else time.time()
+
+    # In an active lockout → drop without even recording (so it doesn't count).
+    if now < _cooldown_until.get(phone, 0):
+        return "cooldown"
+
     dq = _hits[phone]
     dq.append(now)
     while dq and now - dq[0] > 86400:
@@ -36,6 +50,13 @@ def check_rate_limit(phone: str, now: float | None = None) -> str | None:
     if day_count > DAY_MAX:
         return "day"
     if window_count > WINDOW_MAX:
+        # Tripped the burst limit → start (or escalate) a lockout.
+        if now - _last_offense.get(phone, 0) > OFFENSE_DECAY:
+            _offense_count[phone] = 0   # forgiven — behaved for a while
+        n = _offense_count.get(phone, 0)
+        _cooldown_until[phone] = now + COOLDOWN_STEPS[min(n, len(COOLDOWN_STEPS) - 1)]
+        _offense_count[phone] = n + 1
+        _last_offense[phone] = now
         return "window"
     return None
 
