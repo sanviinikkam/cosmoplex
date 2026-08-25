@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     whatsapp_token: str = ""              # permanent System User access token
     whatsapp_phone_number_id: str = ""    # from the WhatsApp > API setup screen
     whatsapp_verify_token: str = "cosmoplex-verify"  # you choose this; must match Meta webhook config
+    # Separate high-entropy key for the OPS endpoints (/run-drip, /setup, /register,
+    # /subscribe, /diag*). These used to reuse whatsapp_verify_token, which is a
+    # low-entropy, semi-public value (it's echoed in Meta's webhook handshake), so
+    # guessing it allowed blasting every learner or re-registering the number.
+    # FAIL CLOSED: if this is unset, every ops endpoint is refused.
+    whatsapp_ops_key: str = ""
     graph_api_version: str = "v21.0"
     cloudinary_cloud_name: str = "dlpl4inio"  # for building lesson video links sent over WhatsApp
     whatsapp_templates_enabled: bool = False  # flip True once drip templates are approved by Meta
@@ -53,7 +59,7 @@ class Settings(BaseSettings):
     referral_demo_mode: bool = True       # True = NO real money moves; payouts auto-marked as demo
     whatsapp_business_number: str = "917204419938"  # for wa.me referral links (country code + number, no +)
 
-    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", mode="before")
+    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", "whatsapp_ops_key", mode="before")
     @classmethod
     def _strip_secret(cls, v):
         # Pasted secrets often pick up trailing newlines/spaces, which break

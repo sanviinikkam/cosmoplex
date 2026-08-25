@@ -544,11 +544,33 @@ async def verify(
     return Response(status_code=403, content="verification failed")
 
 
+# ── Ops-endpoint authorization ───────────────────────────────────────────────
+# These endpoints perform real, sensitive actions (message every learner,
+# re-register the business number, dump internals). They previously reused
+# WHATSAPP_VERIFY_TOKEN — low-entropy and semi-public, since it's the value Meta
+# echoes during the webhook handshake — so anyone who guessed it could trigger
+# them. They now require a separate high-entropy WHATSAPP_OPS_KEY.
+#
+# FAIL CLOSED: if WHATSAPP_OPS_KEY is unset, every ops endpoint is refused. This
+# does NOT affect nudge delivery — the hourly scheduler calls run_drip() directly
+# in-process, not over HTTP.
+_OPS_FORBIDDEN = Response(status_code=403, content="forbidden")
+
+
+def _ops_authorized(key: str | None) -> bool:
+    """Constant-time check of the ops key (no early-exit timing leak)."""
+    expected = settings.whatsapp_ops_key
+    if not expected:
+        print("⚠ Ops endpoint refused: WHATSAPP_OPS_KEY is not set on the server.")
+        return False
+    return hmac.compare_digest(str(key or ""), expected)
+
+
 # ── One-time helper: register a phone number on the Cloud API ────────────────
 @router.get("/register")
-async def register_number(phone_number_id: str, pin: str, key: str):
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden")
+async def register_number(phone_number_id: str, pin: str, key: str = ""):
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     if not settings.whatsapp_token:
         return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
     url = f"{GRAPH}/{settings.graph_api_version}/{phone_number_id}/register"
@@ -566,9 +588,9 @@ async def register_number(phone_number_id: str, pin: str, key: str):
 
 # ── One-shot setup: find the real Phone Number ID for a WABA and register it ──
 @router.get("/setup")
-async def setup_number(waba_id: str, key: str, pin: str = "000111"):
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+async def setup_number(waba_id: str, key: str = "", pin: str = "000111"):
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     if not settings.whatsapp_token:
         return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
     headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
@@ -603,9 +625,9 @@ async def setup_number(waba_id: str, key: str, pin: str = "000111"):
 
 # ── Subscribe THIS app to a WABA's webhooks ──────────────────────────────────
 @router.get("/subscribe")
-async def subscribe_app(waba_id: str, key: str):
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+async def subscribe_app(waba_id: str, key: str = ""):
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     if not settings.whatsapp_token:
         return {"ok": False, "error": "WHATSAPP_TOKEN is not set on the server."}
     headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
@@ -626,22 +648,22 @@ async def subscribe_app(waba_id: str, key: str):
 
 # ── Drip engine trigger (call daily via Render Cron Job, or the in-app scheduler) ─
 @router.get("/run-drip")
-async def run_drip_endpoint(key: str, to: str | None = None, force_key: str | None = None):
+async def run_drip_endpoint(key: str = "", to: str | None = None, force_key: str | None = None):
     """Run the nudge pass (call hourly via Render Cron Job, or the in-app scheduler).
-    Guarded by the verify token. Optional ?to=<phone>&force_key=<nudge> bypasses
-    idle/dedupe for a test send to one number."""
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden — 'key' must equal WHATSAPP_VERIFY_TOKEN")
+    Requires WHATSAPP_OPS_KEY — this sends real messages to real learners.
+    Optional ?to=<phone>&force_key=<nudge> bypasses idle/dedupe for a test send."""
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     from api.whatsapp_drip import run_drip
     return await run_drip(force_to=to, force_key=force_key)
 
 
 @router.get("/diag")
-async def diag_video(key: str, lang: str = "hi", idx: int = 0):
+async def diag_video(key: str = "", lang: str = "hi", idx: int = 0):
     """Diagnose the lesson pipeline for a language: how many lessons resolve, their
     titles/order, and whether the lesson at `idx` downloads + uploads to WhatsApp."""
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden")
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     out: dict = {"lang": lang, "configured": _configured(), "idx": idx}
     async with async_session_factory() as db:
         try:
@@ -662,12 +684,12 @@ async def diag_video(key: str, lang: str = "hi", idx: int = 0):
 
 
 @router.get("/diag-teacher")
-async def diag_teacher_context(key: str, lang: str = "en", completed: int = 0):
+async def diag_teacher_context(key: str = "", lang: str = "en", completed: int = 0):
     """Diagnose the Teacher agent's progress-scoped knowledge for a language,
     simulating `completed` lessons done. Read-only — builds the same context
     _teacher_answer would, without sending anything or calling the AI."""
-    if key != settings.whatsapp_verify_token:
-        return Response(status_code=403, content="forbidden")
+    if not _ops_authorized(key):
+        return _OPS_FORBIDDEN
     out: dict = {"lang": lang, "completed": completed}
     async with async_session_factory() as db:
         try:
