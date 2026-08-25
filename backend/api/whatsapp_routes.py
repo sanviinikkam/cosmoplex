@@ -1161,16 +1161,18 @@ def _is_last_in_module(lessons: list[dict], idx: int) -> bool:
     return lessons[idx].get("module_id") != lessons[idx + 1].get("module_id")
 
 
-async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> None:
+async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> bool:
     """Issue + send the completion certificate when a WhatsApp learner finishes
     the whole course. Idempotent and deterministic:
       • Gate: session.stage must be 'done' (reached only after passing every
         lesson's quiz). No LLM decides eligibility — golden rule #2.
       • Runs at most once per learner (guarded by session.certificate_pdf).
-    Degrades gracefully: if WeasyPrint or BACKEND_URL is missing, the learner
-    still gets a congratulations message; only the PDF attachment is skipped."""
+    Returns True if it announced the certificate THIS call (so the caller can end
+    the turn instead of also routing the message to the Teacher agent). Degrades
+    gracefully: if WeasyPrint or BACKEND_URL is missing, the learner still gets a
+    congratulations message; only the PDF attachment is skipped."""
     if session.stage != "done" or session.certificate_pdf:
-        return
+        return False
     name = (session.name or nm or "").strip() or "Learner"
 
     # Generate the PDF (same design as the web certificate; name is escaped inside).
@@ -1191,7 +1193,7 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
         WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
     except Exception as e:
         print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
-        return   # certificate_pdf stays unset → retries on the learner's next message
+        return False  # certificate_pdf stays unset → retries on the learner's next message
 
     base = (settings.backend_url or "").rstrip("/")
     if not base:
@@ -1202,7 +1204,7 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
         session.certificate_pdf = filename
         await db.commit()
         await send_text(frm, tr(lang, "cert_ready").format(name=name))
-        return
+        return True
 
     # Announce, then deliver. Only mark the certificate "issued" once WhatsApp
     # ACCEPTS the document — so a send failure leaves it unissued and the learner's
@@ -1217,6 +1219,7 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> Non
     else:
         print("⚠ Certificate document not accepted by WhatsApp — will retry on the "
               "learner's next message.")
+    return True   # announced this turn → caller should end the turn (no Teacher greeting)
 
 
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
@@ -1899,8 +1902,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         # or lessons added later) → continue automatically instead of chatting.
         if session.stage == "done":
             # Backfill / first-time issue: anyone sitting at 'done' who was never
-            # issued a certificate gets it now (idempotent — fires once, ever).
-            await _deliver_certificate(db, session, frm, lang, nm)
+            # issued a certificate gets it now (idempotent — fires once, ever). If it
+            # delivered this turn, end here so we don't also greet via the Teacher.
+            if await _deliver_certificate(db, session, frm, lang, nm):
+                return
             lessons = await _db_lessons(db, lang)
             if (session.lesson_index or 0) + 1 < len(lessons):
                 await _advance_lesson(db, session, frm, lang, nm)
