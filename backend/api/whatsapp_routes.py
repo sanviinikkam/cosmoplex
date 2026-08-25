@@ -1879,6 +1879,9 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         # Finished the current lesson but more lessons exist (e.g. older sessions,
         # or lessons added later) → continue automatically instead of chatting.
         if session.stage == "done":
+            # Backfill / first-time issue: anyone sitting at 'done' who was never
+            # issued a certificate gets it now (idempotent — fires once, ever).
+            await _deliver_certificate(db, session, frm, lang, nm)
             lessons = await _db_lessons(db, lang)
             if (session.lesson_index or 0) + 1 < len(lessons):
                 await _advance_lesson(db, session, frm, lang, nm)
