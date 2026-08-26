@@ -211,6 +211,13 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
             if force_to and s.phone != force_to:
                 continue
 
+            # Learner texted "unsubscribe" → never send them a proactive message
+            # again. Checked before force_key too, so even a manual ops run cannot
+            # message someone who opted out.
+            if getattr(s, "opt_out", False):
+                report["skipped"] += 1
+                continue
+
             if force_key:
                 key = force_key
                 day = _tier_day(key)

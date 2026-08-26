@@ -69,6 +69,8 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS quiz_language VARCHAR(10)"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_pdf VARCHAR(500)"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS opt_out BOOLEAN DEFAULT FALSE"))
             # Marketing assets: three independent fields per (day, language).
             await conn.execute(text(
                 "ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS image_public_id VARCHAR(500)"))
@@ -227,7 +229,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "goal-labels-fit",
+        "build": "opt-out",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -378,6 +378,7 @@ class WhatsAppSession(Base):
     referral_code = Column(String(12), unique=True, nullable=True)  # this user's own code to share
     referred_by_code = Column(String(12), nullable=True)            # code they arrived with (pending until signup)
     certificate_pdf = Column(String(500), nullable=True)            # filename of the issued completion certificate (set once, on course completion)
+    opt_out = Column(Boolean, default=False)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):

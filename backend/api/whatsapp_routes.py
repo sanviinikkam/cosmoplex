@@ -1533,9 +1533,21 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             db.add(session)
         if name and not session.name:
             session.name = name
-        session.last_active_at = datetime.utcnow()  # for the drip engine's idle check
-
         low = (text or "").strip().lower()
+
+        # ── Opt-out ────────────────────────────────────────────────────────────
+        # Handled BEFORE last_active_at is touched, deliberately: bumping it here
+        # would reset the idle clock and make the learner freshly eligible for the
+        # next nudge — i.e. asking to stop would have SCHEDULED more messages.
+        # Suppresses proactive nudges/marketing only; they can still message us and
+        # keep learning (they initiated that contact), and *restart* re-subscribes.
+        if reply_id is None and low == "unsubscribe":
+            session.opt_out = True
+            await db.commit()
+            await send_text(frm, tr(session.language or "en", "unsub_ok"))
+            return
+
+        session.last_active_at = datetime.utcnow()  # for the drip engine's idle check
 
         # First contact via a referral link/code ("JOIN ABCD2345") — stash it; it's
         # attributed once they finish signing up (provide their name).
@@ -1553,6 +1565,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
         if reply_id is None and low in ("restart", "reset", "start over", "restart course"):
             session.language = None
             session.stage = "new"
+            session.opt_out = False        # explicit restart = re-subscribe
             session.quiz_index = 0
             session.quiz_correct = 0
             await db.commit()
