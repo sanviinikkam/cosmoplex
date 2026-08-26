@@ -3,6 +3,7 @@
 import { WhatsappLogo } from "@phosphor-icons/react";
 import { useLang } from "@/lib/use-lang";
 import { getLanding, headingSpacing } from "@/lib/landing-i18n";
+import { WHATSAPP_URL } from "@/lib/whatsapp";
 
 export function CtaSection() {
   const lang = useLang();
@@ -21,7 +22,7 @@ export function CtaSection() {
           </div>
           {/* WhatsApp-only: the web signup flow has been removed. */}
           <a
-            href="https://wa.me/917204419938?text=Hi%20I%20am%20interested%20and%20would%20like%20to%20start%20my%20AI%20learning%20journey"
+            href={WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0 inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-medium text-sm px-6 py-3.5 rounded-xl transition-colors duration-200 active:scale-[0.98]"

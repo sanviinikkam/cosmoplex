@@ -2,6 +2,7 @@
 
 import { useLang } from "@/lib/use-lang";
 import { getLanding } from "@/lib/landing-i18n";
+import { WHATSAPP_URL } from "@/lib/whatsapp";
 
 export function Footer() {
   const lang = useLang();
@@ -19,7 +20,7 @@ export function Footer() {
         {/* WhatsApp-only: web signup/login links removed with the web channel. */}
         <nav className="flex flex-wrap gap-6 text-sm text-zinc-500">
           <a
-            href="https://wa.me/917204419938?text=Hi%20I%20am%20interested%20and%20would%20like%20to%20start%20my%20AI%20learning%20journey"
+            href={WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-zinc-900 transition-colors"
