@@ -227,7 +227,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "submit-btn-i18n",
+        "build": "goal-labels-fit",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
