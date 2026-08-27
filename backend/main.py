@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -205,6 +205,23 @@ if settings.web_channel_enabled:
         await handle_learn_websocket(websocket, learner_id)
 
 
+@app.get("/cert-preview")
+async def cert_preview(key: str = "", name: str = "Rayaan Somaiah"):
+    """TEMP: render a sample certificate through the real WeasyPrint pipeline to
+    verify layout/QR before it reaches a learner. Ops-key guarded; sample data only."""
+    from api.whatsapp_routes import _ops_authorized
+    if not _ops_authorized(key):
+        return Response(status_code=403, content="forbidden")
+    import io
+    from datetime import datetime as _dt
+    from agents.certifier import _generate_certificate_html, generate_certificate_code
+    from weasyprint import HTML as _WP
+    doc = _generate_certificate_html(name, _dt(2026, 8, 27), generate_certificate_code())
+    buf = io.BytesIO()
+    _WP(string=doc).write_pdf(buf)
+    return Response(content=buf.getvalue(), media_type="application/pdf")
+
+
 @app.get("/verify/{code}")
 async def verify_certificate(code: str):
     """PUBLIC certificate verification — the QR on every certificate points here
@@ -275,7 +292,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-verify",
+        "build": "cert-verify-prev",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
