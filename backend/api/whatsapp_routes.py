@@ -18,6 +18,7 @@ import hmac
 import json
 import random
 import re
+import unicodedata
 from collections import deque
 from datetime import datetime
 
@@ -500,8 +501,23 @@ Respond ONLY with valid JSON in this exact shape — no markdown, no extra text:
         return 0, "Sorry — I couldn't evaluate that just now. Please send your answer again."
 
 
+# WhatsApp renders *bold* in a different font face. For Indic scripts that face
+# handles conjuncts and word-final viramas inconsistently across phones, so a word
+# that is fine in normal weight can render with a dotted-circle placeholder in bold
+# (observed on Kannada). English is unaffected, so bold is offered only there.
+_BOLD_RULE_EN = "\n- Use *bold* sparingly for emphasis (WhatsApp uses *single asterisks*)."
+_BOLD_RULE_INDIC = ("\n- Do NOT use *bold* or any asterisks anywhere in the message; "
+                    "write everything in plain text.")
+
+
+def _strip_bold(text: str) -> str:
+    """Remove WhatsApp bold markers, keeping the words inside them."""
+    return re.sub(r"\*(.+?)\*", r"\1", text, flags=re.S)
+
+
 async def generate_pitch(lang: str, status_label: str, name: str = "friend") -> str:
     """A short, personalized 'why this course is for you' message, in-language."""
+    bold_rule = _BOLD_RULE_EN if lang == "en" else _BOLD_RULE_INDIC
     prompt = f"""You are a warm, concise counsellor for Cosmoplex AI School.
 
 Course facts:
@@ -513,9 +529,14 @@ Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short li
 - Address them warmly by their name ({name}) at least once, naturally.
 - Give a quick, concrete taste of what they'll learn (name 2-3 real topics).
 - Give 2 specific reasons it's beneficial and relevant for someone who is {status_label}.
-- Warm and motivating, not salesy. Use *bold* sparingly (WhatsApp uses *single asterisks*).
+- Warm and motivating, not salesy.
 - Plain lines with the occasional emoji are fine. Do NOT use markdown headings or bullet lists.
-- Do NOT ask any question at the end."""
+- Do NOT ask any question at the end.
+- Keep product and technology words in the LATIN alphabet exactly as written here:
+  AI, quiz, video, project, prompt, ChatGPT, Gemini, WhatsApp, certificate. Do NOT
+  transliterate them into the local script - learners recognise these terms in
+  English, and transliterated spellings render inconsistently on phones.
+- Write plain, natural, grammatically correct sentences. No invented spellings.{bold_rule}"""
     from core.ai_health import record_ai_error, record_ai_ok
     try:
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -525,7 +546,13 @@ Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short li
             messages=[{"role": "user", "content": prompt}],
         )
         record_ai_ok("anthropic")
-        return message.content[0].text.strip()
+        out = message.content[0].text.strip()
+        # Canonical composed order for combining marks, and drop any literal
+        # dotted-circle placeholder the model may have echoed back.
+        out = unicodedata.normalize("NFC", out).replace("\u25cc", "")
+        if lang != "en":
+            out = _strip_bold(out)   # prompt forbids it; enforce it regardless
+        return out
     except Exception as e:
         record_ai_error("anthropic", e)
         print(f"⚠ WhatsApp pitch error: {e}")
