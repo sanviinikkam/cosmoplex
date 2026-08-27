@@ -57,6 +57,41 @@ async def is_eligible_for_certificate(
     return True, "All requirements met"
 
 
+# ── Certificate authenticity: unique code + QR that opens the verify page ─────
+# Codes must be unguessable (a guessable code lets anyone mint a "verified"
+# certificate), so 8 chars from a 31-char alphabet ≈ 40 bits of entropy. The
+# alphabet drops I/L/O/0/1 so a human reading the printed code cannot confuse
+# characters when typing it in.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_certificate_code() -> str:
+    """A fresh certificate id, e.g. 'CMPX-A7K2-9RTM'."""
+    import secrets
+    body = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+    return f"CMPX-{body[:4]}-{body[4:]}"
+
+
+def verify_url_for(code: str) -> str:
+    """Public URL the QR points at."""
+    return f"{settings.verify_base_url.rstrip('/')}/verify/{code}"
+
+
+def _qr_data_uri(url: str) -> str:
+    """QR as an embedded PNG data URI. Embedded (not linked) so the PDF stays
+    self-contained and WeasyPrint never makes a network request while rendering."""
+    import io, base64
+    import qrcode
+    q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                      box_size=10, border=1)
+    q.add_data(url)
+    q.make(fit=True)
+    img = q.make_image(fill_color="#111827", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 # Embedded SVG award medallion (ribboned seal with a checkmark). WeasyPrint
 # renders inline SVG, so this stays crisp at any size. No external assets.
 _SEAL_SVG = """<svg width="23mm" height="30.4mm" viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg">
@@ -71,7 +106,9 @@ _SEAL_SVG = """<svg width="23mm" height="30.4mm" viewBox="0 0 100 132" xmlns="ht
 </svg>"""
 
 
-def _generate_certificate_html(name: str, issued_at: datetime) -> str:
+def _generate_certificate_html(name: str, issued_at: datetime, code: str | None = None) -> str:
+    """Render the certificate. `code` is the public verification id — when given,
+    the certificate carries it in print plus a QR to the verify page."""
     # Escape the learner-supplied name — it is interpolated into the certificate
     # HTML and rendered by WeasyPrint, so a raw name could inject markup/CSS (or
     # a resource-fetching tag). Names are display-only here; escaping is safe.
@@ -81,6 +118,21 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
         issued = issued_at.strftime("%B %d, %Y").replace(" 0", " ")
     except Exception:
         issued = str(issued_at)
+
+    # Verification block: printed code + QR. Both are omitted rather than shown
+    # broken if anything fails, so a QR/render problem can never block issuing.
+    code_html = ""
+    qr_html = '<div class="foot-val serif">Cosmoplex</div><div class="foot-line"></div>'               '<div class="foot-label">Issuing Authority</div>'
+    if code:
+        safe_code = html.escape(code)
+        code_html = f'<div class="cert-code">{safe_code}</div>'
+        try:
+            uri = _qr_data_uri(verify_url_for(code))
+            qr_html = (f'<img class="qr" src="{uri}" alt="Verify this certificate">'
+                       '<div class="foot-label qr-label">Scan to verify</div>')
+        except Exception as e:  # QR is a nice-to-have; never fail issuing over it
+            print(f"WARN certificate QR generation failed: {type(e).__name__}: {e}")
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -142,6 +194,12 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
   .foot-label {{ font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
   .seal-wrap {{ text-align: center; }}
   .seal-wrap svg {{ display: inline-block; }}
+  .cert-code {{
+    margin-top: 2.2mm; font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+    font-size: 8.5pt; letter-spacing: 0.08em; color: #047857;
+  }}
+  .qr {{ width: 21mm; height: 21mm; display: inline-block; }}
+  .qr-label {{ margin-top: 1mm; }}
 </style>
 </head>
 <body>
@@ -173,11 +231,10 @@ def _generate_certificate_html(name: str, issued_at: datetime) -> str:
             </div>
             <div class="foot-col">
               <div class="seal-wrap">{_SEAL_SVG}</div>
+              {code_html}
             </div>
             <div class="foot-col">
-              <div class="foot-val serif">Cosmoplex</div>
-              <div class="foot-line"></div>
-              <div class="foot-label">Issuing Authority</div>
+              {qr_html}
             </div>
           </div>
         </div>

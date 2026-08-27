@@ -41,6 +41,8 @@ weasyprint==62.3
 # "AttributeError: 'super' object has no attribute 'transform'" (Kozea/WeasyPrint#2620).
 # Pin below 0.11 so the PDF renderer keeps working.
 pydyf==0.10.0
+# QR code on the certificate (points at the public verification page)
+qrcode==8.0
 
 # Document text extraction for assignment evaluation
 pypdf==5.1.0

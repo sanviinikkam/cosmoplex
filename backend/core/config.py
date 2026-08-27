@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # — used to build public links to generated files (e.g. the WhatsApp certificate
     # PDF, which Meta's servers must be able to fetch). No trailing slash.
     backend_url: str = ""
+    # Public site URL used to build certificate verification links (the QR target).
+    # Defaults to the production domain so the QR is correct without extra env setup.
+    verify_base_url: str = "https://ailiteracy.cosmoplex.ai"
     environment: str = "development"
     pass_threshold: float = 0.70
 

@@ -1217,14 +1217,23 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
     # from being spammed with the congrats line while generation is broken.
     try:
         from weasyprint import HTML as WP_HTML
-        from agents.certifier import _generate_certificate_html
+        from agents.certifier import _generate_certificate_html, generate_certificate_code
         from pathlib import Path
         import uuid as _uuid
         cert_dir = Path("certificates")
         cert_dir.mkdir(exist_ok=True)
         filename = f"cert_wa_{_uuid.uuid4().hex}.pdf"   # unguessable → not enumerable by phone
-        html_doc = _generate_certificate_html(name, datetime.utcnow())
+        # Public verification id + the exact issue date, both frozen here so the
+        # printed certificate and the /verify page can never disagree.
+        code = session.certificate_code or generate_certificate_code()
+        issued_at = session.certificate_issued_at or datetime.utcnow()
+        html_doc = _generate_certificate_html(name, issued_at, code)
         WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
+        # Persist before delivery: the QR is already printed into the PDF, so the
+        # code must resolve even if the send fails and is retried later.
+        session.certificate_code = code
+        session.certificate_issued_at = issued_at
+        await db.commit()
     except Exception as e:
         print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
         return False  # certificate_pdf stays unset → retries on the learner's next message

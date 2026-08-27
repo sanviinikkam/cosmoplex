@@ -71,6 +71,13 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_pdf VARCHAR(500)"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS opt_out BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_code VARCHAR(20)"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_issued_at TIMESTAMP"))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_wa_certificate_code "
+                "ON whatsapp_sessions (certificate_code) WHERE certificate_code IS NOT NULL"))
             # Marketing assets: three independent fields per (day, language).
             await conn.execute(text(
                 "ALTER TABLE marketing_assets ADD COLUMN IF NOT EXISTS image_public_id VARCHAR(500)"))
@@ -198,6 +205,45 @@ if settings.web_channel_enabled:
         await handle_learn_websocket(websocket, learner_id)
 
 
+@app.get("/verify/{code}")
+async def verify_certificate(code: str):
+    """PUBLIC certificate verification — the QR on every certificate points here
+    (via the site's /verify/<code> page). Intentionally unauthenticated: anyone
+    holding a certificate must be able to check it.
+
+    Returns only what a verifier needs — holder name, course, issue date. Never
+    the learner's phone number or any other PII. An unknown code returns
+    {valid: false} rather than 404 so the page can render a clear result."""
+    from sqlalchemy import select as _sel
+    from db.database import async_session_factory
+    from db.models import WhatsAppSession
+
+    code = (code or "").strip().upper()[:20]
+    if not code:
+        return {"valid": False}
+    try:
+        async with async_session_factory() as db:
+            row = (await db.execute(
+                _sel(WhatsAppSession).where(WhatsAppSession.certificate_code == code)
+            )).scalars().first()
+            if row is None or not row.certificate_code:
+                return {"valid": False}
+            return {
+                "valid": True,
+                "code": row.certificate_code,
+                "name": (row.name or "").strip() or "Learner",
+                "course": "AI Literacy Certification",
+                "issuer": "Cosmoplex",
+                # Frozen at issue so it always matches the date printed on the PDF
+                # (updated_at would drift every time the learner sends a message).
+                "issued_at": row.certificate_issued_at.isoformat() + "Z"
+                if row.certificate_issued_at else None,
+            }
+    except Exception as e:
+        print(f"WARN verify lookup failed: {type(e).__name__}: {e}")
+        return {"valid": False}
+
+
 @app.get("/health")
 async def health(db: int = 0):
     """Liveness check. By DEFAULT it does NOT touch the database — so routine
@@ -229,7 +275,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "opt-out",
+        "build": "cert-verify",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
