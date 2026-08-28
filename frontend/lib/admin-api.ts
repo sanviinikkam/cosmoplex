@@ -40,6 +40,7 @@ export type WaSessionRow = {
   id: string;
   name: string; phone: string; language: string | null;
   stage: string; lesson: number | null; lastActive: string | null;
+  campaign: string | null; sourceType: string | null;
 };
 
 export type WaDetail = {
@@ -168,6 +169,22 @@ async function adminUpload<T>(path: string, input: { file?: File; text?: string;
   return res.json() as Promise<T>;
 }
 
+export type CampaignRow = {
+  campaign: string;
+  source_type: string;
+  headline: string | null;
+  ad_id: string | null;
+  arrived: number;
+  picked_language: number;
+  signed_up: number;
+  started_lesson: number;
+  completed: number;
+  opted_out: number;
+  signup_rate: number;
+  completion_rate: number;
+};
+export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
+
 export const adminApi = {
   login: async (password: string) => {
     const res = await fetch(`${API_BASE}/admin/login`, {
@@ -191,6 +208,7 @@ export const adminApi = {
     return adminFetch<UsersPage<WebLearnerRow | WaSessionRow>>(`/admin/users?${p.toString()}`);
   },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
+  campaigns: () => adminFetch<CampaignsData>("/admin/campaigns"),
   whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
   whatsappMessages: (phone: string) => adminFetch<WaTranscript>(`/admin/whatsapp/${encodeURIComponent(phone)}/messages`),
   learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),

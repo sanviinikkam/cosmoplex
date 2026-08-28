@@ -7,6 +7,7 @@ import {
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
+  type CampaignRow,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -540,6 +541,104 @@ function SystemStatus() {
 // ── Full user directory (every user, searchable, paginated) ────────────────────
 const PAGE_SIZE = 50;
 
+
+// Where learners actually come from. Deliberately a funnel, not a click count:
+// a campaign that sends 500 people who never reply is worth less than one that
+// sends 50 who finish, and only the funnel makes that visible.
+function CampaignsPanel() {
+  const [rows, setRows] = useState<CampaignRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const res = await adminApi.campaigns();
+      setRows(res.campaigns);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load campaigns");
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const badge = (t: string) =>
+    t === "ad" ? "bg-blue-50 text-blue-700 border-blue-200"
+    : t === "link" ? "bg-violet-50 text-violet-700 border-violet-200"
+    : t === "post" ? "bg-amber-50 text-amber-700 border-amber-200"
+    : "bg-zinc-100 text-zinc-600 border-zinc-200";
+
+  return (
+    <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Where learners came from, and how far they got.
+          </p>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-50 inline-flex items-center gap-1.5">
+          {loading ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Refresh
+        </button>
+      </div>
+
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
+
+      {loading && rows.length === 0 ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-zinc-500 py-4">
+          No learners yet. Tag your ad links as
+          <code className="mx-1 px-1.5 py-0.5 bg-zinc-100 rounded text-[11px]">/start?c=your_campaign</code>
+          — Click-to-WhatsApp ads are tracked automatically.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-zinc-400 border-b border-zinc-200">
+                <th className="py-2 pr-3 font-medium">Campaign</th>
+                <th className="py-2 px-3 font-medium">Source</th>
+                <th className="py-2 px-3 font-medium text-right">Arrived</th>
+                <th className="py-2 px-3 font-medium text-right">Signed up</th>
+                <th className="py-2 px-3 font-medium text-right">Started</th>
+                <th className="py-2 px-3 font-medium text-right">Completed</th>
+                <th className="py-2 px-3 font-medium text-right">Opted out</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.campaign} className="border-b border-zinc-100 last:border-0">
+                  <td className="py-2.5 pr-3">
+                    <div className="font-medium text-zinc-900">{r.campaign}</div>
+                    {r.headline && <div className="text-xs text-zinc-500 truncate max-w-[240px]">{r.headline}</div>}
+                    {r.ad_id && <div className="text-[11px] text-zinc-400 font-mono">ad {r.ad_id}</div>}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(r.source_type)}`}>
+                      {r.source_type}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-medium text-zinc-900">{r.arrived}</td>
+                  <td className="py-2.5 px-3 text-right text-zinc-700">
+                    {r.signed_up}<span className="text-zinc-400 text-xs ml-1">{r.signup_rate}%</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-zinc-700">{r.started_lesson}</td>
+                  <td className="py-2.5 px-3 text-right">
+                    <span className="font-medium text-emerald-700">{r.completed}</span>
+                    <span className="text-zinc-400 text-xs ml-1">{r.completion_rate}%</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-zinc-500">{r.opted_out || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function UserDirectory() {
   const [channel, setChannel] = useState<"web" | "whatsapp">("web");
   const [q, setQ] = useState("");
@@ -640,6 +739,7 @@ function UserDirectory() {
                 <tr>
                   <th className="text-left font-medium px-3 py-2">User</th>
                   <th className="text-left font-medium px-3 py-2">Stage</th>
+                  <th className="text-left font-medium px-3 py-2">Campaign</th>
                   <th className="text-center font-medium px-3 py-2">Lesson</th>
                   <th className="text-left font-medium px-3 py-2">Lang</th>
                   <th className="text-right font-medium px-3 py-2">Active</th>
@@ -651,6 +751,7 @@ function UserDirectory() {
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                     <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
+                    <td className="px-3 py-2 text-xs text-zinc-500">{r.campaign ?? "—"}</td>
                     <td className="px-3 py-2 text-center text-zinc-600">{r.lesson != null ? r.lesson + 1 : "—"}</td>
                     <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>
                     <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.lastActive)}</td>
@@ -840,6 +941,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       {tab === "analytics" && (<>
         <SystemCheckPanel />
         <SystemStatus />
+        <CampaignsPanel />
         <UserDirectory />
         <ReferralsPanel />
       </>)}
