@@ -1600,7 +1600,11 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
         session.source_headline = (referral.get("headline") or "")[:255] or None
         # Ads Manager keys off the ad id; use it as the campaign key unless a tag
         # was also supplied (a tagged link is more specific than the ad id).
-        session.campaign = (_extract_campaign_tag(text) or session.ad_id or "meta_ad")[:80]
+        # Fall back to the source type, not a hardcoded "meta_ad" — an organic Page
+        # post sends source_type "post", and mislabelling it as an ad would send us
+        # looking for a campaign in Ads Manager that does not exist.
+        session.campaign = (_extract_campaign_tag(text) or session.ad_id
+                            or f"meta_{session.source_type}")[:80]
         return
     tag = _extract_campaign_tag(text)
     if tag:
