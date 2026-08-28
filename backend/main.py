@@ -297,7 +297,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-logo-prev",
+        "build": "cert-fulllogo-prev",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

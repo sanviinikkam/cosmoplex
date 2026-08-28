@@ -161,16 +161,14 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
     # typographic wordmark. Either way it sits on the navy band, which is what
     # makes the light-on-dark brand mark legible on a white certificate.
     logo = _logo_data_uri()
-    wordmark = ('<div class="wordmark">COSMOPLE<span class="wm-accent">X</span></div>'
-                '<div class="tagline">Applied AI for the next 4 billion users</div>')
     if logo:
-        brand_html = (
-            '<div class="lockup">'
-            f'<div class="lk-mark"><img class="logo" src="{logo}" alt=""></div>'
-            f'<div class="lk-text">{wordmark}</div>'
-            '</div>')
+        # The artwork already contains the symbol, wordmark and tagline, so it is
+        # the whole header lockup. Sized by WIDTH: the tagline inside the artwork
+        # only reads at roughly 95mm across.
+        brand_html = f'<img class="logo" src="{logo}" alt="Cosmoplex">'
     else:
-        brand_html = wordmark
+        brand_html = ('<div class="wordmark">COSMOPLE<span class="wm-accent">X</span></div>'
+                      '<div class="tagline">Applied AI for the next 4 billion users</div>')
 
     # Verification block: printed code + QR. Both are omitted rather than shown
     # broken if anything fails, so a QR/render problem can never block issuing.
@@ -213,14 +211,10 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
 
   /* The logo is light-on-dark, so it gets a navy field to sit on. */
   .band {{
-    background: {LOGO_FIELD}; padding: 6mm 10mm 5.5mm; text-align: center;
+    background: {LOGO_FIELD}; padding: 4.5mm 10mm 4mm; text-align: center;
     border-bottom: 0.7mm solid {GOLD};
   }}
-  /* Symbol and wordmark side by side, the pair centred as one unit. */
-  .lockup {{ display: table; margin: 0 auto; }}
-  .lk-mark {{ display: table-cell; vertical-align: middle; padding-right: 6mm; }}
-  .lk-text {{ display: table-cell; vertical-align: middle; text-align: left; }}
-  .logo {{ height: 24mm; }}
+  .logo {{ width: 95mm; }}
   .wordmark {{
     font-size: 19pt; font-weight: 700; letter-spacing: 0.36em;
     color: #ffffff; padding-left: 0.36em;
@@ -231,7 +225,7 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
     text-transform: uppercase; color: #C7D2E4;
   }}
 
-  .body {{ padding: 11mm 24mm 0; text-align: center; }}
+  .body {{ padding: 8mm 24mm 0; text-align: center; }}
 
   .eyebrow {{
     font-size: 10pt; letter-spacing: 0.34em; text-transform: uppercase; color: {MUTED};
