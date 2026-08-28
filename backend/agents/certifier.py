@@ -132,7 +132,7 @@ def _logo_data_uri() -> str | None:
 
 # Embedded SVG award medallion (ribboned seal with a checkmark). WeasyPrint
 # renders inline SVG, so this stays crisp at any size. No external assets.
-_SEAL_SVG = """<svg width="23mm" height="30.4mm" viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg">
+_SEAL_SVG = """<svg width="19.5mm" height="25.8mm" viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg">
   <path d="M41,70 L31,126 L40,118 L49,126 L49,76 Z" fill="#0B1B33"/>
   <path d="M59,70 L69,126 L60,118 L51,126 L51,76 Z" fill="#16305A"/>
   <circle cx="50" cy="46" r="44" fill="#0B1B33"/>
@@ -225,27 +225,27 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
     text-transform: uppercase; color: #C7D2E4;
   }}
 
-  .body {{ padding: 8mm 24mm 0; text-align: center; }}
+  .body {{ padding: 5mm 24mm 0; text-align: center; }}
 
   .eyebrow {{
     font-size: 10pt; letter-spacing: 0.34em; text-transform: uppercase; color: {MUTED};
   }}
-  .heading {{ margin-top: 3mm; font-size: 25pt; font-weight: 700; color: {NAVY}; }}
-  .heading-rule {{ width: 24mm; height: 1.6pt; background: {GOLD}; margin: 4mm auto 0; }}
+  .heading {{ margin-top: 2.5mm; font-size: 23pt; font-weight: 700; color: {NAVY}; }}
+  .heading-rule {{ width: 24mm; height: 1.6pt; background: {GOLD}; margin: 3mm auto 0; }}
 
-  .present {{ margin-top: 8mm; font-size: 11.5pt; color: {MUTED}; }}
-  .name {{ margin-top: 2.5mm; font-size: 36pt; font-weight: 700; color: {NAVY}; line-height: 1.1; }}
-  .name-rule {{ width: 95mm; height: 0.5pt; background: #D5DCE6; margin: 5mm auto 0; }}
+  .present {{ margin-top: 5.5mm; font-size: 11pt; color: {MUTED}; }}
+  .name {{ margin-top: 2mm; font-size: 31pt; font-weight: 700; color: {NAVY}; line-height: 1.1; }}
+  .name-rule {{ width: 90mm; height: 0.5pt; background: #D5DCE6; margin: 4mm auto 0; }}
 
   .desc {{
-    margin: 6mm auto 0; max-width: 198mm; font-size: 11pt;
-    line-height: 1.75; color: #3F4756;
+    margin: 4.5mm auto 0; max-width: 190mm; font-size: 10pt;
+    line-height: 1.6; color: #3F4756;
   }}
   .desc strong {{ color: {NAVY_SOFT}; }}
 
   /* Footer pinned to the frame (not the padded body) so the three columns are
      centred on the page: date | seal + id | QR. */
-  .footer {{ position: absolute; left: 24mm; right: 24mm; bottom: 11mm; }}
+  .footer {{ position: absolute; left: 24mm; right: 24mm; bottom: 9mm; }}
   .foot-table {{ display: table; width: 100%; table-layout: fixed; }}
   .foot-col {{ display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; }}
   .foot-val {{ font-size: 12pt; color: {NAVY}; font-weight: 700; }}
@@ -257,7 +257,7 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
     margin-top: 2.2mm; font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
     font-size: 8.5pt; letter-spacing: 0.08em; color: {NAVY};
   }}
-  .qr {{ width: 21mm; height: 21mm; display: inline-block; }}
+  .qr {{ width: 19mm; height: 19mm; display: inline-block; }}
   .qr-label {{ margin-top: 1mm; }}
 </style>
 </head>
