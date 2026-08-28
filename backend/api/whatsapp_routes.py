@@ -1254,12 +1254,16 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
         # printed certificate and the /verify page can never disagree.
         code = session.certificate_code or generate_certificate_code()
         issued_at = session.certificate_issued_at or datetime.utcnow()
-        html_doc = _generate_certificate_html(name, issued_at, code)
+        # Freeze the printed name too, so regenerating this certificate later
+        # reproduces it byte-for-byte even if the learner changes their name.
+        cert_name = session.certificate_name or name
+        html_doc = _generate_certificate_html(cert_name, issued_at, code)
         WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
         # Persist before delivery: the QR is already printed into the PDF, so the
         # code must resolve even if the send fails and is retried later.
         session.certificate_code = code
         session.certificate_issued_at = issued_at
+        session.certificate_name = cert_name
         await db.commit()
     except Exception as e:
         print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")

@@ -76,6 +76,8 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_issued_at TIMESTAMP"))
             await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_name VARCHAR(255)"))
+            await conn.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_wa_certificate_code "
                 "ON whatsapp_sessions (certificate_code) WHERE certificate_code IS NOT NULL"))
             # Marketing assets: three independent fields per (day, language).
@@ -231,7 +233,9 @@ async def verify_certificate(code: str):
             return {
                 "valid": True,
                 "code": row.certificate_code,
-                "name": (row.name or "").strip() or "Learner",
+                # The name AS PRINTED on the certificate. Using the live session name would
+                # let a later name change make a genuine certificate disagree with its page.
+                "name": (row.certificate_name or row.name or "").strip() or "Learner",
                 "course": "AI Literacy Certification",
                 "issuer": "Cosmoplex",
                 # Frozen at issue so it always matches the date printed on the PDF
@@ -275,7 +279,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "pitch-script-fix",
+        "build": "cert-frozen-name",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

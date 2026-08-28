@@ -379,6 +379,7 @@ class WhatsAppSession(Base):
     referred_by_code = Column(String(12), nullable=True)            # code they arrived with (pending until signup)
     certificate_pdf = Column(String(500), nullable=True)            # filename of the issued completion certificate (set once, on course completion)
     certificate_code = Column(String(20), unique=True, nullable=True)  # public verification id, e.g. CMPX-A7K2-9RTM
+    certificate_name = Column(String(255), nullable=True)           # name AS PRINTED, frozen at issue so a later name change cannot alter an issued certificate
     certificate_issued_at = Column(DateTime, nullable=True)         # frozen at issue — updated_at drifts on every message, so it cannot serve as the issue date
     opt_out = Column(Boolean, default=False)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
