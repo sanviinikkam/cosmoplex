@@ -207,24 +207,6 @@ if settings.web_channel_enabled:
         await handle_learn_websocket(websocket, learner_id)
 
 
-@app.get("/cert-preview")
-async def cert_preview(key: str = "", name: str = "Rayaan Somaiah"):
-    """TEMP: render a sample certificate through the real WeasyPrint pipeline so
-    layout can be checked before it reaches a learner. Ops-key guarded."""
-    from fastapi import Response as _Resp
-    from api.whatsapp_routes import _ops_authorized
-    if not _ops_authorized(key):
-        return _Resp(status_code=403, content="forbidden")
-    import io
-    from datetime import datetime as _dt
-    from agents.certifier import _generate_certificate_html
-    from weasyprint import HTML as _WP
-    doc = _generate_certificate_html(name, _dt(2026, 8, 27), "CMPX-3BEH-VZJG")
-    buf = io.BytesIO()
-    _WP(string=doc).write_pdf(buf)
-    return _Resp(content=buf.getvalue(), media_type="application/pdf")
-
-
 @app.get("/verify/{code}")
 async def verify_certificate(code: str):
     """PUBLIC certificate verification — the QR on every certificate points here
@@ -297,7 +279,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-fit-prev",
+        "build": "cert-logo",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
