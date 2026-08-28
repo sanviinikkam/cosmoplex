@@ -815,7 +815,10 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                         continue
                     reply_id, text = _extract(msg)
                     if reply_id or text:
-                        background_tasks.add_task(_handle_message, frm, reply_id, text, name)
+                        # Meta attaches `referral` only to the first message after an
+                        # ad click; it is dropped on later messages, so capture it here.
+                        background_tasks.add_task(_handle_message, frm, reply_id, text,
+                                                  name, msg.get("referral"))
     except Exception as e:
         print(f"⚠ WhatsApp webhook error: {e}")
     return {"status": "ok"}
@@ -1562,7 +1565,54 @@ async def _send_referral_info(db, session, frm: str) -> None:
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
-async def _handle_message(frm: str, reply_id: str | None, text: str | None, name: str | None) -> None:
+# ── Acquisition attribution ──────────────────────────────────────────────────
+# Two sources, because Facebook traffic arrives two different ways:
+#   1. Click-to-WhatsApp ads: Meta attaches a `referral` object to the FIRST
+#      inbound message (ad id, headline, ctwa_clid). Authoritative, automatic.
+#   2. Link ads / bio links / QR codes: no referral object exists, so the entry
+#      link carries a tag — /start?c=<tag> puts "[c:<tag>]" in the prefilled text.
+# Attribution is FIRST TOUCH: never overwritten, so a later message cannot
+# reassign a learner to a different campaign.
+_CAMPAIGN_TAG_RE = re.compile(r"\[c:([A-Za-z0-9_.\-]{1,60})\]")
+
+
+def _extract_campaign_tag(text: str | None) -> str | None:
+    """Pull the '[c:tag]' marker out of a prefilled first message."""
+    m = _CAMPAIGN_TAG_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def _strip_campaign_tag(text: str | None) -> str | None:
+    """Remove the marker so it never reaches the AI or the transcript as content."""
+    if not text:
+        return text
+    return _CAMPAIGN_TAG_RE.sub("", text).strip()
+
+
+def _apply_attribution(session, referral: dict | None, text: str | None) -> None:
+    """Record where this learner came from, once, on first contact."""
+    if session.source_type:          # already attributed — first touch wins
+        return
+    if referral:
+        session.source_type = "ad" if referral.get("source_type") == "ad" else "post"
+        session.ad_id = (referral.get("source_id") or "")[:64] or None
+        session.ctwa_clid = (referral.get("ctwa_clid") or "")[:256] or None
+        session.source_headline = (referral.get("headline") or "")[:255] or None
+        # Ads Manager keys off the ad id; use it as the campaign key unless a tag
+        # was also supplied (a tagged link is more specific than the ad id).
+        session.campaign = (_extract_campaign_tag(text) or session.ad_id or "meta_ad")[:80]
+        return
+    tag = _extract_campaign_tag(text)
+    if tag:
+        session.source_type = "link"
+        session.campaign = tag[:80]
+        return
+    session.source_type = "organic"
+    session.campaign = "organic"
+
+
+async def _handle_message(frm: str, reply_id: str | None, text: str | None,
+                          name: str | None, referral: dict | None = None) -> None:
     # Log the inbound message to the transcript (text, or the tapped button id).
     await _log_wa_message(frm, "user", "button" if reply_id else "text",
                           text if text else f"[tap:{reply_id}]")
@@ -1573,6 +1623,14 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None, name
             db.add(session)
         if name and not session.name:
             session.name = name
+
+        # Where did this learner come from? Recorded before any branch returns,
+        # so attribution survives even if the message is a keyword like "unsubscribe".
+        _apply_attribution(session, referral, text)
+        # The campaign marker is plumbing, not something the learner "said" — drop
+        # it so it never reaches the Teacher agent or the stored transcript.
+        text = _strip_campaign_tag(text)
+
         low = (text or "").strip().lower()
 
         # ── Opt-out ────────────────────────────────────────────────────────────

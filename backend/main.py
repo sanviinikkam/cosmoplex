@@ -77,6 +77,13 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_issued_at TIMESTAMP"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_name VARCHAR(255)"))
+            for _col, _type in (("source_type","VARCHAR(20)"), ("campaign","VARCHAR(80)"),
+                                ("ad_id","VARCHAR(64)"), ("ctwa_clid","VARCHAR(256)"),
+                                ("source_headline","VARCHAR(255)"), ("first_seen_at","TIMESTAMP")):
+                await conn.execute(text(
+                    f"ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS {_col} {_type}"))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_wa_campaign ON whatsapp_sessions (campaign)"))
             await conn.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_wa_certificate_code "
                 "ON whatsapp_sessions (certificate_code) WHERE certificate_code IS NOT NULL"))
@@ -279,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cert-logo",
+        "build": "attribution",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

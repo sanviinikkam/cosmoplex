@@ -418,6 +418,56 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
             "overall": overall, "checks": checks}
 
 
+@router.get("/campaigns")
+async def campaign_report(
+    _: bool = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Acquisition funnel per campaign.
+
+    Counts alone can't tell you which campaign is worth more money — a campaign
+    that sends 500 clicks who never answer is worse than one that sends 50 who
+    finish. So each row carries the whole funnel, not just arrivals.
+    """
+    rows = (await db.execute(select(WhatsAppSession))).scalars().all()
+    buckets: dict[str, dict] = {}
+    for r in rows:
+        key = r.campaign or "organic"
+        b = buckets.setdefault(key, {
+            "campaign": key,
+            "source_type": r.source_type or "organic",
+            "headline": r.source_headline,
+            "ad_id": r.ad_id,
+            "arrived": 0, "picked_language": 0, "signed_up": 0,
+            "started_lesson": 0, "completed": 0, "opted_out": 0,
+        })
+        b["arrived"] += 1
+        if r.language:
+            b["picked_language"] += 1
+        if r.name:
+            b["signed_up"] += 1
+        if (r.lesson_index or 0) > 0 or r.stage in ("lesson", "quiz", "quiz_failed",
+                                                    "assignment", "between_lessons",
+                                                    "clarify", "done"):
+            b["started_lesson"] += 1
+        if r.stage == "done":
+            b["completed"] += 1
+        if getattr(r, "opt_out", False):
+            b["opted_out"] += 1
+        # Keep the most descriptive label seen for this campaign.
+        if r.source_headline and not b["headline"]:
+            b["headline"] = r.source_headline
+        if r.ad_id and not b["ad_id"]:
+            b["ad_id"] = r.ad_id
+
+    out = sorted(buckets.values(), key=lambda b: b["arrived"], reverse=True)
+    for b in out:
+        a = b["arrived"] or 1
+        b["signup_rate"] = round(100 * b["signed_up"] / a)
+        b["completion_rate"] = round(100 * b["completed"] / a)
+    return {"campaigns": out, "total_users": len(rows)}
+
+
 @router.get("/users")
 async def all_users(
     channel: str = "web",
@@ -452,6 +502,7 @@ async def all_users(
             "id": r.phone,
             "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
             "stage": r.stage, "lesson": r.lesson_index,
+            "campaign": r.campaign, "sourceType": r.source_type,
             "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
             "joined": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
         } for r in rows]

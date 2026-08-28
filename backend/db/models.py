@@ -381,6 +381,13 @@ class WhatsAppSession(Base):
     certificate_code = Column(String(20), unique=True, nullable=True)  # public verification id, e.g. CMPX-A7K2-9RTM
     certificate_name = Column(String(255), nullable=True)           # name AS PRINTED, frozen at issue so a later name change cannot alter an issued certificate
     certificate_issued_at = Column(DateTime, nullable=True)         # frozen at issue — updated_at drifts on every message, so it cannot serve as the issue date
+    # ── Acquisition attribution (first touch, never overwritten) ─────────────
+    source_type = Column(String(20), nullable=True)    # ad | link | organic
+    campaign = Column(String(80), nullable=True)       # campaign tag: ?c= on /start, or the ad id
+    ad_id = Column(String(64), nullable=True)          # Meta ad id from the Click-to-WhatsApp referral
+    ctwa_clid = Column(String(256), nullable=True)     # Meta click id — needed to report conversions back to Ads Manager
+    source_headline = Column(String(255), nullable=True)  # ad headline, so a campaign is recognisable without Ads Manager
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
     opt_out = Column(Boolean, default=False)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
