@@ -37,3 +37,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Brand source artwork (the cropped, print-sized derivative is committed instead)
+backend/assets/logo.jpeg

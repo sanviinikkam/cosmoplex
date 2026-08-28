@@ -95,6 +95,7 @@ def _qr_data_uri(url: str) -> str:
 # ── Brand ────────────────────────────────────────────────────────────────────
 # Palette taken from the Cosmoplex logo: deep navy field, gold accent.
 NAVY = "#0B1B33"
+LOGO_FIELD = "#010D25"   # sampled from the logo artwork; the band must match it exactly
 NAVY_SOFT = "#16305A"
 GOLD = "#F5A524"
 GOLD_SOFT = "#FDE9C4"
@@ -105,7 +106,8 @@ MUTED = "#6B7280"
 # and it is embedded automatically — no code change. Until then the certificate
 # falls back to the typographic wordmark, so issuing never depends on the asset.
 _LOGO_CANDIDATES = ("cosmoplex-logo.svg", "cosmoplex-logo.png",
-                    "cosmoplex-logo.jpg", "cosmoplex-logo.jpeg")
+                    "cosmoplex-logo.jpg", "cosmoplex-logo.jpeg",
+                    "logo.svg", "logo.png", "logo.jpg", "logo.jpeg")
 
 
 def _logo_data_uri() -> str | None:
@@ -159,11 +161,16 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
     # typographic wordmark. Either way it sits on the navy band, which is what
     # makes the light-on-dark brand mark legible on a white certificate.
     logo = _logo_data_uri()
+    wordmark = ('<div class="wordmark">COSMOPLE<span class="wm-accent">X</span></div>'
+                '<div class="tagline">Applied AI for the next 4 billion users</div>')
     if logo:
-        brand_html = f'<img class="logo" src="{logo}" alt="Cosmoplex">'
+        brand_html = (
+            '<div class="lockup">'
+            f'<div class="lk-mark"><img class="logo" src="{logo}" alt=""></div>'
+            f'<div class="lk-text">{wordmark}</div>'
+            '</div>')
     else:
-        brand_html = ('<div class="wordmark">COSMOPLE<span class="wm-accent">X</span></div>'
-                      '<div class="tagline">Applied AI for the next 4 billion users</div>')
+        brand_html = wordmark
 
     # Verification block: printed code + QR. Both are omitted rather than shown
     # broken if anything fails, so a QR/render problem can never block issuing.
@@ -206,17 +213,21 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
 
   /* The logo is light-on-dark, so it gets a navy field to sit on. */
   .band {{
-    background: {NAVY}; padding: 7mm 10mm 6.5mm; text-align: center;
+    background: {LOGO_FIELD}; padding: 6mm 10mm 5.5mm; text-align: center;
     border-bottom: 0.7mm solid {GOLD};
   }}
-  .logo {{ height: 19mm; }}
+  /* Symbol and wordmark side by side, the pair centred as one unit. */
+  .lockup {{ display: table; margin: 0 auto; }}
+  .lk-mark {{ display: table-cell; vertical-align: middle; padding-right: 6mm; }}
+  .lk-text {{ display: table-cell; vertical-align: middle; text-align: left; }}
+  .logo {{ height: 24mm; }}
   .wordmark {{
-    font-size: 17pt; font-weight: 700; letter-spacing: 0.4em;
-    color: #ffffff; padding-left: 0.4em;
+    font-size: 19pt; font-weight: 700; letter-spacing: 0.36em;
+    color: #ffffff; padding-left: 0.36em;
   }}
   .wm-accent {{ color: {GOLD}; }}
   .tagline {{
-    margin-top: 2.6mm; font-size: 7.5pt; letter-spacing: 0.22em;
+    margin-top: 2.4mm; font-size: 7.5pt; letter-spacing: 0.2em;
     text-transform: uppercase; color: #C7D2E4;
   }}
 
