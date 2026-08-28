@@ -92,17 +92,53 @@ def _qr_data_uri(url: str) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# ── Brand ────────────────────────────────────────────────────────────────────
+# Palette taken from the Cosmoplex logo: deep navy field, gold accent.
+NAVY = "#0B1B33"
+NAVY_SOFT = "#16305A"
+GOLD = "#F5A524"
+GOLD_SOFT = "#FDE9C4"
+INK = "#111827"
+MUTED = "#6B7280"
+
+# Optional official logo. Drop the file at backend/assets/cosmoplex-logo.(svg|png)
+# and it is embedded automatically — no code change. Until then the certificate
+# falls back to the typographic wordmark, so issuing never depends on the asset.
+_LOGO_CANDIDATES = ("cosmoplex-logo.svg", "cosmoplex-logo.png",
+                    "cosmoplex-logo.jpg", "cosmoplex-logo.jpeg")
+
+
+def _logo_data_uri() -> str | None:
+    """The brand logo as a data URI, or None if no logo file is present."""
+    import base64
+    from pathlib import Path
+    base = Path(__file__).resolve().parent.parent / "assets"
+    for fname in _LOGO_CANDIDATES:
+        f = base / fname
+        if not f.is_file():
+            continue
+        try:
+            raw = f.read_bytes()
+        except Exception as e:
+            print(f"WARN could not read logo {f}: {type(e).__name__}: {e}")
+            continue
+        mime = {"svg": "image/svg+xml", "png": "image/png",
+                "jpg": "image/jpeg", "jpeg": "image/jpeg"}[f.suffix.lstrip(".").lower()]
+        return f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
+    return None
+
+
 # Embedded SVG award medallion (ribboned seal with a checkmark). WeasyPrint
 # renders inline SVG, so this stays crisp at any size. No external assets.
 _SEAL_SVG = """<svg width="23mm" height="30.4mm" viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg">
-  <path d="M41,70 L31,126 L40,118 L49,126 L49,76 Z" fill="#065f46"/>
-  <path d="M59,70 L69,126 L60,118 L51,126 L51,76 Z" fill="#047857"/>
-  <circle cx="50" cy="46" r="44" fill="#059669"/>
-  <circle cx="50" cy="46" r="39.5" fill="none" stroke="#ecfdf5" stroke-width="1.4" stroke-dasharray="1.4 3.1"/>
-  <circle cx="50" cy="46" r="35" fill="#ecfdf5"/>
-  <circle cx="50" cy="46" r="30" fill="none" stroke="#059669" stroke-width="1.2"/>
-  <path d="M39,45 L46,53 L61,34" fill="none" stroke="#059669" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="50" y="68" text-anchor="middle" font-family="'Noto Sans','DejaVu Sans',sans-serif" font-size="8.5" font-weight="700" letter-spacing="1.4" fill="#047857">VERIFIED</text>
+  <path d="M41,70 L31,126 L40,118 L49,126 L49,76 Z" fill="#0B1B33"/>
+  <path d="M59,70 L69,126 L60,118 L51,126 L51,76 Z" fill="#16305A"/>
+  <circle cx="50" cy="46" r="44" fill="#0B1B33"/>
+  <circle cx="50" cy="46" r="39.5" fill="none" stroke="#F5A524" stroke-width="1.4" stroke-dasharray="1.4 3.1"/>
+  <circle cx="50" cy="46" r="35" fill="#FFFFFF"/>
+  <circle cx="50" cy="46" r="30" fill="none" stroke="#F5A524" stroke-width="1.2"/>
+  <path d="M39,45 L46,53 L61,34" fill="none" stroke="#0B1B33" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="50" y="68" text-anchor="middle" font-family="'Noto Sans','DejaVu Sans',sans-serif" font-size="8.5" font-weight="700" letter-spacing="1.4" fill="#0B1B33">VERIFIED</text>
 </svg>"""
 
 
@@ -118,6 +154,16 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
         issued = issued_at.strftime("%B %d, %Y").replace(" 0", " ")
     except Exception:
         issued = str(issued_at)
+
+    # Header lockup: the official logo when the asset is present, otherwise the
+    # typographic wordmark. Either way it sits on the navy band, which is what
+    # makes the light-on-dark brand mark legible on a white certificate.
+    logo = _logo_data_uri()
+    if logo:
+        brand_html = f'<img class="logo" src="{logo}" alt="Cosmoplex">'
+    else:
+        brand_html = ('<div class="wordmark">COSMOPLE<span class="wm-accent">X</span></div>'
+                      '<div class="tagline">Applied AI for the next 4 billion users</div>')
 
     # Verification block: printed code + QR. Both are omitted rather than shown
     # broken if anything fails, so a QR/render problem can never block issuing.
@@ -145,58 +191,66 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
   html, body {{ width: 297mm; height: 210mm; }}
   body {{
     font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif;
-    color: #18181b; background: #ffffff;
+    color: {INK}; background: #ffffff;
   }}
   .serif {{ font-family: 'Noto Serif', 'DejaVu Serif', Georgia, 'Times New Roman', serif; }}
 
-  .page {{ width: 297mm; height: 210mm; padding: 10mm; }}
-  .frame {{ width: 100%; height: 100%; border: 1.4mm solid #059669; padding: 2.6mm; }}
-  .inner {{
+  .page {{ width: 297mm; height: 210mm; padding: 9mm; }}
+  /* Navy rule outside, gold hairline inside — the brand's two colours framing
+     the document without tinting the body, which must stay printable. */
+  .frame {{
     position: relative; width: 100%; height: 100%;
-    border: 0.3mm solid #a7f3d0; padding: 15mm 24mm;
-    text-align: center;
+    border: 1.3mm solid {NAVY}; padding: 2.2mm; background: #ffffff;
+  }}
+  .inner {{ position: relative; width: 100%; height: 100%; border: 0.35mm solid {GOLD}; }}
+
+  /* The logo is light-on-dark, so it gets a navy field to sit on. */
+  .band {{
+    background: {NAVY}; padding: 7mm 10mm 6.5mm; text-align: center;
+    border-bottom: 0.7mm solid {GOLD};
+  }}
+  .logo {{ height: 19mm; }}
+  .wordmark {{
+    font-size: 17pt; font-weight: 700; letter-spacing: 0.4em;
+    color: #ffffff; padding-left: 0.4em;
+  }}
+  .wm-accent {{ color: {GOLD}; }}
+  .tagline {{
+    margin-top: 2.6mm; font-size: 7.5pt; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #C7D2E4;
   }}
 
-  .brand {{
-    font-size: 15pt; font-weight: 700; letter-spacing: 0.42em;
-    color: #059669; text-transform: uppercase; padding-left: 0.42em;
-  }}
-  .brand-rule {{ width: 26mm; height: 2.2pt; background: #059669; margin: 3.5mm auto 0; }}
+  .body {{ padding: 11mm 24mm 0; text-align: center; }}
 
   .eyebrow {{
-    margin-top: 11mm; font-size: 10.5pt; letter-spacing: 0.34em;
-    text-transform: uppercase; color: #71717a;
+    font-size: 10pt; letter-spacing: 0.34em; text-transform: uppercase; color: {MUTED};
   }}
-  .heading {{
-    margin-top: 3.5mm; font-size: 26pt; font-weight: 700; color: #111827;
-  }}
+  .heading {{ margin-top: 3mm; font-size: 25pt; font-weight: 700; color: {NAVY}; }}
+  .heading-rule {{ width: 24mm; height: 1.6pt; background: {GOLD}; margin: 4mm auto 0; }}
 
-  .present {{ margin-top: 10mm; font-size: 11.5pt; color: #6b7280; }}
-  .name {{
-    margin-top: 3mm; font-size: 38pt; font-weight: 700; color: #111827; line-height: 1.1;
-  }}
-  .name-rule {{ width: 95mm; height: 0.5pt; background: #d1d5db; margin: 6mm auto 0; }}
+  .present {{ margin-top: 8mm; font-size: 11.5pt; color: {MUTED}; }}
+  .name {{ margin-top: 2.5mm; font-size: 36pt; font-weight: 700; color: {NAVY}; line-height: 1.1; }}
+  .name-rule {{ width: 95mm; height: 0.5pt; background: #D5DCE6; margin: 5mm auto 0; }}
 
   .desc {{
-    margin: 7mm auto 0; max-width: 200mm; font-size: 11.5pt;
-    line-height: 1.75; color: #3f3f46;
+    margin: 6mm auto 0; max-width: 198mm; font-size: 11pt;
+    line-height: 1.75; color: #3F4756;
   }}
-  .desc strong {{ color: #059669; }}
+  .desc strong {{ color: {NAVY_SOFT}; }}
 
-  /* Footer pinned to the bottom of the inner frame. Outer block spans the full
-     content width (left+right both set); inner table (width:100%) lays out the
-     three evenly-centred columns so the seal sits dead-centre on the page. */
-  .footer {{ position: absolute; left: 24mm; right: 24mm; bottom: 12mm; }}
+  /* Footer pinned to the frame (not the padded body) so the three columns are
+     centred on the page: date | seal + id | QR. */
+  .footer {{ position: absolute; left: 24mm; right: 24mm; bottom: 11mm; }}
   .foot-table {{ display: table; width: 100%; table-layout: fixed; }}
   .foot-col {{ display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; }}
-  .foot-val {{ font-size: 12pt; color: #18181b; font-weight: 700; }}
-  .foot-line {{ border-top: 0.5pt solid #9ca3af; margin: 1.5mm 10mm 0; }}
-  .foot-label {{ font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: #9ca3af; margin-top: 1.5mm; }}
+  .foot-val {{ font-size: 12pt; color: {NAVY}; font-weight: 700; }}
+  .foot-line {{ border-top: 0.5pt solid #9AA4B4; margin: 1.5mm 10mm 0; }}
+  .foot-label {{ font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: #98A2B3; margin-top: 1.5mm; }}
   .seal-wrap {{ text-align: center; }}
   .seal-wrap svg {{ display: inline-block; }}
   .cert-code {{
     margin-top: 2.2mm; font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
-    font-size: 8.5pt; letter-spacing: 0.08em; color: #047857;
+    font-size: 8.5pt; letter-spacing: 0.08em; color: {NAVY};
   }}
   .qr {{ width: 21mm; height: 21mm; display: inline-block; }}
   .qr-label {{ margin-top: 1mm; }}
@@ -206,20 +260,24 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
   <div class="page">
     <div class="frame">
       <div class="inner">
-        <div class="brand">Cosmoplex</div>
-        <div class="brand-rule"></div>
+        <div class="band">
+          {brand_html}
+        </div>
 
-        <div class="eyebrow">Certificate of Completion</div>
-        <div class="heading serif">AI Literacy Certification</div>
+        <div class="body">
+          <div class="eyebrow">Certificate of Completion</div>
+          <div class="heading serif">AI Literacy Certification</div>
+          <div class="heading-rule"></div>
 
-        <div class="present">This certificate is proudly presented to</div>
-        <div class="name serif">{name}</div>
-        <div class="name-rule"></div>
+          <div class="present">This certificate is proudly presented to</div>
+          <div class="name serif">{name}</div>
+          <div class="name-rule"></div>
 
-        <div class="desc">
-          for successfully completing the <strong>AI Literacy Certification</strong> course on the
-          Cosmoplex platform — passing every module examination above the required threshold and
-          completing all assigned practical tasks.
+          <div class="desc">
+            for successfully completing the <strong>AI Literacy Certification</strong> course on the
+            Cosmoplex platform — passing every module examination above the required threshold and
+            completing all assigned practical tasks.
+          </div>
         </div>
 
         <div class="footer">
