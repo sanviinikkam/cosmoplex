@@ -406,6 +406,15 @@ def intro_video_for(lang: str) -> str:
     return INTRO_VIDEO_OVERRIDES.get(lang) or INTRO_VIDEO_ID
 
 # Human-readable English name per language code (for the AI pitch prompt).
+# The script each language must be WRITTEN IN. Naming the language alone is not
+# enough: asked for "Hindi", the model happily replies in romanised Hinglish
+# ("Cosmoplex mein aap seekhenge..."), which does not match any of our own copy
+# and is harder to read for the learners who chose an Indian language.
+LANG_SCRIPT = {
+    "en": "Latin", "hi": "Devanagari", "mr": "Devanagari",
+    "te": "Telugu", "ta": "Tamil", "kn": "Kannada",
+}
+
 LANG_NAME = {"en": "English", "hi": "Hindi", "mr": "Marathi",
              "te": "Telugu", "ta": "Tamil", "kn": "Kannada"}
 

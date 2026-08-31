@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "voice-transcript-log",
+        "build": "pitch-script-and-lang-tap",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

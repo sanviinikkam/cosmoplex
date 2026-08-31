@@ -29,6 +29,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
+# Which stages mean 'has not finished signup' — one definition, shared.
+from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
 from core.rate_limit import check_rate_limit, should_notify
 from core.spend_guard import allow_ai_call
@@ -42,7 +44,7 @@ from agents.progress import build_teacher_context
 from agents.teacher import run_teacher
 from api.whatsapp_content import (
     LESSON_VIDEOS, QUIZ, QUIZ_PASS, ASSIGNMENT, ASSIGN_PASS, CONTENT, tr,
-    INTRO_VIDEO_ID, intro_video_for, LANG_NAME, COURSE_FACTS, ONBOARD, ob,
+    INTRO_VIDEO_ID, intro_video_for, LANG_NAME, LANG_SCRIPT, COURSE_FACTS, ONBOARD, ob,
 )
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -538,7 +540,8 @@ Course facts:
 
 The person you're messaging is named {name} and is: {status_label}.
 
-Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short lines max).
+Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short lines max),
+written in the {LANG_SCRIPT.get(lang, 'Latin')} script.
 - Address them warmly by their name ({name}) at least once, naturally.
 - Give a quick, concrete taste of what they'll learn (name 2-3 real topics).
 - Give 2 specific reasons it's beneficial and relevant for someone who is {status_label}.
@@ -549,7 +552,9 @@ Write a short WhatsApp message in {LANG_NAME.get(lang, 'English')} (5-7 short li
   AI, quiz, video, project, prompt, ChatGPT, Gemini, WhatsApp, certificate. Do NOT
   transliterate them into the local script - learners recognise these terms in
   English, and transliterated spellings render inconsistently on phones.
-- Write plain, natural, grammatically correct sentences. No invented spellings.{bold_rule}"""
+- Write plain, natural, grammatically correct sentences. No invented spellings.
+- Use the {LANG_SCRIPT.get(lang, 'Latin')} script for the whole message. Do NOT write
+  the language romanised in Latin letters (no "aap seekhenge", write आप सीखेंगे).{bold_rule}"""
     from core.ai_health import record_ai_error, record_ai_ok
     try:
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -1718,9 +1723,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
                 session.language = lang
-                session.stage = "ask_name"
+                # WhatsApp lets a learner scroll up and tap an OLD list. Someone who
+                # already finished signup must not be dragged back through it: that
+                # replays the name question, the brief and the intro video, and loses
+                # their place in the course. Only a learner still in signup restarts.
+                if session.stage in SIGNUP_STAGES:
+                    session.stage = "ask_name"
+                    await db.commit()
+                    await send_text(frm, ob(lang, "name_q"))
+                    return
                 await db.commit()
-                await send_text(frm, ob(lang, "name_q"))
+                await send_text(frm, tr(lang, "picker_done"))
+                await _resume_stage(db, session, frm, lang)
                 return
 
         # Typed a language name ("english", "i want tamil") → switch + resume.
