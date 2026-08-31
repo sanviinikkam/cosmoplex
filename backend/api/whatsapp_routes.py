@@ -415,7 +415,19 @@ async def send_template(to: str, name: str, lang_code: str, body_params: list[st
         "messaging_product": "whatsapp", "to": to, "type": "template", "template": template,
     })
     media_note = f" +{header_media['type']}" if header_media and header_media.get("link") else ""
-    await _log_wa_message(to, "bot", "template", f"[template:{name}{media_note}] " + ", ".join(body_params or []))
+    # Record what actually happened. This used to log every attempt as if it had
+    # been delivered, so a template Meta rejected still appeared in the admin
+    # transcript as a sent message — the operator saw learners being nudged who
+    # in fact received nothing.
+    code = getattr(resp, "status_code", None)
+    if resp is None or code is None or code >= 400:
+        detail = f" HTTP {code}" if code else " no response"
+        await _log_wa_message(to, "bot", "template_failed",
+                              f"[template REJECTED{detail}: {name}{media_note}] "
+                              + ", ".join(body_params or []))
+    else:
+        await _log_wa_message(to, "bot", "template",
+                              f"[template:{name}{media_note}] " + ", ".join(body_params or []))
     return resp
 
 

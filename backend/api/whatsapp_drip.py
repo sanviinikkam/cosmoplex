@@ -38,6 +38,12 @@ MIN_GAP_HOURS = 6
 REPEAT_GAP_HOURS = 20
 MAX_PER_KEY = 2
 
+# A template Meta keeps rejecting (not approved for that language, bad params)
+# used to be retried EVERY hour forever: the send failed, so the success state was
+# never written, so the next run saw a fresh learner and tried again. One learner
+# accumulated 147 such attempts. Give up on a key after this many failures.
+MAX_FAILURES_PER_KEY = 3
+
 # Stages that mean "reached WhatsApp but hasn't finished signup". These get the
 # day-based pre-sale MARKETING sequence below (media uploaded in the admin portal),
 # NOT the generic hourly nudges.
@@ -234,6 +240,11 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 if sent_count >= MAX_PER_KEY:
                     report["skipped"] += 1
                     continue
+                # ...or it has failed too often to keep trying. Without this a
+                # permanently-rejected template retries hourly for ever.
+                if rec.get("fail", 0) >= MAX_FAILURES_PER_KEY:
+                    report["skipped"] += 1
+                    continue
                 # Space out ALL nudges so a learner gets at most ~3/day.
                 if s.last_nudge_at and (now - s.last_nudge_at) < timedelta(hours=MIN_GAP_HOURS):
                     report["skipped"] += 1
@@ -308,6 +319,20 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 report["sent"].append({"phone": "…" + s.phone[-4:], "key": key, "lang": lang, "as": sent_as})
             except Exception as e:  # never let one bad send kill the run
                 report["errors"].append(f"{s.phone[-4:]}: {e}")
+                # Remember the failure against this nudge, so a template that can
+                # never succeed is abandoned instead of retried every hour. Stored
+                # on the same record as the success count, and committed with it.
+                try:
+                    log = dict(s.nudge_log or {})
+                    prev = log.get(key) or {}
+                    prev = dict(prev)
+                    prev["fail"] = prev.get("fail", 0) + 1
+                    prev["fail_at"] = now.isoformat()
+                    prev["fail_why"] = str(e)[:120]
+                    log[key] = prev
+                    s.nudge_log = log
+                except Exception:
+                    pass
 
         await db.commit()
     print(f"✓ Drip run: checked {report['checked']}, sent {len(report['sent'])}, "
