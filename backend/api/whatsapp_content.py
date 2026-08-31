@@ -120,6 +120,11 @@ QUIZ = [
 QUIZ_PASS = 3   # of 5
 
 # ── Assignment (text-only "Define It Yourself") ──────────────────────────────
+# Assignment pass mark, out of 100. The rubric prompt below interpolates this,
+# so the number the grader is told and the number the code compares against
+# can never drift apart.
+ASSIGN_PASS = 40
+
 ASSIGNMENT = {
     "id": "a1",
     "question": {
@@ -140,10 +145,10 @@ Score out of 100:
 - Coverage (20 pts): Did they define exactly 5 terms?
 - Clarity (10 pts): Are the explanations simple and understandable?
 
-On fail (score < 60): identify the specific term(s) that are off and give a brief analogy-based hint. Do not ask for a full redo — just the one gap.""",
+On fail (score < {ASSIGN_PASS}): identify the specific term(s) that are off and give a brief analogy-based hint. Do not ask for a full redo — just the one gap.""".replace("{ASSIGN_PASS}", str(ASSIGN_PASS)),
 }
 
-ASSIGN_PASS = 60  # of 100
+
 
 # ── Localized UI strings ─────────────────────────────────────────────────────
 CONTENT = {

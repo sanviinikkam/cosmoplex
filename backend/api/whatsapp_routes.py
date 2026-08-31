@@ -9,7 +9,7 @@ Learning flow (state persisted per phone in whatsapp_sessions):
   2. Pick language → deliver Lesson 1 video + "Start quiz" button.
   3. Quiz → 5 MCQs as interactive lists; 3/5 to pass, retake on fail.
   4. Pass → deliver assignment; learner types their answer.
-  5. Answer graded by Claude (60/100 to pass); resubmit on fail.
+  5. Answer graded by Claude (40/100 to pass); resubmit on fail.
   6. Pass → lesson complete; free text routes to the Teacher agent.
 """
 import asyncio
