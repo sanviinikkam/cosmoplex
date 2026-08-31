@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     graph_api_version: str = "v21.0"
     cloudinary_cloud_name: str = "dlpl4inio"  # for building lesson video links sent over WhatsApp
     whatsapp_templates_enabled: bool = False  # flip True once drip templates are approved by Meta
+    # Course nudges (resume_lesson, finish_quiz, ...) are designed to land INSIDE
+    # the free 24h window. If one drifts outside it, only a paid template could
+    # deliver — so it is skipped instead. Flip this True only once per-language
+    # templates are actually approved; today they exist in English only, so those
+    # sends are rejected by Meta anyway. Pre-sale tiers are unaffected: they are
+    # outside the window by design and legitimately use templates.
+    paid_course_nudges: bool = False
     cloudinary_api_key: str = ""              # for signed uploads from the admin portal
     cloudinary_api_secret: str = ""           # kept server-side only; never sent to the browser
     whatsapp_app_secret: str = ""              # Meta App Secret — verifies the webhook's X-Hub-Signature-256.

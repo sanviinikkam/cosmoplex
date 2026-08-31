@@ -35,7 +35,12 @@ WINDOW_HOURS = 24.0
 #   REPEAT_GAP_HOURS— a SAME nudge waits this long before repeating (once/day).
 #   MAX_PER_KEY     — a given nudge fires at most this many times, ever.
 MIN_GAP_HOURS = 6
-REPEAT_GAP_HOURS = 20
+# 14h, not 20h: nudge #2 fires REPEAT_GAP after #1, and #1 can already be ~1h
+# late because the drip runs hourly on the hour. At 20h the second touch landed at
+# 24h+ for four of the five nudges — outside the free window, where only a paid
+# template can deliver. At 14h the worst case (keep_learning, 6h threshold) lands
+# at ~21h, so BOTH touches stay free.
+REPEAT_GAP_HOURS = 14
 MAX_PER_KEY = 2
 
 # A template Meta keeps rejecting (not approved for that language, bad params)
@@ -258,6 +263,15 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 # Free-text can't reach a closed 24h window — skip rather than fire
                 # a send Meta will reject. (Templates can, so only gate when off.)
                 if not settings.whatsapp_templates_enabled and _idle_hours(s, now) >= WINDOW_HOURS:
+                    report["skipped"] += 1
+                    continue
+                # A COURSE nudge that has drifted outside the window would need a
+                # paid template. Skip it instead: the thresholds are designed to
+                # land inside the window, so this is the exception, not the plan.
+                # `day is None` means this is a course nudge — the pre-sale tiers
+                # carry a day and are outside the window by design.
+                if (day is None and not settings.paid_course_nudges
+                        and _idle_hours(s, now) >= WINDOW_HOURS):
                     report["skipped"] += 1
                     continue
 
