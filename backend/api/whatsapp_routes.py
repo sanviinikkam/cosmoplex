@@ -2087,6 +2087,17 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 else:
                     await db.commit()   # stays in "assignment" so they can redo + resubmit
                     await send_text(frm, tr(qlang, "assign_fail").format(s=score, p=ASSIGN_PASS, f=feedback, name=nm))
+                    # Re-offer the way forward. The fail path used to send TEXT ONLY, so a
+                    # learner who failed had no Submit button on screen at all — their only
+                    # route was to scroll up and tap a stale one. Skip is re-offered on the
+                    # same terms as the first time: allowed on an optional assignment, never
+                    # on a module's last one, which is the compulsory gate.
+                    lessons = await _db_lessons(db, lang)
+                    skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
+                    buttons = [("submit_assignment", tr(qlang, "submit_btn"))]
+                    if skippable:
+                        buttons.append(("skip_assignment", SKIP_BTN.get(qlang, SKIP_BTN["en"])))
+                    await send_buttons(frm, tr(qlang, "retry_prompt").format(name=nm), buttons)
                 return
             # A typed/voice message → append to the draft, don't grade yet
             if text and text.strip():
