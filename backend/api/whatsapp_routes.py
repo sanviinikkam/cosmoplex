@@ -1712,6 +1712,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             detected = _detect_language(text)
             if detected:
                 session.language = detected
+                # A learner who has not signed up yet is ANSWERING the language
+                # picker, not switching language mid-course. Typing "English"
+                # instead of tapping the list must therefore continue signup —
+                # exactly as the lang_* tap above does. Resuming here dropped them
+                # straight into a lesson, permanently skipping the name, status and
+                # goal questions (and with them the personalised pitch and the
+                # how-it-works walkthrough).
+                if session.stage in ("new", "welcome"):
+                    session.stage = "ask_name"
+                    await db.commit()
+                    await send_text(frm, tr(detected, "picker_done"))
+                    await send_text(frm, ob(detected, "name_q"))
+                    return
                 await send_text(frm, tr(detected, "picker_done"))
                 await _resume_stage(db, session, frm, detected)
                 return
