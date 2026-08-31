@@ -67,6 +67,10 @@ SIGNUP_TIERS = [
 NUDGE_RULES = [
     ("start_lesson",      {"onboarded"},                                             2),
     ("resume_lesson",     {"lesson"},                                                3),
+    # A learner between lessons (or mid-doubt) has finished a lesson and is being
+    # offered the next one. These two stages previously matched NO rule, so this
+    # group — everyone who completes a lesson and pauses — was never re-engaged.
+    ("next_lesson",       {"between_lessons", "clarify"},                            3),
     ("finish_quiz",       {"quiz", "quiz_failed"},                                   3),
     ("submit_assignment", {"assignment"},                                            3),
     ("keep_learning",     {"done"},                                                  6),
@@ -105,6 +109,14 @@ NUDGE_TEXT = {
         "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?",
         "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?",
         "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?",
+    },
+    "next_lesson": {
+        "en": "{name}, one lesson down 🎉 the next one's already queued up — 2 minutes and you're ahead of where you were yesterday. Carry on?",
+        "hi": "{name}, एक पाठ पूरा 🎉 अगला पहले से तैयार है — 2 मिनट और आप कल से आगे निकल जाओगे। चलें आगे?",
+        "mr": "{name}, एक धडा पूर्ण 🎉 पुढचा आधीच तयार आहे — 2 मिनिटं आणि तुम्ही कालपेक्षा पुढे. पुढे जाऊया?",
+        "te": "{name}, ఒక పాఠం పూర్తి 🎉 తర్వాతిది ఇప్పటికే సిద్ధం — 2 నిమిషాలు, నిన్నటి కంటే ముందుంటారు. కొనసాగిద్దామా?",
+        "ta": "{name}, ஒரு பாடம் முடிந்தது 🎉 அடுத்தது ஏற்கனவே தயார் — 2 நிமிடம், நேற்றை விட முன்னேறிடுவீங்க. தொடரலாமா?",
+        "kn": "{name}, ಒಂದು ಪಾಠ ಮುಗಿತು 🎉 ಮುಂದಿನದು ಈಗಾಗಲೇ ಸಿದ್ಧ — 2 ನಿಮಿಷ, ನಿನ್ನೆಗಿಂತ ಮುಂದೆ ಇರುತ್ತೀರಿ. ಮುಂದುವರಿಸೋಣವೇ?",
     },
     "start_lesson": {
         "en": "{name}, your first lesson is just sitting here waiting 🎬 2 mins and you'll have 10 AI words to casually drop in any conversation 💬 shall we?",
