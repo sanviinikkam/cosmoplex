@@ -33,7 +33,8 @@ WINDOW_HOURS = 24.0
 # Pacing (all inside the free 24h window):
 #   MIN_GAP_HOURS   — minimum time between ANY two nudges → caps volume (~3/day).
 #   REPEAT_GAP_HOURS— a SAME nudge waits this long before repeating (once/day).
-#   MAX_PER_KEY     — a given nudge fires at most this many times, ever.
+#   MAX_PER_KEY     — a given nudge fires at most this many times PER LESSON
+#                     (pre-sale tiers remain once each, ever).
 MIN_GAP_HOURS = 6
 # 14h, not 20h: nudge #2 fires REPEAT_GAP after #1, and #1 can already be ~1h
 # late because the drip runs hourly on the hour. At 20h the second touch landed at
@@ -48,6 +49,27 @@ MAX_PER_KEY = 2
 # never written, so the next run saw a fresh learner and tried again. One learner
 # accumulated 147 such attempts. Give up on a key after this many failures.
 MAX_FAILURES_PER_KEY = 3
+
+# Removing the lifetime cap removes the only long-run bound on volume, so keep a
+# generous backstop: across a 14-lesson course a normal learner sees a handful of
+# nudges, and this only ever catches someone who stalls at nearly every step.
+MAX_TOTAL_NUDGES = 40
+
+
+def _log_key(key: str, session) -> str:
+    """Storage key for nudge_log.
+
+    Pre-sale tiers stay LIFETIME — one touch each, ever.
+
+    Course nudges are scoped to the LESSON they refer to. 'resume_lesson' is not
+    'resume lesson 3', it is the resume nudge for every lesson, so a lifetime cap
+    of 2 meant a learner who stalled twice on lesson 1 was never re-engaged again
+    for the remaining 13 lessons. Measured: 40 of 114 learners were already sitting
+    in a stage whose nudge they had permanently exhausted.
+    """
+    if key.startswith("signup_") or key == "finish_signup":
+        return key
+    return f"{key}:{session.lesson_index or 0}"
 
 # Stages that mean "reached WhatsApp but hasn't finished signup". These get the
 # day-based pre-sale MARKETING sequence below (media uploaded in the admin portal),
@@ -251,8 +273,16 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                     continue
                 key = pick[0]
                 day = pick[2]
-                rec = (s.nudge_log or {}).get(key) or {}
+                logk = _log_key(key, s)
+                rec = (s.nudge_log or {}).get(logk) or {}
                 sent_count = rec.get("n", 0)
+                # Lifetime backstop across ALL nudges, so per-lesson scoping cannot
+                # turn into an unbounded stream for a learner who stalls everywhere.
+                total_sent = sum(v.get("n", 0) for v in (s.nudge_log or {}).values()
+                                 if isinstance(v, dict))
+                if total_sent >= MAX_TOTAL_NUDGES:
+                    report["skipped"] += 1
+                    continue
                 # This nudge has already been shown the max number of times.
                 if sent_count >= MAX_PER_KEY:
                     report["skipped"] += 1
@@ -339,8 +369,9 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 s.last_nudge_key = key
                 # Bump the per-nudge count (build a NEW dict so SQLAlchemy sees the change).
                 log = dict(s.nudge_log or {})
-                prev = log.get(key) or {}
-                log[key] = {"n": prev.get("n", 0) + 1, "at": now.isoformat()}
+                lk = _log_key(key, s)
+                prev = log.get(lk) or {}
+                log[lk] = {"n": prev.get("n", 0) + 1, "at": now.isoformat()}
                 s.nudge_log = log
                 report["sent"].append({"phone": "…" + s.phone[-4:], "key": key, "lang": lang, "as": sent_as})
             except Exception as e:  # never let one bad send kill the run
@@ -350,12 +381,12 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 # on the same record as the success count, and committed with it.
                 try:
                     log = dict(s.nudge_log or {})
-                    prev = log.get(key) or {}
-                    prev = dict(prev)
+                    lk = _log_key(key, s)
+                    prev = dict(log.get(lk) or {})
                     prev["fail"] = prev.get("fail", 0) + 1
                     prev["fail_at"] = now.isoformat()
                     prev["fail_why"] = str(e)[:120]
-                    log[key] = prev
+                    log[lk] = prev
                     s.nudge_log = log
                 except Exception:
                     pass

@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "assign-fail-buttons",
+        "build": "nudge-cap-per-lesson",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
