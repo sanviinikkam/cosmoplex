@@ -240,6 +240,7 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
     try:
         recent_wa = (await db.execute(
             select(WhatsAppSession).order_by(WhatsAppSession.last_active_at.desc()).limit(10))).scalars().all()
+        _dash_labels = await _lesson_labels(db)
         def mask(p):
             return ("•••• " + p[-4:]) if p and len(p) >= 4 else (p or "—")
         whatsapp = {
@@ -249,10 +250,16 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
             "completed": await count(WhatsAppSession, WhatsAppSession.stage == "done"),
             "byStage": await group(WhatsAppSession.stage),
             "byLanguage": await group(WhatsAppSession.language),
+            # Same microlesson label the user directory shows. This payload shares
+            # the WaSessionRow type with /admin/users, so sending a raw index here
+            # would make that type a lie for anything that later reads the field.
             "recent": [{
                 "id": r.phone,
                 "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
-                "stage": r.stage, "lesson": r.lesson_index,
+                "stage": r.stage,
+                "lesson": (_dash_labels[r.lesson_index or 0]
+                           if 0 <= (r.lesson_index or 0) < len(_dash_labels) else None),
+                "lessonIndex": r.lesson_index,
                 "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
             } for r in recent_wa],
         }
@@ -419,6 +426,31 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
             "overall": overall, "checks": checks}
 
 
+async def _lesson_labels(db) -> list[str]:
+    """Microlesson labels ("1.1", "1.2", "2.1", ...) in course order.
+
+    Reuses the SAME label _db_lessons builds for the learner-facing flow
+    (module.order_index + 1 . section.order_index + 1), so the admin table can
+    never drift into a second numbering scheme. Labels come from module/section
+    order, which is language-independent, so 'en' is safe to look them up with.
+    """
+    from api.whatsapp_routes import _db_lessons   # lazy: avoids a circular import
+    try:
+        lessons = await _db_lessons(db, "en")
+    except Exception:
+        return []
+    return [(l.get("label") or "") for l in lessons]
+
+
+async def _lesson_facet(db) -> list[str]:
+    """Microlesson labels that at least one learner is currently on."""
+    labels = await _lesson_labels(db)
+    idxs = (await db.execute(select(WhatsAppSession.lesson_index).distinct()
+                            .where(WhatsAppSession.lesson_index.is_not(None)))).scalars().all()
+    present = sorted({int(i) for i in idxs})
+    return [labels[i] for i in present if 0 <= i < len(labels) and labels[i]]
+
+
 async def _facets(db, channel: str) -> dict:
     """Distinct values actually present, per filterable column.
 
@@ -441,8 +473,9 @@ async def _facets(db, channel: str) -> dict:
             "language": await distinct(WhatsAppSession.language),
             "source_type": await distinct(WhatsAppSession.source_type),
             "campaign": await distinct(WhatsAppSession.campaign),
-            # lesson_index is 0-based in the DB; the table shows 1-based.
-            "lesson": [int(i) + 1 for i in await distinct(WhatsAppSession.lesson_index)],
+            # Offer the microlesson labels learners actually sit on, in COURSE
+            # order. Sorting the strings would put "1.10" before "1.2".
+            "lesson": await _lesson_facet(db),
         }
     return {
         "language": await distinct(LearnerProfile.preferred_language),
@@ -550,7 +583,7 @@ async def all_users(
     stage: str | None = None,
     campaign: str | None = None,
     source_type: str | None = None,
-    lesson: int | None = None,
+    lesson: str | None = None,          # microlesson label, e.g. "1.3"
     active_within_days: int | None = None,
     certificate: str | None = None,   # web only: "yes" | "no"
     limit: int = 500,
@@ -587,9 +620,17 @@ async def all_users(
             base = base.where(WhatsAppSession.source_type == source_type.strip())
         if campaign and campaign.strip():
             base = base.where(WhatsAppSession.campaign.ilike(f"%{campaign.strip()}%"))
-        if lesson is not None:
-            # The UI shows lesson numbers 1-based; lesson_index is 0-based.
-            base = base.where(WhatsAppSession.lesson_index == max(0, lesson - 1))
+        if lesson and lesson.strip():
+            # The dropdown sends a microlesson label ("1.3"); resolve it to the
+            # 0-based index the column actually stores.
+            labels_for_filter = await _lesson_labels(db)
+            want = lesson.strip()
+            try:
+                base = base.where(WhatsAppSession.lesson_index == labels_for_filter.index(want))
+            except ValueError:
+                # Unknown label — match nothing rather than silently ignoring it,
+                # so a stale bookmark cannot look like "no filter applied".
+                base = base.where(WhatsAppSession.lesson_index == -1)
         if active_within_days is not None and active_within_days > 0:
             from datetime import datetime, timedelta
             cutoff = datetime.utcnow() - timedelta(days=active_within_days)
@@ -599,10 +640,17 @@ async def all_users(
         rows = (await db.execute(
             base.order_by(WhatsAppSession.last_active_at.desc().nullslast())
                 .offset(max(0, offset)).limit(limit))).scalars().all()
+        labels = await _lesson_labels(db)
+
+        def lesson_label(i):
+            i = i or 0
+            return labels[i] if 0 <= i < len(labels) and labels[i] else str(i + 1)
+
         items = [{
             "id": r.phone,
             "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
-            "stage": r.stage, "lesson": r.lesson_index,
+            "stage": r.stage, "lesson": lesson_label(r.lesson_index),
+            "lessonIndex": r.lesson_index,
             "campaign": r.campaign, "sourceType": r.source_type,
             "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
             "joined": r.created_at.isoformat() if getattr(r, "created_at", None) else None,

@@ -740,7 +740,7 @@ function UserDirectory() {
     setF((prev) => {
       const next = { ...prev };
       if (v === "" || v === undefined) delete next[k];
-      else if (k === "lesson" || k === "active_within_days") next[k] = Number(v);
+      else if (k === "active_within_days") next[k] = Number(v);
       else (next as Record<string, unknown>)[k] = v;
       return next;
     });
@@ -871,7 +871,7 @@ function UserDirectory() {
                   <FilterHeader label="Campaign" options={facets.campaign}
                     value={f.campaign} onChange={(v) => setFilter("campaign", v)} />
                   <FilterHeader label="Lesson" align="center" options={facets.lesson}
-                    value={f.lesson != null ? String(f.lesson) : ""} onChange={(v) => setFilter("lesson", v)} />
+                    value={f.lesson ?? ""} onChange={(v) => setFilter("lesson", v)} />
                   <FilterHeader label="Lang" options={facets.language}
                     value={f.language} onChange={(v) => setFilter("language", v)} />
                   <FilterHeader label="Active" align="right" />
@@ -884,7 +884,7 @@ function UserDirectory() {
                     <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                     <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
                     <td className="px-3 py-2 text-xs text-zinc-500">{r.campaign ?? "—"}</td>
-                    <td className="px-3 py-2 text-center text-zinc-600">{r.lesson != null ? r.lesson + 1 : "—"}</td>
+                    <td className="px-3 py-2 text-center text-zinc-600">{r.lesson ?? "—"}</td>
                     <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>
                     <td className="px-3 py-2 text-right text-zinc-500 text-xs whitespace-nowrap">{timeAgo(r.lastActive)}</td>
                   </tr>

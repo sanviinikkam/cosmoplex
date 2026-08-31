@@ -39,7 +39,12 @@ export type WebLearnerRow = {
 export type WaSessionRow = {
   id: string;
   name: string; phone: string; language: string | null;
-  stage: string; lesson: number | null; lastActive: string | null;
+  stage: string;
+  // Microlesson label as shown to staff, e.g. "1.3". lessonIndex is the raw
+  // 0-based position, kept for anything that needs to sort or compare.
+  lesson: string | null;
+  lessonIndex: number | null;
+  lastActive: string | null;
   campaign: string | null; sourceType: string | null;
 };
 
@@ -193,7 +198,7 @@ export type UserFacets = {
   language?: string[];
   source_type?: string[];
   campaign?: string[];
-  lesson?: number[];
+  lesson?: string[];        // microlesson labels present in the data
   certificate?: string[];
 };
 
@@ -205,7 +210,7 @@ export type UserFilters = {
   stage?: string;
   campaign?: string;
   source_type?: string;
-  lesson?: number;
+  lesson?: string;          // microlesson label, e.g. "1.3"
   active_within_days?: number;
   certificate?: string;
   limit?: number;
