@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "signup-typed-lang-fix",
+        "build": "signup-metric-fix",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

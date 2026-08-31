@@ -573,7 +573,7 @@ function CampaignsPanel() {
         <div>
           <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Where learners came from, and how far they got.
+            Where learners came from, and how far they got. <span className="text-zinc-400">Arrived = sent a message (not clicks). Signed up = finished onboarding.</span>
           </p>
         </div>
         <button onClick={load} disabled={loading}
@@ -600,6 +600,7 @@ function CampaignsPanel() {
                 <th className="py-2 pr-3 font-medium">Campaign</th>
                 <th className="py-2 px-3 font-medium">Source</th>
                 <th className="py-2 px-3 font-medium text-right">Arrived</th>
+                <th className="py-2 px-3 font-medium text-right">Picked lang</th>
                 <th className="py-2 px-3 font-medium text-right">Signed up</th>
                 <th className="py-2 px-3 font-medium text-right">Started</th>
                 <th className="py-2 px-3 font-medium text-right">Completed</th>
@@ -620,6 +621,12 @@ function CampaignsPanel() {
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right font-medium text-zinc-900">{r.arrived}</td>
+                  <td className="py-2.5 px-3 text-right text-zinc-700">
+                    {r.picked_language}
+                    <span className="text-zinc-400 text-xs ml-1">
+                      {Math.round((100 * r.picked_language) / (r.arrived || 1))}%
+                    </span>
+                  </td>
                   <td className="py-2.5 px-3 text-right text-zinc-700">
                     {r.signed_up}<span className="text-zinc-400 text-xs ml-1">{r.signup_rate}%</span>
                   </td>

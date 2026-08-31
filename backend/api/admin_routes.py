@@ -39,6 +39,7 @@ from sqlalchemy.orm import selectinload
 from core.auth import create_admin_token, require_admin
 from core.config import settings
 from db.database import get_db
+from api.whatsapp_drip import SIGNUP_STAGES
 from db.models import (
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo, MarketingAsset,
@@ -444,7 +445,12 @@ async def campaign_report(
         b["arrived"] += 1
         if r.language:
             b["picked_language"] += 1
-        if r.name:
+        # "Signed up" = got THROUGH onboarding. It must not key off r.name:
+        # WhatsApp sends the sender's profile name in the webhook and we store it
+        # on their very first message, so name is set for everyone who ever writes
+        # in — which made this column read 100% on every campaign and told the
+        # operator nothing.
+        if r.stage not in SIGNUP_STAGES:
             b["signed_up"] += 1
         if (r.lesson_index or 0) > 0 or r.stage in ("lesson", "quiz", "quiz_failed",
                                                     "assignment", "between_lessons",
