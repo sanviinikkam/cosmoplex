@@ -363,12 +363,25 @@ async def transcribe_audio(media_id: str) -> str | None:
 
 
 async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
-    """Transcribe a voice note, then run it through the normal text handler."""
-    text = await transcribe_audio(media_id) if allow_ai_call() else None
+    """Transcribe a voice note, then run it through the normal text handler.
+
+    The transcript store gets its own 'audio' row here, for two reasons:
+      • a voice note used to be indistinguishable from a typed message, so a
+        mis-heard transcription looked like something the learner actually wrote;
+      • when transcription FAILED nothing was logged at all, leaving the admin
+        transcript showing the bot asking them to type with no message above it.
+    """
+    budget_ok = allow_ai_call()
+    text = await transcribe_audio(media_id) if budget_ok else None
     if text:
-        await _handle_message(frm, None, text, name)
+        # Log the voice note itself, marked as voice, then hand the transcription
+        # to the normal handler with logging suppressed so it is not stored twice.
+        await _log_wa_message(frm, "user", "audio", f"[voice] {text}")
+        await _handle_message(frm, None, text, name, already_logged=True)
         return
-    # Couldn't transcribe → nudge them to type, in their language if we know it.
+    # Couldn't transcribe → record the attempt, then nudge them to type.
+    reason = "transcription failed" if budget_ok else "AI budget reached"
+    await _log_wa_message(frm, "user", "audio", f"[voice — {reason}, not transcribed]")
     lang = "en"
     try:
         async with async_session_factory() as db:
@@ -1616,10 +1629,14 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
 
 
 async def _handle_message(frm: str, reply_id: str | None, text: str | None,
-                          name: str | None, referral: dict | None = None) -> None:
+                          name: str | None, referral: dict | None = None,
+                          already_logged: bool = False) -> None:
     # Log the inbound message to the transcript (text, or the tapped button id).
-    await _log_wa_message(frm, "user", "button" if reply_id else "text",
-                          text if text else f"[tap:{reply_id}]")
+    # Skipped when the caller already logged it — a voice note is stored as its
+    # own 'audio' row before the transcription reaches this handler.
+    if not already_logged:
+        await _log_wa_message(frm, "user", "button" if reply_id else "text",
+                              text if text else f"[tap:{reply_id}]")
     async with async_session_factory() as db:
         session = await db.get(WhatsAppSession, frm)
         if session is None:
