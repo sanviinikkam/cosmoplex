@@ -7,7 +7,7 @@ import {
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
-  type CampaignRow, type UserFilters,
+  type CampaignRow, type UserFilters, type UserFacets,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -543,15 +543,9 @@ const PAGE_SIZE = 50;
 
 
 
-// Every stage a WhatsApp session can hold, for the Stage filter. Derived from the
-// stage assignments in whatsapp_routes.py — keep in sync if a new stage appears.
-const WA_STAGES = [
-  "new", "welcome", "ask_name", "ask_profile", "ask_goal", "onboarded", "howto",
-  "lesson", "quiz", "quiz_failed", "practice", "assignment", "between_lessons",
-  "clarify", "done",
-] as const;
-const LANGS = ["en", "hi", "mr", "te", "ta", "kn"] as const;
-const SOURCE_TYPES = ["ad", "post", "link", "organic"] as const;
+// NOTE: filter options are NOT hardcoded here. They come from the server's
+// `facets` — the distinct values actually present in the data — so a dropdown can
+// never offer a stage nobody is in, and never miss a new one either.
 
 const fieldCls =
   "rounded-lg border border-zinc-300 px-2 py-1 text-xs bg-white " +
@@ -577,6 +571,49 @@ function DateRange({
         </button>
       )}
     </div>
+  );
+}
+
+
+// A column header with its own filter. Options come from the server's facets —
+// the values actually present in the data — so a pick can never return zero rows
+// for a value nobody has. Uses a native <select> so it works on mobile and with
+// a keyboard without hand-rolled click-outside handling.
+function FilterHeader({
+  label, align = "left", options, value, onChange,
+}: {
+  label: string;
+  align?: "left" | "center" | "right";
+  options?: (string | number)[];
+  value?: string;
+  onChange?: (v: string) => void;
+}) {
+  const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
+  // No options (or only one) means there is nothing to choose between.
+  const filterable = !!onChange && !!options && options.length > 1;
+  const active = !!value;
+  return (
+    <th className={`${alignCls} font-medium px-3 py-2 align-top`}>
+      <div className={`flex items-center gap-1 ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : ""}`}>
+        <span>{label}</span>
+        {filterable && (
+          <span className="relative inline-flex items-center">
+            <select
+              aria-label={`Filter by ${label}`}
+              value={value ?? ""}
+              onChange={(e) => onChange!(e.target.value)}
+              className={`appearance-none bg-transparent border-0 cursor-pointer pr-3 text-[11px] focus:outline-none ${
+                active ? "text-emerald-700 font-semibold" : "text-zinc-400"}`}
+              style={{ width: active ? "auto" : "1.1rem" }}
+            >
+              <option value="">All</option>
+              {options!.map((o) => <option key={String(o)} value={String(o)}>{String(o)}</option>)}
+            </select>
+            <span className={`pointer-events-none absolute right-0 text-[9px] ${active ? "text-emerald-700" : "text-zinc-400"}`}>&#9662;</span>
+          </span>
+        )}
+      </div>
+    </th>
   );
 }
 
@@ -698,6 +735,7 @@ function UserDirectory() {
   // "clear all" is a single reset.
   const EMPTY_F: UserFilters = {};
   const [f, setF] = useState<UserFilters>(EMPTY_F);
+  const [facets, setFacets] = useState<UserFacets>({});
   const setFilter = (k: keyof UserFilters, v: string) =>
     setF((prev) => {
       const next = { ...prev };
@@ -724,6 +762,7 @@ function UserDirectory() {
       setTotal(res.total);
       setOffset(off);
       setRows((prev) => (append ? [...prev, ...res.items] : res.items));
+      if (res.facets) setFacets(res.facets);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load users");
     } finally { setLoading(false); }
@@ -770,69 +809,22 @@ function UserDirectory() {
         </span>
       </div>
 
-      {/* One filter per column. Every one is applied by the server, so the count
-          above always reflects the whole filtered set, not just this page. */}
-      <div className="mb-3 rounded-xl border border-zinc-200 bg-zinc-50/70 px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <DateRange
-            from={f.from_date ?? ""} to={f.to_date ?? ""}
-            onFrom={(v) => setFilter("from_date", v)}
-            onTo={(v) => setFilter("to_date", v)}
-            onClear={() => setF((p) => { const n = { ...p }; delete n.from_date; delete n.to_date; return n; })}
-          />
-          <span className="text-[10px] uppercase tracking-wider text-zinc-400">joined</span>
-
-          <select className={fieldCls} value={f.language ?? ""}
-            onChange={(e) => setFilter("language", e.target.value)}>
-            <option value="">Any language</option>
-            {LANGS.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-
-          {channel === "whatsapp" ? (
-            <>
-              <select className={fieldCls} value={f.stage ?? ""}
-                onChange={(e) => setFilter("stage", e.target.value)}>
-                <option value="">Any stage</option>
-                {WA_STAGES.map((st) => <option key={st} value={st}>{st}</option>)}
-              </select>
-
-              <select className={fieldCls} value={f.source_type ?? ""}
-                onChange={(e) => setFilter("source_type", e.target.value)}>
-                <option value="">Any source</option>
-                {SOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-
-              <input className={`${fieldCls} w-36`} placeholder="Campaign contains…"
-                value={f.campaign ?? ""} onChange={(e) => setFilter("campaign", e.target.value)} />
-
-              <input className={`${fieldCls} w-24`} type="number" min={1} placeholder="Lesson #"
-                value={f.lesson ?? ""} onChange={(e) => setFilter("lesson", e.target.value)} />
-
-              <select className={fieldCls} value={f.active_within_days ?? ""}
-                onChange={(e) => setFilter("active_within_days", e.target.value)}>
-                <option value="">Active: any</option>
-                <option value="1">Active: 1 day</option>
-                <option value="3">Active: 3 days</option>
-                <option value="7">Active: 7 days</option>
-                <option value="30">Active: 30 days</option>
-              </select>
-            </>
-          ) : (
-            <select className={fieldCls} value={f.certificate ?? ""}
-              onChange={(e) => setFilter("certificate", e.target.value)}>
-              <option value="">Certificate: any</option>
-              <option value="yes">Certificate: yes</option>
-              <option value="no">Certificate: no</option>
-            </select>
-          )}
-
-          {activeCount > 0 && (
-            <button onClick={() => setF(EMPTY_F)}
-              className="text-xs text-zinc-500 hover:text-zinc-900 underline decoration-dotted">
-              Clear {activeCount} filter{activeCount > 1 ? "s" : ""}
-            </button>
-          )}
-        </div>
+      {/* Only the date range lives here now — every other filter is a dropdown on
+          its own column header, so the control sits where the data it filters is. */}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <DateRange
+          from={f.from_date ?? ""} to={f.to_date ?? ""}
+          onFrom={(v) => setFilter("from_date", v)}
+          onTo={(v) => setFilter("to_date", v)}
+          onClear={() => setF((p) => { const n = { ...p }; delete n.from_date; delete n.to_date; return n; })}
+        />
+        <span className="text-[10px] uppercase tracking-wider text-zinc-400">joined</span>
+        {activeCount > 0 && (
+          <button onClick={() => setF(EMPTY_F)}
+            className="text-xs text-zinc-500 hover:text-zinc-900 underline decoration-dotted">
+            Clear {activeCount} filter{activeCount > 1 ? "s" : ""}
+          </button>
+        )}
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
@@ -843,11 +835,13 @@ function UserDirectory() {
             <>
               <thead className="bg-zinc-50 text-zinc-500 text-xs sticky top-0">
                 <tr>
-                  <th className="text-left font-medium px-3 py-2">Learner</th>
-                  <th className="text-left font-medium px-3 py-2">Lang</th>
-                  <th className="text-center font-medium px-3 py-2">Score</th>
-                  <th className="text-center font-medium px-3 py-2">Cert</th>
-                  <th className="text-right font-medium px-3 py-2">Joined</th>
+                  <FilterHeader label="Learner" />
+                  <FilterHeader label="Lang" options={facets.language}
+                    value={f.language} onChange={(v) => setFilter("language", v)} />
+                  <FilterHeader label="Score" align="center" />
+                  <FilterHeader label="Cert" align="center" options={facets.certificate}
+                    value={f.certificate} onChange={(v) => setFilter("certificate", v)} />
+                  <FilterHeader label="Joined" align="right" />
                 </tr>
               </thead>
               <tbody>
@@ -871,12 +865,16 @@ function UserDirectory() {
             <>
               <thead className="bg-zinc-50 text-zinc-500 text-xs sticky top-0">
                 <tr>
-                  <th className="text-left font-medium px-3 py-2">User</th>
-                  <th className="text-left font-medium px-3 py-2">Stage</th>
-                  <th className="text-left font-medium px-3 py-2">Campaign</th>
-                  <th className="text-center font-medium px-3 py-2">Lesson</th>
-                  <th className="text-left font-medium px-3 py-2">Lang</th>
-                  <th className="text-right font-medium px-3 py-2">Active</th>
+                  <FilterHeader label="User" />
+                  <FilterHeader label="Stage" options={facets.stage}
+                    value={f.stage} onChange={(v) => setFilter("stage", v)} />
+                  <FilterHeader label="Campaign" options={facets.campaign}
+                    value={f.campaign} onChange={(v) => setFilter("campaign", v)} />
+                  <FilterHeader label="Lesson" align="center" options={facets.lesson}
+                    value={f.lesson != null ? String(f.lesson) : ""} onChange={(v) => setFilter("lesson", v)} />
+                  <FilterHeader label="Lang" options={facets.language}
+                    value={f.language} onChange={(v) => setFilter("language", v)} />
+                  <FilterHeader label="Active" align="right" />
                 </tr>
               </thead>
               <tbody>

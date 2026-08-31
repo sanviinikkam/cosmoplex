@@ -419,6 +419,37 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
             "overall": overall, "checks": checks}
 
 
+async def _facets(db, channel: str) -> dict:
+    """Distinct values actually present, per filterable column.
+
+    The column dropdowns are built from this, not from a hardcoded list: a
+    hardcoded list shows stages nobody is in (and silently misses any new one),
+    which makes the filter feel broken when a pick returns zero rows.
+
+    Computed over the WHOLE channel, deliberately not narrowed by the other
+    filters — otherwise choosing a stage would empty the language dropdown and
+    the learner could not switch without clearing everything first.
+    """
+    async def distinct(col):
+        rows = (await db.execute(select(col).distinct().where(col.is_not(None)))).scalars().all()
+        vals = [v for v in rows if v is not None and str(v).strip() != ""]
+        return sorted(vals, key=lambda v: (str(v).lower() if isinstance(v, str) else v))
+
+    if channel == "whatsapp":
+        return {
+            "stage": await distinct(WhatsAppSession.stage),
+            "language": await distinct(WhatsAppSession.language),
+            "source_type": await distinct(WhatsAppSession.source_type),
+            "campaign": await distinct(WhatsAppSession.campaign),
+            # lesson_index is 0-based in the DB; the table shows 1-based.
+            "lesson": [int(i) + 1 for i in await distinct(WhatsAppSession.lesson_index)],
+        }
+    return {
+        "language": await distinct(LearnerProfile.preferred_language),
+        "certificate": ["yes", "no"],   # a boolean column: both states are meaningful
+    }
+
+
 def _date_range(from_date: str | None, to_date: str | None):
     """Parse YYYY-MM-DD bounds into datetimes. `to` is inclusive of that whole
     day, so a single-day filter (from == to) returns that day rather than nothing."""
@@ -607,6 +638,7 @@ async def all_users(
 
     return {
         "channel": channel, "total": total,
+        "facets": await _facets(db, channel),
         "offset": max(0, offset), "limit": limit,
         "count": len(items), "items": items,
     }

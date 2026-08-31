@@ -93,6 +93,7 @@ export type SystemCheck = {
 
 export type UsersPage<Row> = {
   channel: string; total: number; offset: number; limit: number; count: number; items: Row[];
+  facets?: UserFacets;
 };
 
 export type AdminDashboard = {
@@ -184,6 +185,17 @@ export type CampaignRow = {
   completion_rate: number;
 };
 export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
+
+// Distinct values actually present in the data, per filterable column. The column
+// dropdowns are built from this so they can never offer a value that matches nothing.
+export type UserFacets = {
+  stage?: string[];
+  language?: string[];
+  source_type?: string[];
+  campaign?: string[];
+  lesson?: number[];
+  certificate?: string[];
+};
 
 export type UserFilters = {
   q?: string;
