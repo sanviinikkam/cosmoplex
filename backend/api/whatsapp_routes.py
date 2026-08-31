@@ -1207,6 +1207,26 @@ async def _localized_title(db, video_id: str | None, english_title: str, lang: s
     return translated
 
 
+# Words that mean "send the video again". Anything else typed on the lesson
+# screen is a QUESTION, not a request to replay a 2.6 MB file.
+_VIDEO_WORDS = (
+    "video", "vedio", "vdo", "resend", "again", "replay", "repeat", "send it",
+    "वीडियो", "दोबारा", "फिर", "फिर से",
+    "व्हिडिओ", "पुन्हा",
+    "वीडियो", "मळ्ली",
+    "காண்பி", "மிண்டும்",
+    "ವಿಡಿಯೋ", "ಮತ್ತೆ",
+)
+
+
+def _wants_video(text: str | None) -> bool:
+    """True only if the learner is asking to see the lesson video again."""
+    low = (text or "").strip().lower()
+    if not low or len(low) > 60:      # a long message is a question, not "resend"
+        return False
+    return any(w in low for w in _VIDEO_WORDS)
+
+
 async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 0) -> None:
     lesson = await _lesson_at(db, lang, idx)
     if lesson is None:
@@ -2096,11 +2116,24 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                                [("next_lesson", tr(lang, "start_next_btn"))])
             return
 
-        # On the video lesson (e.g. paused, or asking for the video) → re-deliver
-        # the lesson video + Start-quiz buttons rather than dropping into chat.
+        # On the video lesson screen. This used to re-deliver the whole lesson on
+        # ANY text, so a learner who typed a question ("i want to change
+        # something") got the 2.6 MB video again instead of an answer — and kept
+        # getting it, forever. Two learners received 16 copies each, which also
+        # spends Cloudinary bandwidth on every repeat.
         if session.stage == "lesson":
             await db.commit()
-            await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+            if reply_id is None and _wants_video(text):
+                # They actually asked to see it again.
+                await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+                return
+            # Otherwise treat it as a question about the lesson, answer it, and
+            # re-offer the buttons so the way forward is still on screen.
+            await _teacher_answer(db, session, frm, lang, text)
+            await send_buttons(frm, tr(lang, "after_text").format(name=nm),
+                               [("quiz", tr(lang, "quiz_btn")),
+                                ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
+                                ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
             return
 
         # Finished the current lesson but more lessons exist (e.g. older sessions,
