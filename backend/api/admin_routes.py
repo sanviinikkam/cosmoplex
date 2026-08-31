@@ -419,8 +419,29 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
             "overall": overall, "checks": checks}
 
 
+def _date_range(from_date: str | None, to_date: str | None):
+    """Parse YYYY-MM-DD bounds into datetimes. `to` is inclusive of that whole
+    day, so a single-day filter (from == to) returns that day rather than nothing."""
+    from datetime import datetime, timedelta
+    start = end = None
+    for raw, is_start in ((from_date, True), (to_date, False)):
+        if not raw or not raw.strip():
+            continue
+        try:
+            d = datetime.strptime(raw.strip()[:10], "%Y-%m-%d")
+        except ValueError:
+            continue          # ignore junk rather than 500 the admin page
+        if is_start:
+            start = d
+        else:
+            end = d + timedelta(days=1)
+    return start, end
+
+
 @router.get("/campaigns")
 async def campaign_report(
+    from_date: str | None = None,
+    to_date: str | None = None,
     _: bool = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -430,7 +451,17 @@ async def campaign_report(
     that sends 500 clicks who never answer is worse than one that sends 50 who
     finish. So each row carries the whole funnel, not just arrivals.
     """
-    rows = (await db.execute(select(WhatsAppSession))).scalars().all()
+    # Filter on when the learner ARRIVED. first_seen_at only exists on rows created
+    # after attribution shipped, so fall back to created_at — otherwise every older
+    # learner would silently vanish from a date-filtered report.
+    start, end = _date_range(from_date, to_date)
+    arrived = func.coalesce(WhatsAppSession.first_seen_at, WhatsAppSession.created_at)
+    base = select(WhatsAppSession)
+    if start is not None:
+        base = base.where(arrived >= start)
+    if end is not None:
+        base = base.where(arrived < end)
+    rows = (await db.execute(base)).scalars().all()
     buckets: dict[str, dict] = {}
     for r in rows:
         key = r.campaign or "organic"
@@ -471,13 +502,26 @@ async def campaign_report(
         a = b["arrived"] or 1
         b["signup_rate"] = round(100 * b["signed_up"] / a)
         b["completion_rate"] = round(100 * b["completed"] / a)
-    return {"campaigns": out, "total_users": len(rows)}
+    return {"campaigns": out, "total_users": len(rows),
+            "from_date": from_date or None, "to_date": to_date or None}
 
 
 @router.get("/users")
 async def all_users(
     channel: str = "web",
     q: str | None = None,
+    # Per-column filters. Applied server-side on purpose: filtering only the
+    # loaded page would show "3 results" out of a 500-row page and read as the
+    # whole truth.
+    from_date: str | None = None,   # joined >= (YYYY-MM-DD)
+    to_date: str | None = None,     # joined <= (inclusive day)
+    language: str | None = None,
+    stage: str | None = None,
+    campaign: str | None = None,
+    source_type: str | None = None,
+    lesson: int | None = None,
+    active_within_days: int | None = None,
+    certificate: str | None = None,   # web only: "yes" | "no"
     limit: int = 500,
     offset: int = 0,
     _: bool = Depends(require_admin),
@@ -499,6 +543,26 @@ async def all_users(
                 func.lower(WhatsAppSession.name).like(term),
                 WhatsAppSession.phone.like(term),
             ))
+        start, end = _date_range(from_date, to_date)
+        if start is not None:
+            base = base.where(WhatsAppSession.created_at >= start)
+        if end is not None:
+            base = base.where(WhatsAppSession.created_at < end)
+        if language and language.strip():
+            base = base.where(WhatsAppSession.language == language.strip())
+        if stage and stage.strip():
+            base = base.where(WhatsAppSession.stage == stage.strip())
+        if source_type and source_type.strip():
+            base = base.where(WhatsAppSession.source_type == source_type.strip())
+        if campaign and campaign.strip():
+            base = base.where(WhatsAppSession.campaign.ilike(f"%{campaign.strip()}%"))
+        if lesson is not None:
+            # The UI shows lesson numbers 1-based; lesson_index is 0-based.
+            base = base.where(WhatsAppSession.lesson_index == max(0, lesson - 1))
+        if active_within_days is not None and active_within_days > 0:
+            from datetime import datetime, timedelta
+            cutoff = datetime.utcnow() - timedelta(days=active_within_days)
+            base = base.where(WhatsAppSession.last_active_at >= cutoff)
         total = (await db.execute(
             select(func.count()).select_from(base.subquery()))).scalar() or 0
         rows = (await db.execute(
@@ -519,6 +583,15 @@ async def all_users(
                 func.lower(LearnerProfile.name).like(term),
                 func.lower(LearnerProfile.email).like(term),
             ))
+        start, end = _date_range(from_date, to_date)
+        if start is not None:
+            base = base.where(LearnerProfile.created_at >= start)
+        if end is not None:
+            base = base.where(LearnerProfile.created_at < end)
+        if language and language.strip():
+            base = base.where(LearnerProfile.preferred_language == language.strip())
+        if certificate in ("yes", "no"):
+            base = base.where(LearnerProfile.certificate_issued.is_(certificate == "yes"))
         total = (await db.execute(
             select(func.count()).select_from(base.subquery()))).scalar() or 0
         rows = (await db.execute(

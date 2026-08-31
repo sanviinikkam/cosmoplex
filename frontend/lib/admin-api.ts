@@ -185,6 +185,21 @@ export type CampaignRow = {
 };
 export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 
+export type UserFilters = {
+  q?: string;
+  from_date?: string;
+  to_date?: string;
+  language?: string;
+  stage?: string;
+  campaign?: string;
+  source_type?: string;
+  lesson?: number;
+  active_within_days?: number;
+  certificate?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export const adminApi = {
   login: async (password: string) => {
     const res = await fetch(`${API_BASE}/admin/login`, {
@@ -200,15 +215,23 @@ export const adminApi = {
 
   dashboard: () => adminFetch<AdminDashboard>("/admin/dashboard"),
   systemCheck: () => adminFetch<SystemCheck>("/admin/system-check"),
-  users: (channel: "web" | "whatsapp", opts?: { q?: string; limit?: number; offset?: number }) => {
+  users: (channel: "web" | "whatsapp", opts?: UserFilters) => {
     const p = new URLSearchParams({ channel });
-    if (opts?.q) p.set("q", opts.q);
-    if (opts?.limit != null) p.set("limit", String(opts.limit));
-    if (opts?.offset != null) p.set("offset", String(opts.offset));
+    // Only send keys that carry a value, so an empty filter box never turns into
+    // ?language= and filters everything out.
+    Object.entries(opts ?? {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== "") p.set(k, String(v));
+    });
     return adminFetch<UsersPage<WebLearnerRow | WaSessionRow>>(`/admin/users?${p.toString()}`);
   },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
-  campaigns: () => adminFetch<CampaignsData>("/admin/campaigns"),
+  campaigns: (range?: { from_date?: string; to_date?: string }) => {
+    const p = new URLSearchParams();
+    if (range?.from_date) p.set("from_date", range.from_date);
+    if (range?.to_date) p.set("to_date", range.to_date);
+    const qs = p.toString();
+    return adminFetch<CampaignsData>(`/admin/campaigns${qs ? `?${qs}` : ""}`);
+  },
   whatsappDetail: (phone: string) => adminFetch<WaDetail>(`/admin/whatsapp/${encodeURIComponent(phone)}`),
   whatsappMessages: (phone: string) => adminFetch<WaTranscript>(`/admin/whatsapp/${encodeURIComponent(phone)}/messages`),
   learnerDetail: (id: string) => adminFetch<WebDetail>(`/admin/learner/${encodeURIComponent(id)}`),

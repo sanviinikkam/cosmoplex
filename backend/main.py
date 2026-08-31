@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "assign-pass-40",
+        "build": "admin-filters",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

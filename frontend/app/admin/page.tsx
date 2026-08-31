@@ -7,7 +7,7 @@ import {
   type IntroVideoItem, type AdminDashboard, type WaDetail, type WebDetail, type ReferralsData,
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
-  type CampaignRow,
+  type CampaignRow, type UserFilters,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -542,6 +542,44 @@ function SystemStatus() {
 const PAGE_SIZE = 50;
 
 
+
+// Every stage a WhatsApp session can hold, for the Stage filter. Derived from the
+// stage assignments in whatsapp_routes.py — keep in sync if a new stage appears.
+const WA_STAGES = [
+  "new", "welcome", "ask_name", "ask_profile", "ask_goal", "onboarded", "howto",
+  "lesson", "quiz", "quiz_failed", "practice", "assignment", "between_lessons",
+  "clarify", "done",
+] as const;
+const LANGS = ["en", "hi", "mr", "te", "ta", "kn"] as const;
+const SOURCE_TYPES = ["ad", "post", "link", "organic"] as const;
+
+const fieldCls =
+  "rounded-lg border border-zinc-300 px-2 py-1 text-xs bg-white " +
+  "focus:outline-none focus:ring-1 focus:ring-emerald-500";
+
+// from/to date pair. Shown as plain date inputs so a range is two clicks, and
+// "today only" is the same control with both halves equal.
+function DateRange({
+  from, to, onFrom, onTo, onClear,
+}: {
+  from: string; to: string;
+  onFrom: (v: string) => void; onTo: (v: string) => void; onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+      <span className="uppercase tracking-wider text-[10px] text-zinc-400">From</span>
+      <input type="date" value={from} onChange={(e) => onFrom(e.target.value)} className={fieldCls} />
+      <span className="uppercase tracking-wider text-[10px] text-zinc-400">To</span>
+      <input type="date" value={to} onChange={(e) => onTo(e.target.value)} className={fieldCls} />
+      {(from || to) && (
+        <button onClick={onClear} className="text-zinc-400 hover:text-zinc-700 px-1" title="Clear dates">
+          &#10005;
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Where learners actually come from. Deliberately a funnel, not a click count:
 // a campaign that sends 500 people who never reply is worth less than one that
 // sends 50 who finish, and only the funnel makes that visible.
@@ -549,16 +587,18 @@ function CampaignsPanel() {
   const [rows, setRows] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
-      const res = await adminApi.campaigns();
+      const res = await adminApi.campaigns({ from_date: from, to_date: to });
       setRows(res.campaigns);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load campaigns");
     } finally { setLoading(false); }
-  }, []);
+  }, [from, to]);
   useEffect(() => { load(); }, [load]);
 
   const badge = (t: string) =>
@@ -576,10 +616,14 @@ function CampaignsPanel() {
             Where learners came from, and how far they got. <span className="text-zinc-400">Arrived = sent a message (not clicks). Signed up = finished onboarding.</span>
           </p>
         </div>
-        <button onClick={load} disabled={loading}
-          className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-50 inline-flex items-center gap-1.5">
-          {loading ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo}
+            onClear={() => { setFrom(""); setTo(""); }} />
+          <button onClick={load} disabled={loading}
+            className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-50 inline-flex items-center gap-1.5">
+            {loading ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Refresh
+          </button>
+        </div>
       </div>
 
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
@@ -588,7 +632,8 @@ function CampaignsPanel() {
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
       ) : rows.length === 0 ? (
         <p className="text-sm text-zinc-500 py-4">
-          No learners yet. Tag your ad links as
+          {from || to ? "No learners arrived in this date range. " : "No learners yet. "}
+          Tag your ad links as
           <code className="mx-1 px-1.5 py-0.5 bg-zinc-100 rounded text-[11px]">/start?c=your_campaign</code>
           — Click-to-WhatsApp ads are tracked automatically.
         </p>
@@ -649,6 +694,19 @@ function CampaignsPanel() {
 function UserDirectory() {
   const [channel, setChannel] = useState<"web" | "whatsapp">("web");
   const [q, setQ] = useState("");
+  // One object rather than a state hook per column: the fetch takes it whole, and
+  // "clear all" is a single reset.
+  const EMPTY_F: UserFilters = {};
+  const [f, setF] = useState<UserFilters>(EMPTY_F);
+  const setFilter = (k: keyof UserFilters, v: string) =>
+    setF((prev) => {
+      const next = { ...prev };
+      if (v === "" || v === undefined) delete next[k];
+      else if (k === "lesson" || k === "active_within_days") next[k] = Number(v);
+      else (next as Record<string, unknown>)[k] = v;
+      return next;
+    });
+  const activeCount = Object.keys(f).length;
   const [rows, setRows] = useState<(WebLearnerRow | WaSessionRow)[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -660,17 +718,21 @@ function UserDirectory() {
   const fetchPage = useCallback(async (ch: "web" | "whatsapp", query: string, off: number, append: boolean) => {
     setLoading(true); setErr("");
     try {
-      const res = await adminApi.users(ch, { q: query, limit: PAGE_SIZE, offset: off });
+      // Filters go to the server, not the loaded page: filtering client-side would
+      // show "3 results" out of one 200-row page and read as the whole total.
+      const res = await adminApi.users(ch, { ...f, q: query, limit: PAGE_SIZE, offset: off });
       setTotal(res.total);
       setOffset(off);
       setRows((prev) => (append ? [...prev, ...res.items] : res.items));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load users");
     } finally { setLoading(false); }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f]);
 
   // Reload from the top whenever the channel changes.
-  useEffect(() => { fetchPage(channel, "", 0, false); setQ(""); }, [channel, fetchPage]);
+  useEffect(() => { setF(EMPTY_F); setQ(""); }, [channel]);
+  useEffect(() => { fetchPage(channel, q, 0, false); }, [channel, f, fetchPage]);
 
   // Debounced search — refetch from the top 350ms after the last keystroke.
   useEffect(() => {
@@ -706,6 +768,71 @@ function UserDirectory() {
         <span className="text-xs text-zinc-500 whitespace-nowrap">
           {loading && !loaded ? "…" : `${loaded} of ${total}`}
         </span>
+      </div>
+
+      {/* One filter per column. Every one is applied by the server, so the count
+          above always reflects the whole filtered set, not just this page. */}
+      <div className="mb-3 rounded-xl border border-zinc-200 bg-zinc-50/70 px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <DateRange
+            from={f.from_date ?? ""} to={f.to_date ?? ""}
+            onFrom={(v) => setFilter("from_date", v)}
+            onTo={(v) => setFilter("to_date", v)}
+            onClear={() => setF((p) => { const n = { ...p }; delete n.from_date; delete n.to_date; return n; })}
+          />
+          <span className="text-[10px] uppercase tracking-wider text-zinc-400">joined</span>
+
+          <select className={fieldCls} value={f.language ?? ""}
+            onChange={(e) => setFilter("language", e.target.value)}>
+            <option value="">Any language</option>
+            {LANGS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+
+          {channel === "whatsapp" ? (
+            <>
+              <select className={fieldCls} value={f.stage ?? ""}
+                onChange={(e) => setFilter("stage", e.target.value)}>
+                <option value="">Any stage</option>
+                {WA_STAGES.map((st) => <option key={st} value={st}>{st}</option>)}
+              </select>
+
+              <select className={fieldCls} value={f.source_type ?? ""}
+                onChange={(e) => setFilter("source_type", e.target.value)}>
+                <option value="">Any source</option>
+                {SOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+
+              <input className={`${fieldCls} w-36`} placeholder="Campaign contains…"
+                value={f.campaign ?? ""} onChange={(e) => setFilter("campaign", e.target.value)} />
+
+              <input className={`${fieldCls} w-24`} type="number" min={1} placeholder="Lesson #"
+                value={f.lesson ?? ""} onChange={(e) => setFilter("lesson", e.target.value)} />
+
+              <select className={fieldCls} value={f.active_within_days ?? ""}
+                onChange={(e) => setFilter("active_within_days", e.target.value)}>
+                <option value="">Active: any</option>
+                <option value="1">Active: 1 day</option>
+                <option value="3">Active: 3 days</option>
+                <option value="7">Active: 7 days</option>
+                <option value="30">Active: 30 days</option>
+              </select>
+            </>
+          ) : (
+            <select className={fieldCls} value={f.certificate ?? ""}
+              onChange={(e) => setFilter("certificate", e.target.value)}>
+              <option value="">Certificate: any</option>
+              <option value="yes">Certificate: yes</option>
+              <option value="no">Certificate: no</option>
+            </select>
+          )}
+
+          {activeCount > 0 && (
+            <button onClick={() => setF(EMPTY_F)}
+              className="text-xs text-zinc-500 hover:text-zinc-900 underline decoration-dotted">
+              Clear {activeCount} filter{activeCount > 1 ? "s" : ""}
+            </button>
+          )}
+        </div>
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{err}</div>}
