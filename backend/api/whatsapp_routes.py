@@ -949,42 +949,42 @@ HOWTO_STEPS = {
         "Here's how this works 👇\n\n📹 *Short video lessons* — about 2 minutes each, in your language. Watch anytime, anywhere.",
         "📝 *A quick quiz after every lesson* — just tap the right option. Clear it to unlock the next lesson.",
         "✍️ *Mini assignments* on some lessons — type or send a voice note, and I'll grade it instantly. And after any lesson, tap *❓ I have a doubt* to ask me anything you're unsure about. 💬",
-        "🎁 *Bonus:* invite friends and earn *₹50* for each one who joins! Reply *refer* anytime to get your personal invite link.",
+        "🎁 *Bonus:* invite your friends to learn along with you! Reply *refer* anytime to get your personal invite link.",
         "🎓 *Finish all lessons → earn your certificate.* That's the whole journey. Ready to start?",
     ],
     "hi": [
         "ये ऐसे काम करता है 👇\n\n📹 *छोटे video lessons* — हर एक करीब 2 मिनट का, आपकी भाषा में। कभी भी, कहीं भी देखें।",
         "📝 *हर lesson के बाद एक quick quiz* — बस सही option पर tap करें। पास करके अगला lesson unlock करें।",
         "✍️ *कुछ lessons में छोटे assignments* — type करें या voice note भेजें, मैं तुरंत grade कर दूँगा। और किसी भी lesson के बाद *❓ मुझे सवाल है* पर tap करके जो समझ न आए वो पूछें। 💬",
-        "🎁 *बोनस:* दोस्तों को बुलाएँ और हर एक के जॉइन करने पर *₹50* कमाएँ! अपना invite link पाने के लिए कभी भी *refer* लिखें।",
+        "🎁 *बोनस:* अपने दोस्तों को भी साथ सीखने के लिए बुलाएँ! अपना invite link पाने के लिए कभी भी *refer* लिखें।",
         "🎓 *सारे lessons पूरे करें → अपना certificate पाएँ।* बस इतना ही सफर है। शुरू करें?",
     ],
     "mr": [
         "हे असं चालतं 👇\n\n📹 *छोटे video lessons* — प्रत्येक साधारण 2 मिनिटांचा, तुमच्या भाषेत. कधीही, कुठेही बघा.",
         "📝 *प्रत्येक lesson नंतर एक quick quiz* — फक्त योग्य option वर tap करा. पास करून पुढचा lesson unlock करा.",
         "✍️ *काही lessons मध्ये छोटे assignments* — type करा किंवा voice note पाठवा, मी लगेच grade करतो. आणि कोणत्याही lesson नंतर *❓ मला शंका आहे* वर tap करून न समजलेलं विचारा. 💬",
-        "🎁 *बोनस:* मित्रांना बोलवा आणि प्रत्येक जॉइन झाल्यावर *₹50* कमवा! तुमचा invite link मिळवण्यासाठी कधीही *refer* लिहा.",
+        "🎁 *बोनस:* तुमच्या मित्रांना पण सोबत शिकायला बोलवा! तुमचा invite link मिळवण्यासाठी कधीही *refer* लिहा.",
         "🎓 *सर्व lessons पूर्ण करा → तुमचं certificate मिळवा.* एवढाच प्रवास आहे. सुरू करूया?",
     ],
     "te": [
         "ఇది ఇలా పనిచేస్తుంది 👇\n\n📹 *చిన్న video lessons* — ఒక్కొక్కటి సుమారు 2 నిమిషాలు, మీ భాషలో. ఎప్పుడైనా, ఎక్కడైనా చూడండి.",
         "📝 *ప్రతి lesson తర్వాత ఒక quick quiz* — సరైన option పై tap చేయండి. పాస్ అయితే తదుపరి lesson unlock అవుతుంది.",
         "✍️ *కొన్ని lessonsలో చిన్న assignments* — type చేయండి లేదా voice note పంపండి, నేను వెంటనే grade చేస్తా. మరియు ఏదైనా lesson తర్వాత *❓ నాకు సందేహం ఉంది* పై tap చేసి తెలియనిది అడగండి. 💬",
-        "🎁 *బోనస్:* స్నేహితులను ఆహ్వానించి, చేరిన ప్రతి ఒక్కరికీ *₹50* సంపాదించండి! మీ invite link పొందడానికి ఎప్పుడైనా *refer* అని పంపండి.",
+        "🎁 *బోనస్:* మీ స్నేహితులను కూడా కలిసి నేర్చుకోవడానికి ఆహ్వానించండి! మీ invite link పొందడానికి ఎప్పుడైనా *refer* అని పంపండి.",
         "🎓 *అన్ని lessons పూర్తి చేయండి → మీ certificate పొందండి.* ఇదే మొత్తం ప్రయాణం. మొదలుపెడదామా?",
     ],
     "ta": [
         "இது இப்படி வேலை செய்யும் 👇\n\n📹 *குறுகிய video lessons* — ஒவ்வொன்றும் சுமார் 2 நிமிடம், உங்கள் மொழியில். எப்போது வேண்டுமானாலும் பாருங்கள்.",
         "📝 *ஒவ்வொரு lesson-க்கும் பிறகு ஒரு quick quiz* — சரியான option-ஐ tap செய்யுங்கள். pass செய்தால் அடுத்த lesson unlock ஆகும்.",
         "✍️ *சில lessons-ல் சிறிய assignments* — type செய்யுங்கள் அல்லது voice note அனுப்புங்கள், நான் உடனே grade செய்கிறேன். மேலும் எந்த lesson-க்கும் பிறகு *❓ எனக்கு சந்தேகம்* tap செய்து புரியாததைக் கேளுங்கள். 💬",
-        "🎁 *போனஸ்:* நண்பர்களை அழையுங்கள், சேரும் ஒவ்வொருவருக்கும் *₹50* சம்பாதியுங்கள்! உங்கள் invite link பெற எப்போது வேண்டுமானாலும் *refer* எனச் சொல்லுங்கள்.",
+        "🎁 *போனஸ்:* உங்கள் நண்பர்களையும் உடன் கற்க அழையுங்கள்! உங்கள் invite link பெற எப்போது வேண்டுமானாலும் *refer* எனச் சொல்லுங்கள்.",
         "🎓 *எல்லா lessons-ஐயும் முடியுங்கள் → உங்கள் certificate பெறுங்கள்.* இதுதான் முழு பயணம். ஆரம்பிக்கலாமா?",
     ],
     "kn": [
         "ಇದು ಹೀಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ 👇\n\n📹 *ಚಿಕ್ಕ video lessons* — ಪ್ರತಿಯೊಂದೂ ಸುಮಾರು 2 ನಿಮಿಷ, ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ. ಯಾವಾಗ ಬೇಕಾದರೂ ನೋಡಿ.",
         "📝 *ಪ್ರತಿ lesson ನಂತರ ಒಂದು quick quiz* — ಸರಿಯಾದ option ಮೇಲೆ tap ಮಾಡಿ. ಪಾಸ್ ಆದರೆ ಮುಂದಿನ lesson unlock ಆಗುತ್ತದೆ.",
         "✍️ *ಕೆಲವು lessons ನಲ್ಲಿ ಚಿಕ್ಕ assignments* — type ಮಾಡಿ ಅಥವಾ voice note ಕಳುಹಿಸಿ, ನಾನು ತಕ್ಷಣ grade ಮಾಡ್ತೀನಿ. ಮತ್ತು ಯಾವುದೇ lesson ನಂತರ *❓ ನನಗೆ ಸಂದೇಹವಿದೆ* tap ಮಾಡಿ ಗೊತ್ತಾಗದಿರುವುದನ್ನು ಕೇಳಿ. 💬",
-        "🎁 *ಬೋನಸ್:* ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ, ಸೇರುವ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ *₹50* ಗಳಿಸಿ! ನಿಮ್ಮ invite link ಪಡೆಯಲು ಯಾವಾಗ ಬೇಕಾದರೂ *refer* ಎಂದು ಕಳುಹಿಸಿ.",
+        "🎁 *ಬೋನಸ್:* ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ ಜೊತೆಗೆ ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ! ನಿಮ್ಮ invite link ಪಡೆಯಲು ಯಾವಾಗ ಬೇಕಾದರೂ *refer* ಎಂದು ಕಳುಹಿಸಿ.",
         "🎓 *ಎಲ್ಲಾ lessons ಮುಗಿಸಿ → ನಿಮ್ಮ certificate ಪಡೆಯಿರಿ.* ಇಷ್ಟೇ ಪೂರ್ತಿ ಪ್ರಯಾಣ. ಶುರುಮಾಡೋಣ್ವಾ?",
     ],
 }
@@ -1577,37 +1577,43 @@ def _extract_ref_code(text: str | None) -> str | None:
     return t if re.fullmatch(r"[A-HJ-NP-Z2-9]{8}", t) else None
 
 REFERRAL_MSG = {
-    "en": "🎁 Invite friends & earn ₹{reward} each!\n⚠️ You get ₹{reward} *only when your friend signs up and pays* for the course.\nYour code: *{code}*\nSo far: {paid} paid, ₹{earned} earned.\nShare 👇",
-    "hi": "🎁 दोस्तों को बुलाएँ और हर एक पर ₹{reward} कमाएँ!\n⚠️ ₹{reward} तभी मिलेंगे *जब आपका दोस्त साइन अप करके कोर्स का payment करे*।\nआपका कोड: *{code}*\nअब तक: {paid} ने payment किया, ₹{earned} कमाए।\nशेयर करें 👇",
-    "mr": "🎁 मित्रांना आमंत्रित करा, प्रत्येकी ₹{reward} कमवा!\n⚠️ ₹{reward} तेव्हाच मिळतील *जेव्हा तुमचा मित्र साइन अप करून कोर्सचे payment करेल*.\nतुमचा कोड: *{code}*\nआतापर्यंत: {paid} ने payment केले, ₹{earned} कमावले.\nशेअर करा 👇",
-    "te": "🎁 స్నేహితులను ఆహ్వానించి ఒక్కొక్కరికి ₹{reward} సంపాదించండి!\n⚠️ మీ స్నేహితుడు *సైన్ అప్ చేసి కోర్సుకు payment చేసినప్పుడే* ₹{reward} వస్తాయి.\nమీ కోడ్: *{code}*\nఇప్పటివరకు: {paid} payment చేశారు, ₹{earned} సంపాదించారు.\nషేర్ చేయండి 👇",
-    "ta": "🎁 நண்பர்களை அழைத்து ஒவ்வொருவருக்கும் ₹{reward} சம்பாதியுங்கள்!\n⚠️ உங்கள் நண்பர் *பதிவு செய்து பாடத்திற்குப் பணம் செலுத்தினால் மட்டுமே* ₹{reward} கிடைக்கும்.\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: {paid} பணம் செலுத்தினர், ₹{earned} சம்பாதித்தீர்கள்.\nபகிருங்கள் 👇",
-    "kn": "🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ಪ್ರತಿಯೊಬ್ಬರಿಗೂ ₹{reward} ಗಳಿಸಿ!\n⚠️ ನಿಮ್ಮ ಸ್ನೇಹಿತ *ಸೈನ್ ಅಪ್ ಮಾಡಿ ಕೋರ್ಸ್‌ಗೆ payment ಮಾಡಿದಾಗ ಮಾತ್ರ* ₹{reward} ಸಿಗುತ್ತದೆ.\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: {paid} payment ಮಾಡಿದ್ದಾರೆ, ₹{earned} ಗಳಿಸಿದ್ದೀರಿ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
+    "en": "🎁 Invite your friends to learn AI with you!\nYour code: *{code}*\nSo far: *{total}* joined.\nShare 👇",
+    "hi": "🎁 अपने दोस्तों को भी AI सीखने के लिए बुलाएँ!\nआपका कोड: *{code}*\nअब तक: *{total}* जुड़े।\nशेयर करें 👇",
+    "mr": "🎁 तुमच्या मित्रांना पण AI शिकायला बोलवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: *{total}* जोडले.\nशेअर करा 👇",
+    "te": "🎁 మీ స్నేహితులను కూడా AI నేర్చుకోవడానికి ఆహ్వానించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: *{total}* చేరారు.\nషేర్ చేయండి 👇",
+    "ta": "🎁 உங்கள் நண்பர்களையும் AI கற்க அழையுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: *{total}* இணைந்தனர்.\nபகிருங்கள் 👇",
+    "kn": "🎁 ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ AI ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: *{total}* ಸೇರಿದ್ದಾರೆ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
 }
 
-# Sent to the REFERRER when their code lands a signup.
+# Sent to the REFERRER when their code lands a signup. Imported lazily by
+# core/referrals.py — keep it here, and keep the placeholders in sync.
 REFERRAL_SUCCESS = {
-    "en": "🎉 {name} just joined using your code! You've earned ₹{reward}. Total earned: ₹{earned}. 🙌",
-    "hi": "🎉 {name} ने आपके कोड से जॉइन किया! आपने ₹{reward} कमाए। कुल कमाई: ₹{earned}। 🙌",
-    "mr": "🎉 {name} ने तुमच्या कोडने जॉइन केले! तुम्ही ₹{reward} कमावले. एकूण कमाई: ₹{earned}. 🙌",
-    "te": "🎉 {name} మీ కోడ్‌తో చేరారు! మీరు ₹{reward} సంపాదించారు. మొత్తం సంపాదన: ₹{earned}. 🙌",
-    "ta": "🎉 {name} உங்கள் குறியீட்டில் இணைந்தார்! நீங்கள் ₹{reward} சம்பாதித்தீர்கள். மொத்தம்: ₹{earned}. 🙌",
-    "kn": "🎉 {name} ನಿಮ್ಮ ಕೋಡ್‌ನಿಂದ ಸೇರಿದ್ದಾರೆ! ನೀವು ₹{reward} ಗಳಿಸಿದ್ದೀರಿ. ಒಟ್ಟು: ₹{earned}. 🙌",
+    "en": "🎉 {name} just joined using your code! That makes *{total}* learning with you. 🙌",
+    "hi": "🎉 {name} ने आपके कोड से जॉइन किया! अब *{total}* आपके साथ सीख रहे हैं। 🙌",
+    "mr": "🎉 {name} ने तुमच्या कोडने जॉइन केले! आता *{total}* तुमच्यासोबत शिकत आहेत. 🙌",
+    "te": "🎉 {name} మీ కోడ్‌తో చేరారు! ఇప్పుడు *{total}* మంది మీతో నేర్చుకుంటున్నారు. 🙌",
+    "ta": "🎉 {name} உங்கள் குறியீட்டில் இணைந்தார்! இப்போது *{total}* பேர் உங்களுடன் கற்கிறார்கள். 🙌",
+    "kn": "🎉 {name} ನಿಮ್ಮ ಕೋಡ್‌ನಿಂದ ಸೇರಿದ್ದಾರೆ! ಈಗ *{total}* ಜನ ನಿಮ್ಮೊಂದಿಗೆ ಕಲಿಯುತ್ತಿದ್ದಾರೆ. 🙌",
 }
 
 # One-line nudge appended after a lesson so learners discover the program.
 REFER_HINT = {
-    "en": "\n\n🎁 Invite friends & earn ₹50 each — reply *refer*.",
-    "hi": "\n\n🎁 दोस्तों को बुलाएँ, हर एक पर ₹50 — *refer* लिखें.",
-    "mr": "\n\n🎁 मित्रांना बोलवा, प्रत्येकी ₹50 — *refer* लिहा.",
-    "te": "\n\n🎁 స్నేహితులను ఆహ్వానించండి, ఒక్కొక్కరికి ₹50 — *refer* అని పంపండి.",
-    "ta": "\n\n🎁 நண்பர்களை அழையுங்கள், தலா ₹50 — *refer* எனச் சொல்லுங்கள்.",
-    "kn": "\n\n🎁 ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ, ತಲಾ ₹50 — *refer* ಎಂದು ಕಳುಹಿಸಿ.",
+    "en": "\n\n🎁 Invite a friend to learn with you — reply *refer*.",
+    "hi": "\n\n🎁 किसी दोस्त को साथ सीखने बुलाएँ — *refer* लिखें.",
+    "mr": "\n\n🎁 मित्राला सोबत शिकायला बोलवा — *refer* लिहा.",
+    "te": "\n\n🎁 స్నేహితుడిని కలిసి నేర్చుకోవడానికి పిలవండి — *refer* అని పంపండి.",
+    "ta": "\n\n🎁 ஒரு நண்பரை உடன் கற்க அழையுங்கள் — *refer* எனச் சொல்லுங்கள்.",
+    "kn": "\n\n🎁 ಸ್ನೇಹಿತರನ್ನು ಜೊತೆ ಕಲಿಯಲು ಕರೆಯಿರಿ — *refer* ಎಂದು ಕಳುಹಿಸಿ.",
 }
-# Reply-button label (≤20 chars) for the course-complete screen.
+
+# Reply-button label (<=20 chars) for the course-complete screen.
 INVITE_BTN = {
-    "en": "Invite & earn ₹50", "hi": "बुलाएँ, ₹50 पाएँ", "mr": "बोलवा, ₹50 मिळवा",
-    "te": "ఆహ్వానించి ₹50", "ta": "அழைத்து ₹50 பெறு", "kn": "ಆಹ್ವಾನಿಸಿ ₹50 ಪಡೆ",
+    "en": "Invite a friend",
+    "hi": "दोस्त को बुलाएँ",
+    "mr": "मित्राला बोलवा",
+    "te": "స్నేహితులను పిలవండి",
+    "ta": "நண்பரை அழையுங்கள்",
+    "kn": "ಸ್ನೇಹಿತರನ್ನು ಕರೆಯಿರಿ",
 }
 
 async def _send_referral_info(db, session, frm: str) -> None:
@@ -1615,9 +1621,11 @@ async def _send_referral_info(db, session, frm: str) -> None:
     lang = session.language or "en"
     code = await get_or_create_wa_code(db, session)
     stats = await referral_stats(db, "whatsapp", session.phone)
+    # No reward/earned any more: nothing is being paid out, so the copy counts
+    # friends who joined instead of rupees. stats["paid"]/["earned"] still exist
+    # for the admin payout view.
     msg = REFERRAL_MSG.get(lang, REFERRAL_MSG["en"]).format(
-        reward=settings.referral_reward_rupees, code=code,
-        paid=stats["paid"], earned=stats["earned"])
+        code=code, total=stats["total"])
     # Only the wa.me link for now — it opens WhatsApp with JOIN pre-filled and
     # actually credits the referrer. (The web ?ref= link returns once web signup
     # attribution is built.)
@@ -1987,7 +1995,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             await _advance_lesson(db, session, frm, lang, nm)
             return
 
-        # "Invite & earn ₹50" button (course-complete screen) → send code + link
+        # "Invite a friend" button (course-complete screen) → send code + link
         if reply_id == "get_referral":
             await _send_referral_info(db, session, frm)
             return

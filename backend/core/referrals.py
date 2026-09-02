@@ -109,8 +109,10 @@ async def _notify_referrer(db, ref: Referral) -> None:
         lang = (session.language if session else None) or "en"
         stats = await referral_stats(db, "whatsapp", ref.referrer_id)
         name = await _referred_name(db, ref.referred_kind, ref.referred_id)
+        # No rupee amounts: nothing is paid out right now, so the referrer is
+        # told how many friends joined instead of what they earned.
         msg = REFERRAL_SUCCESS.get(lang, REFERRAL_SUCCESS["en"]).format(
-            name=name, reward=ref.reward_amount, earned=stats["earned"])
+            name=name, total=stats["total"])
         await send_text(ref.referrer_id, msg)
     except Exception as e:
         print(f"⚠ referral notify error: {e}")
