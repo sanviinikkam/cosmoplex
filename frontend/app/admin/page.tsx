@@ -617,6 +617,79 @@ function FilterHeader({
   );
 }
 
+
+// Runtime feature toggles. Saved to the DB, so a change takes effect on the very
+// next learner message — no redeploy, no env var, no Render login.
+function SettingsPanel() {
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try { setFlags((await adminApi.settings()).settings); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load settings"); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (key: string, next: boolean) => {
+    setSaving(key); setErr("");
+    // Optimistic, then reconciled from the server response, so a failed save
+    // cannot leave the switch showing a state the backend does not hold.
+    setFlags((f) => ({ ...f, [key]: next }));
+    try {
+      const res = await adminApi.setSetting(key, next);
+      setFlags((f) => ({ ...f, [key]: res.value }));
+    } catch (e) {
+      setFlags((f) => ({ ...f, [key]: !next }));
+      setErr(e instanceof Error ? e.message : "Failed to save");
+    } finally { setSaving(null); }
+  };
+
+  const LABELS: Record<string, { title: string; help: string }> = {
+    assignments_enabled: {
+      title: "Assignments",
+      help: "When off, the WhatsApp flow is video → quiz → next lesson. Learners already sitting on an assignment are moved forward on their next message, and nobody is nudged to finish one.",
+    },
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
+      <h2 className="text-sm font-semibold text-zinc-900 mb-1">Course settings</h2>
+      <p className="text-xs text-zinc-500 mb-4">Takes effect on the next learner message.</p>
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-3"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : (
+        <div className="space-y-3">
+          {Object.entries(flags).map(([key, on]) => {
+            const meta = LABELS[key] ?? { title: key, help: "" };
+            return (
+              <div key={key} className="flex items-start justify-between gap-6 rounded-xl border border-zinc-200 px-4 py-3">
+                <div>
+                  <div className="text-sm font-medium text-zinc-900">{meta.title}</div>
+                  {meta.help && <p className="text-xs text-zinc-500 mt-0.5 max-w-[62ch]">{meta.help}</p>}
+                </div>
+                <button
+                  role="switch" aria-checked={on} aria-label={meta.title}
+                  disabled={saving === key}
+                  onClick={() => toggle(key, !on)}
+                  className={`shrink-0 mt-0.5 relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    on ? "bg-emerald-600" : "bg-zinc-300"}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    on ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // Where learners actually come from. Deliberately a funnel, not a click count:
 // a campaign that sends 500 people who never reply is worth less than one that
 // sends 50 who finish, and only the funnel makes that visible.
@@ -1079,6 +1152,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </>)}
 
       {tab === "content" && (<>
+      <SettingsPanel />
       <IntroVideosManager />
       <MarketingAssetsManager />
 

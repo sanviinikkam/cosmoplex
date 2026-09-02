@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "microlesson-labels",
+        "build": "assignments-toggle",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

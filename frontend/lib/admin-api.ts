@@ -193,6 +193,8 @@ export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 
 // Distinct values actually present in the data, per filterable column. The column
 // dropdowns are built from this so they can never offer a value that matches nothing.
+export type AppSettings = { settings: Record<string, boolean> };
+
 export type UserFacets = {
   stage?: string[];
   language?: string[];
@@ -242,6 +244,12 @@ export const adminApi = {
     return adminFetch<UsersPage<WebLearnerRow | WaSessionRow>>(`/admin/users?${p.toString()}`);
   },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
+  settings: () => adminFetch<AppSettings>("/admin/settings"),
+  setSetting: (key: string, value: boolean) =>
+    adminFetch<{ key: string; value: boolean }>(`/admin/settings/${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    }),
   campaigns: (range?: { from_date?: string; to_date?: string }) => {
     const p = new URLSearchParams();
     if (range?.from_date) p.set("from_date", range.from_date);

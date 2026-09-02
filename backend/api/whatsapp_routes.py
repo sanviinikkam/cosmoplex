@@ -34,6 +34,7 @@ from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
 from core.rate_limit import check_rate_limit, should_notify
 from core.spend_guard import allow_ai_call
+from core.settings_store import get_flag
 from db.database import async_session_factory
 from db.models import (
     WhatsAppSession, Course, CourseModule, Section, Video,
@@ -2026,6 +2027,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                     session.assignment_draft = None
                     await db.commit()
                     await send_text(frm, tr(qlang, "score_pass").format(s=score, name=nm))
+                    # Assignments are an admin toggle (default OFF). When off the
+                    # flow is video -> quiz -> next lesson, so go straight to the
+                    # between-lessons choices instead of the assignment step.
+                    if not await get_flag(db, "assignments_enabled"):
+                        await _send_between_choice(db, session, frm, lang, nm)
+                        return
                     vid = await _current_video_id(db, session, lang)
                     assignment = await _assignment_for(db, vid)
                     lessons = await _db_lessons(db, lang)
@@ -2048,6 +2055,15 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # Assignment: collect answer across multiple messages (text or voice),
         # grade only when they tap Submit.
         if session.stage == "assignment":
+            # Assignments switched off while this learner was mid-assignment.
+            # Without this they would be stranded: the step they are standing on
+            # no longer exists anywhere else in the flow. Release them forward —
+            # they already passed the quiz that got them here.
+            if not await get_flag(db, "assignments_enabled"):
+                session.assignment_draft = None
+                await db.commit()
+                await _send_between_choice(db, session, frm, lang, nm)
+                return
             # Skip → only allowed on non-last microlessons (assignment is optional
             # there). On a module's last microlesson it's compulsory, so re-show it.
             if reply_id == "skip_assignment":

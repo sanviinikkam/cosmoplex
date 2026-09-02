@@ -251,6 +251,10 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
         res = await db.execute(select(WhatsAppSession))
         sessions = list(res.scalars().all())
         report["checked"] = len(sessions)
+        # Read once per run, not per learner: it cannot change mid-run and this
+        # keeps a 100-learner pass to a single settings lookup.
+        from core.settings_store import get_flag
+        assignments_on = await get_flag(db, "assignments_enabled")
 
         for s in sessions:
             if force_to and s.phone != force_to:
@@ -260,6 +264,13 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
             # again. Checked before force_key too, so even a manual ops run cannot
             # message someone who opted out.
             if getattr(s, "opt_out", False):
+                report["skipped"] += 1
+                continue
+
+            # Assignments can be switched off by an admin. When they are, never
+            # nudge someone to finish one — the step does not exist for them, and
+            # the message would point at a screen they can no longer reach.
+            if s.stage == "assignment" and not assignments_on:
                 report["skipped"] += 1
                 continue
 

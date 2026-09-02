@@ -426,6 +426,37 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
             "overall": overall, "checks": checks}
 
 
+@router.get("/settings")
+async def read_settings(
+    _: bool = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Runtime feature toggles, with their current values."""
+    from core.settings_store import all_flags
+    return {"settings": await all_flags(db)}
+
+
+class SettingBody(BaseModel):
+    value: bool
+
+
+@router.put("/settings/{key}")
+async def write_setting(
+    key: str,
+    body: SettingBody,
+    _: bool = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Flip a toggle. Takes effect on the next message — no redeploy."""
+    from core.settings_store import DEFAULTS, set_flag
+    if key not in DEFAULTS:
+        # Only known keys: an unknown one would be stored and silently ignored,
+        # which looks like the toggle works when it does nothing.
+        raise HTTPException(status_code=400, detail=f"unknown setting: {key}")
+    await set_flag(db, key, body.value)
+    return {"key": key, "value": body.value}
+
+
 async def _lesson_labels(db) -> list[str]:
     """Microlesson labels ("1.1", "1.2", "2.1", ...) in course order.
 

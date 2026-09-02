@@ -404,6 +404,20 @@ class WhatsAppMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AppSetting(Base):
+    """Runtime settings an admin can flip WITHOUT a redeploy.
+
+    Deliberately not an env var: changing an env var restarts the service and
+    needs a dashboard login, so a feature toggle would be an ops task instead of
+    a product one.
+    """
+    __tablename__ = "app_settings"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(String(255), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class IntroVideo(Base):
     """WhatsApp onboarding intro video, managed from the admin portal.
     language 'default' plays for every learner; a specific language row
