@@ -1288,6 +1288,13 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
     congratulations message; only the PDF attachment is skipped."""
     if session.stage != "done" or session.certificate_pdf:
         return False
+    # Reaching the end of the UPLOADED lessons is not the same as finishing the
+    # course. While the course is still being published, "done" only means we ran
+    # out of content, so certifying here would hand out a completion certificate
+    # for a course nobody has completed. Gated here rather than at each call site
+    # so no future caller can bypass it.
+    if not await get_flag(db, "course_complete"):
+        return False
     name = (session.name or nm or "").strip() or "Learner"
 
     # Generate the PDF (same design as the web certificate; name is escaped inside).
@@ -1365,7 +1372,12 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
         return True
     session.stage = "done"
     await db.commit()
-    await send_text(frm, tr(lang, "done").format(name=nm))
+    # Out of lessons for THIS language. Until the course is marked complete that
+    # means "more is coming", not "you finished" — lessons without an uploaded
+    # video for the learner's language are filtered out of the list entirely, so
+    # a language can run out earlier than another.
+    finished = await get_flag(db, "course_complete")
+    await send_text(frm, tr(lang, "done" if finished else "no_more").format(name=nm))
     await _deliver_certificate(db, session, frm, lang, nm)
     return False
 

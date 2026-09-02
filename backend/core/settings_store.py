@@ -14,6 +14,11 @@ from db.models import AppSetting
 # next lesson, and the assignment step is opt-in.
 DEFAULTS: dict[str, bool] = {
     "assignments_enabled": False,
+    # Is the whole course uploaded? While False, running out of lessons means
+    # "we haven't published the rest yet", not "you finished" — so the learner is
+    # told more is coming and NO certificate is issued. Turning this on is what
+    # makes finishing the last lesson an actual completion.
+    "course_complete": False,
 }
 
 

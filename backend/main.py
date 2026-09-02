@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "signup-column",
+        "build": "coming-soon",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
