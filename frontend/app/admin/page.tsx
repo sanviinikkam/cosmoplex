@@ -941,6 +941,8 @@ function UserDirectory() {
                   <FilterHeader label="User" />
                   <FilterHeader label="Stage" options={facets.stage}
                     value={f.stage} onChange={(v) => setFilter("stage", v)} />
+                  <FilterHeader label="Signup" options={facets.signup_state}
+                    value={f.signup_state} onChange={(v) => setFilter("signup_state", v)} />
                   <FilterHeader label="Campaign" options={facets.campaign}
                     value={f.campaign} onChange={(v) => setFilter("campaign", v)} />
                   <FilterHeader label="Lesson" align="center" options={facets.lesson}
@@ -956,6 +958,16 @@ function UserDirectory() {
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                     <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
+                    <td className="px-3 py-2">
+                      {/* Colour-coded: at a glance, who is still in the funnel vs
+                          who actually became a learner. */}
+                      <span className={`rounded px-1.5 py-0.5 text-xs whitespace-nowrap ${
+                        r.signupState === "Post sign-up"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"}`}>
+                        {r.signupState ?? "—"}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-xs text-zinc-500">{r.campaign ?? "—"}</td>
                     <td className="px-3 py-2 text-center text-zinc-600">{r.lesson ?? "—"}</td>
                     <td className="px-3 py-2 text-zinc-600">{r.language ?? "—"}</td>

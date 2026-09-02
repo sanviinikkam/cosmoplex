@@ -40,6 +40,9 @@ export type WaSessionRow = {
   id: string;
   name: string; phone: string; language: string | null;
   stage: string;
+  // "Pre sign-up" | "Post sign-up" — derived from the same SIGNUP_STAGES set the
+  // drip uses, so the view and the messaging agree on who counts as signed up.
+  signupState: string | null;
   // Microlesson label as shown to staff, e.g. "1.3". lessonIndex is the raw
   // 0-based position, kept for anything that needs to sort or compare.
   lesson: string | null;
@@ -197,6 +200,7 @@ export type AppSettings = { settings: Record<string, boolean> };
 
 export type UserFacets = {
   stage?: string[];
+  signup_state?: string[];
   language?: string[];
   source_type?: string[];
   campaign?: string[];
@@ -210,6 +214,7 @@ export type UserFilters = {
   to_date?: string;
   language?: string;
   stage?: string;
+  signup_state?: string;
   campaign?: string;
   source_type?: string;
   lesson?: string;          // microlesson label, e.g. "1.3"

@@ -457,6 +457,20 @@ async def write_setting(
     return {"key": key, "value": body.value}
 
 
+PRE_SIGNUP = "Pre sign-up"
+POST_SIGNUP = "Post sign-up"
+
+
+def _signup_state(stage: str | None) -> str:
+    """Which side of signup a learner is on.
+
+    Derived from SIGNUP_STAGES — the same set the drip uses to decide who gets
+    the pre-sale sequence — so the admin view and the messaging can never
+    disagree about who counts as signed up.
+    """
+    return PRE_SIGNUP if (stage in SIGNUP_STAGES) else POST_SIGNUP
+
+
 async def _lesson_labels(db) -> list[str]:
     """Microlesson labels ("1.1", "1.2", "2.1", ...) in course order.
 
@@ -501,6 +515,11 @@ async def _facets(db, channel: str) -> dict:
     if channel == "whatsapp":
         return {
             "stage": await distinct(WhatsAppSession.stage),
+            # Derived from the stages present, so the dropdown never offers a
+            # group that currently has nobody in it.
+            "signup_state": [g for g in (PRE_SIGNUP, POST_SIGNUP)
+                             if g in {_signup_state(st)
+                                      for st in await distinct(WhatsAppSession.stage)}],
             "language": await distinct(WhatsAppSession.language),
             "source_type": await distinct(WhatsAppSession.source_type),
             "campaign": await distinct(WhatsAppSession.campaign),
@@ -612,6 +631,7 @@ async def all_users(
     to_date: str | None = None,     # joined <= (inclusive day)
     language: str | None = None,
     stage: str | None = None,
+    signup_state: str | None = None,   # "Pre sign-up" | "Post sign-up"
     campaign: str | None = None,
     source_type: str | None = None,
     lesson: str | None = None,          # microlesson label, e.g. "1.3"
@@ -647,6 +667,12 @@ async def all_users(
             base = base.where(WhatsAppSession.language == language.strip())
         if stage and stage.strip():
             base = base.where(WhatsAppSession.stage == stage.strip())
+        if signup_state and signup_state.strip():
+            pre = list(SIGNUP_STAGES)
+            if signup_state.strip() == PRE_SIGNUP:
+                base = base.where(WhatsAppSession.stage.in_(pre))
+            elif signup_state.strip() == POST_SIGNUP:
+                base = base.where(WhatsAppSession.stage.not_in(pre))
         if source_type and source_type.strip():
             base = base.where(WhatsAppSession.source_type == source_type.strip())
         if campaign and campaign.strip():
@@ -680,7 +706,8 @@ async def all_users(
         items = [{
             "id": r.phone,
             "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
-            "stage": r.stage, "lesson": lesson_label(r.lesson_index),
+            "stage": r.stage, "signupState": _signup_state(r.stage),
+            "lesson": lesson_label(r.lesson_index),
             "lessonIndex": r.lesson_index,
             "campaign": r.campaign, "sourceType": r.source_type,
             "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
