@@ -1937,17 +1937,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                                [("signup", ob(lang, "signup_btn"))])
             return
 
-        # Sign-up: tapped "Sign up" → reconfirm their WhatsApp number
-        if reply_id == "signup":
-            await db.commit()
-            number = "+" + frm
-            await send_buttons(frm, ob(lang, "confirm_number").format(number=number),
-                               [("confirm_number", ob(lang, "confirm_btn"))])
-            return
-
-        # Sign-up: number confirmed → run the "how the course works" walkthrough,
-        # which ends in a "Let's start" button that launches lesson 1.
-        if reply_id == "confirm_number":
+        # Sign-up: tapped "Sign up" → straight into the "how the course works"
+        # walkthrough, which ends in a "Let's start" button that launches lesson 1.
+        #
+        # There used to be a "confirm your WhatsApp number" step here. It asked the
+        # learner to confirm the number they were already messaging from, which we
+        # read from the webhook itself — so it could only ever be right, and it was
+        # one more tap to lose people on at the narrowest part of the funnel.
+        #
+        # "confirm_number" is still accepted below: that button is sitting on real
+        # phones right now, and WhatsApp lets learners scroll up and tap an old one.
+        # Removing the handler would strand exactly the people mid-signup.
+        if reply_id in ("signup", "confirm_number"):
             session.stage = "howto"
             await db.commit()
             await _send_howto_step(frm, lang, 0)
