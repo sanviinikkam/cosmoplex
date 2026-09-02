@@ -34,14 +34,31 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 admin_scheme = HTTPBearer(auto_error=False)
 
 
-def create_admin_token() -> str:
-    return create_access_token({"sub": "admin", "role": "admin"})
+# The three admin roles. "super" keeps everything the single password used to
+# reach; the other two are strict subsets.
+ADMIN_SUPER = "super"
+ADMIN_CONTENT = "content"
+ADMIN_MARKETING = "marketing"
+ADMIN_ROLES = (ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)
 
 
-async def require_admin(
-    creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
-) -> bool:
-    """Guard for /admin endpoints — requires a valid admin-scoped JWT."""
+def create_admin_token(admin_role: str = ADMIN_SUPER) -> str:
+    if admin_role not in ADMIN_ROLES:
+        raise ValueError(f"unknown admin role: {admin_role}")
+    # role="admin" is kept so any existing check still passes; "adm" carries the
+    # new, finer role.
+    return create_access_token({"sub": f"admin:{admin_role}", "role": "admin",
+                                "adm": admin_role})
+
+
+def _admin_role_from(creds: HTTPAuthorizationCredentials | None) -> str:
+    """The admin role a bearer token carries, or raise 401.
+
+    A token minted before roles existed has no "adm" claim. Those were issued by
+    the single ADMIN_PASSWORD, which is now the SUPER password — so treating a
+    missing claim as super preserves exactly the access that token already had
+    and is not a privilege escalation.
+    """
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Admin authentication required",
@@ -55,6 +72,52 @@ async def require_admin(
         raise exc
     if payload.get("role") != "admin":
         raise exc
+    adm = payload.get("adm") or ADMIN_SUPER
+    if adm not in ADMIN_ROLES:
+        raise exc
+    return adm
+
+
+async def admin_role(
+    creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+) -> str:
+    """Dependency giving the caller's admin role. Use when an endpoint serves
+    several roles but must vary what it returns."""
+    return _admin_role_from(creds)
+
+
+def require_roles(*allowed: str):
+    """Dependency factory: allow only these admin roles.
+
+    Authorization lives here, on the server, for every endpoint. Hiding a tab in
+    the UI is presentation only — the token is in the browser and the API is
+    public, so a hidden panel is not a permission.
+    """
+    for r in allowed:
+        if r not in ADMIN_ROLES:
+            raise ValueError(f"unknown admin role: {r}")
+
+    async def _dep(creds: HTTPAuthorizationCredentials = Depends(admin_scheme)) -> str:
+        role = _admin_role_from(creds)     # 401 if not an admin at all
+        if role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your admin role does not have access to this.",
+            )
+        return role
+
+    # Tagged so the permission matrix can be audited by introspection instead of
+    # by firing 138 HTTP requests at a booted app.
+    _dep.allowed_roles = tuple(allowed)
+    _dep.__name__ = "require_roles_" + "_".join(allowed)
+    return _dep
+
+
+async def require_admin(
+    creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+) -> bool:
+    """Guard for /admin endpoints — any of the three admin roles."""
+    _admin_role_from(creds)
     return True
 
 

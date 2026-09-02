@@ -120,6 +120,9 @@ export const LANGUAGES: { code: string; label: string }[] = [
   { code: "kn", label: "ಕನ್ನಡ" },
 ];
 
+export type AdminRole = "super" | "content" | "marketing";
+const ADMIN_ROLE_KEY = "cosmoplex_admin_role";
+
 export function getAdminToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -129,6 +132,23 @@ export function setAdminToken(t: string) {
 }
 export function clearAdminToken() {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_ROLE_KEY);
+}
+
+/** The role the server said this token carries.
+ *
+ * Presentation only — it decides which panels are worth rendering, NEVER whether
+ * an action is permitted. It lives in localStorage, so anyone could edit it to
+ * "super" and reveal the panels; every request still fails with 403 because the
+ * server re-derives the role from the signed token. Do not add a permission
+ * check that relies on this value alone. */
+export function getAdminRole(): AdminRole {
+  if (typeof window === "undefined") return "super";
+  const r = localStorage.getItem(ADMIN_ROLE_KEY);
+  return r === "content" || r === "marketing" ? r : "super";
+}
+export function setAdminRole(r: string) {
+  localStorage.setItem(ADMIN_ROLE_KEY, r === "content" || r === "marketing" ? r : "super");
 }
 
 async function adminFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -232,8 +252,9 @@ export const adminApi = {
       body: JSON.stringify({ password }),
     });
     if (!res.ok) throw new Error("Incorrect password");
-    const data = (await res.json()) as { access_token: string };
+    const data = (await res.json()) as { access_token: string; role?: string };
     setAdminToken(data.access_token);
+    setAdminRole(data.role ?? "super");
     return data;
   },
 

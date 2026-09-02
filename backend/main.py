@@ -286,7 +286,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "no-rupee-referral",
+        "build": "admin-roles",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

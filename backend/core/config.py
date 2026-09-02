@@ -58,7 +58,9 @@ class Settings(BaseSettings):
                                                 # setups don't break, but set it before go-live.
 
     # Admin portal (hidden /admin) — single shared password
-    admin_password: str = "change-me-admin"
+    admin_password: str = "change-me-admin"          # SUPER admin (the existing one)
+    admin_content_password: str = ""                 # content admin; empty = login disabled
+    admin_marketing_password: str = ""               # marketing admin; empty = login disabled
 
     # Safety net: bounds worst-case AI spend from abuse or a runaway bug. Generous
     # default for the current scale; raise it (env var) as usage legitimately grows.
@@ -69,7 +71,8 @@ class Settings(BaseSettings):
     referral_demo_mode: bool = True       # True = NO real money moves; payouts auto-marked as demo
     whatsapp_business_number: str = "917204419938"  # for wa.me referral links (country code + number, no +)
 
-    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", "whatsapp_ops_key", mode="before")
+    @field_validator("anthropic_api_key", "secret_key", "groq_api_key", "fal_api_key", "openai_api_key", "whatsapp_token", "cloudinary_api_key", "cloudinary_api_secret", "whatsapp_app_secret", "admin_password", "admin_content_password",
+                     "admin_marketing_password", "whatsapp_ops_key", mode="before")
     @classmethod
     def _strip_secret(cls, v):
         # Pasted secrets often pick up trailing newlines/spaces, which break

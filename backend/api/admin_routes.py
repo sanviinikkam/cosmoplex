@@ -36,7 +36,8 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.auth import create_admin_token, require_admin
+from core.auth import (create_admin_token, require_admin, require_roles, admin_role,
+                       ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)
 from core.config import settings
 from db.database import get_db
 from api.whatsapp_drip import SIGNUP_STAGES
@@ -112,14 +113,30 @@ async def admin_login(body: LoginBody, request: Request):
             detail="Too many failed attempts. Please wait a few minutes and try again.",
             headers={"Retry-After": str(_LOGIN_WINDOW)},
         )
-    # Constant-time compare so response timing can't leak the password.
-    ok = bool(settings.admin_password) and hmac.compare_digest(
-        body.password.encode("utf-8"), settings.admin_password.encode("utf-8"))
-    if not ok:
+    # One password per role. Compared in a fixed order, every candidate always
+    # evaluated, so neither which role matched nor how many are configured leaks
+    # through response timing.
+    candidates = (
+        (ADMIN_SUPER, settings.admin_password),
+        (ADMIN_CONTENT, settings.admin_content_password),
+        (ADMIN_MARKETING, settings.admin_marketing_password),
+    )
+    given = body.password.encode("utf-8")
+    matched: str | None = None
+    for role, expected in candidates:
+        if not expected:
+            continue          # unset password = that role cannot log in at all
+        if hmac.compare_digest(given, expected.encode("utf-8")) and matched is None:
+            matched = role
+    if matched is None:
         _login_fails[ip].append(now)
         raise HTTPException(status_code=401, detail="Incorrect password")
     _login_fails.pop(ip, None)   # reset the counter on a successful login
-    return {"access_token": create_admin_token(), "token_type": "bearer"}
+    print(f"✓ Admin login: role={matched}")
+    # The role is returned so the UI can hide what it cannot use. It is NOT the
+    # permission — every endpoint re-derives the role from the token server-side.
+    return {"access_token": create_admin_token(matched), "token_type": "bearer",
+            "role": matched}
 
 
 # ── Serialization ──────────────────────────────────────────────────────────────
@@ -186,7 +203,7 @@ async def _next_order(db: AsyncSession, model, fk_col, fk_val) -> int:
 
 # ── Courses ─────────────────────────────────────────────────────────────────────
 @router.get("/dashboard")
-async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def dashboard(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     """System overview for the admin portal: content counts, web-learner and
     WhatsApp-user stats, status breakdowns, and recent activity. Defensive —
     a failure in one block returns {"error": ...} for that block only."""
@@ -270,7 +287,7 @@ async def dashboard(_: bool = Depends(require_admin), db: AsyncSession = Depends
 
 
 @router.get("/system-check")
-async def system_check(request: Request, _: bool = Depends(require_admin),
+async def system_check(request: Request, _: str = Depends(require_roles(ADMIN_SUPER)),
                        db: AsyncSession = Depends(get_db)):
     """One-shot health check across every dependency. Each entry is
     {key, label, status: ok|warn|error, detail}. `overall` = worst status.
@@ -428,7 +445,7 @@ async def system_check(request: Request, _: bool = Depends(require_admin),
 
 @router.get("/settings")
 async def read_settings(
-    _: bool = Depends(require_admin),
+    _: str = Depends(require_roles(ADMIN_SUPER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Runtime feature toggles, with their current values."""
@@ -444,7 +461,7 @@ class SettingBody(BaseModel):
 async def write_setting(
     key: str,
     body: SettingBody,
-    _: bool = Depends(require_admin),
+    _: str = Depends(require_roles(ADMIN_SUPER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Flip a toggle. Takes effect on the next message — no redeploy."""
@@ -556,7 +573,7 @@ def _date_range(from_date: str | None, to_date: str | None):
 async def campaign_report(
     from_date: str | None = None,
     to_date: str | None = None,
-    _: bool = Depends(require_admin),
+    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
     db: AsyncSession = Depends(get_db),
 ):
     """Acquisition funnel per campaign.
@@ -639,7 +656,7 @@ async def all_users(
     certificate: str | None = None,   # web only: "yes" | "no"
     limit: int = 500,
     offset: int = 0,
-    _: bool = Depends(require_admin),
+    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
     db: AsyncSession = Depends(get_db),
 ):
     """The FULL user directory (not just recent) for the admin portal, one channel
@@ -751,7 +768,7 @@ async def all_users(
 
 
 @router.get("/referrals")
-async def list_referrals(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_referrals(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     """Referral ledger for the admin portal: totals + recent rows with the
     referrer's contact (email / masked phone) for payout."""
     rows = (await db.execute(select(Referral).order_by(Referral.created_at.desc()).limit(200))).scalars().all()
@@ -781,7 +798,7 @@ async def list_referrals(_: bool = Depends(require_admin), db: AsyncSession = De
 
 
 @router.get("/whatsapp/{phone}")
-async def whatsapp_detail(phone: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def whatsapp_detail(phone: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     """Per-user detail for a WhatsApp learner: where they are, how far, quiz state."""
     s = await db.get(WhatsAppSession, phone)
     if not s:
@@ -815,7 +832,7 @@ async def whatsapp_detail(phone: str, _: bool = Depends(require_admin), db: Asyn
 
 @router.get("/whatsapp/{phone}/messages")
 async def whatsapp_messages(phone: str, limit: int = 500,
-                            _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                            _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     """Full WhatsApp transcript for one phone, oldest→newest. Returns the most
     recent `limit` messages (capped), then chronologically ordered for display."""
     limit = max(1, min(limit, 2000))
@@ -837,7 +854,7 @@ async def whatsapp_messages(phone: str, limit: int = 500,
 
 
 @router.get("/learner/{learner_id}")
-async def learner_detail(learner_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def learner_detail(learner_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     """Per-user detail for a web learner: completion %, exams, assignments."""
     lp = await db.get(LearnerProfile, learner_id)
     if not lp:
@@ -894,7 +911,7 @@ async def learner_detail(learner_id: str, _: bool = Depends(require_admin), db: 
 
 
 @router.get("/courses")
-async def list_courses(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_courses(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Course).options(_FULL_TREE).order_by(Course.created_at))
     return [_course_tree(c) for c in res.scalars().all()]
 
@@ -906,7 +923,7 @@ class CourseBody(BaseModel):
 
 
 @router.post("/courses")
-async def create_course(body: CourseBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_course(body: CourseBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     course = Course(title=body.title, description=body.description,
                     thumbnail_cloudinary_id=body.thumbnail_cloudinary_id)
     db.add(course)
@@ -915,7 +932,7 @@ async def create_course(body: CourseBody, _: bool = Depends(require_admin), db: 
 
 
 @router.put("/courses/{course_id}")
-async def update_course(course_id: str, body: CourseBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_course(course_id: str, body: CourseBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     course = await _load_course(course_id, db)
     course.title = body.title
     course.description = body.description
@@ -926,7 +943,7 @@ async def update_course(course_id: str, body: CourseBody, _: bool = Depends(requ
 
 
 @router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_course(course_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     module_ids = select(CourseModule.id).where(CourseModule.course_id == course_id)
     section_ids = select(Section.id).where(Section.module_id.in_(module_ids))
     video_ids = select(Video.id).where(Video.section_id.in_(section_ids))
@@ -949,7 +966,7 @@ class ModuleBody(BaseModel):
 
 
 @router.post("/modules")
-async def create_module(body: ModuleBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_module(body: ModuleBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if not body.course_id:
         raise HTTPException(status_code=400, detail="course_id is required")
     order = await _next_order(db, CourseModule, CourseModule.course_id, body.course_id)
@@ -961,7 +978,7 @@ async def create_module(body: ModuleBody, _: bool = Depends(require_admin), db: 
 
 
 @router.put("/modules/{module_id}")
-async def update_module(module_id: str, body: ModuleBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_module(module_id: str, body: ModuleBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -973,7 +990,7 @@ async def update_module(module_id: str, body: ModuleBody, _: bool = Depends(requ
 
 
 @router.delete("/modules/{module_id}")
-async def delete_module(module_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_module(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -995,7 +1012,7 @@ class ContentDocBody(BaseModel):
 
 
 @router.get("/modules/{module_id}/content-doc")
-async def get_module_content_doc(module_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def get_module_content_doc(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -1004,7 +1021,7 @@ async def get_module_content_doc(module_id: str, _: bool = Depends(require_admin
 
 @router.post("/modules/{module_id}/content-doc")
 async def upload_module_content_doc(module_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
-                                    _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                                    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     """Upload (or paste) the detailed sub-lesson content for a module — this
     becomes the Teacher agent's knowledge source for that module. Replaces
     whatever was there before (one doc per module)."""
@@ -1026,7 +1043,7 @@ async def upload_module_content_doc(module_id: str, file: UploadFile | None = Fi
 
 
 @router.delete("/modules/{module_id}/content-doc")
-async def delete_module_content_doc(module_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_module_content_doc(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -1042,7 +1059,7 @@ class SectionBody(BaseModel):
 
 
 @router.post("/sections")
-async def create_section(body: SectionBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_section(body: SectionBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if not body.module_id:
         raise HTTPException(status_code=400, detail="module_id is required")
     m = await db.get(CourseModule, body.module_id)
@@ -1056,7 +1073,7 @@ async def create_section(body: SectionBody, _: bool = Depends(require_admin), db
 
 
 @router.put("/sections/{section_id}")
-async def update_section(section_id: str, body: SectionBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_section(section_id: str, body: SectionBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     s = await db.get(Section, section_id)
     if not s:
         raise HTTPException(status_code=404, detail="Section not found")
@@ -1067,7 +1084,7 @@ async def update_section(section_id: str, body: SectionBody, _: bool = Depends(r
 
 
 @router.delete("/sections/{section_id}")
-async def delete_section(section_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_section(section_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     s = await db.get(Section, section_id)
     if not s:
         raise HTTPException(status_code=404, detail="Section not found")
@@ -1090,7 +1107,7 @@ class VideoBody(BaseModel):
 
 
 @router.post("/videos")
-async def create_video(body: VideoBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_video(body: VideoBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if not body.section_id:
         raise HTTPException(status_code=400, detail="section_id is required")
     s = await db.get(Section, body.section_id)
@@ -1126,7 +1143,7 @@ async def _warm_derivative(public_id: str) -> None:
 
 
 @router.put("/videos/{video_id}")
-async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -1145,7 +1162,7 @@ async def update_video(video_id: str, body: VideoBody, background_tasks: Backgro
 
 
 @router.delete("/videos/{video_id}")
-async def delete_video(video_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_video(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -1166,7 +1183,7 @@ class VariantBody(BaseModel):
 
 
 @router.put("/videos/{video_id}/variant")
-async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Supported: {sorted(SUPPORTED_LANGUAGES)}")
     v = await db.get(Video, video_id)
@@ -1193,7 +1210,7 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
 
 
 @router.delete("/videos/{video_id}/variant/{language}")
-async def delete_variant(video_id: str, language: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_variant(video_id: str, language: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(VideoLanguageVariant).where(
         VideoLanguageVariant.video_id == video_id, VideoLanguageVariant.language == language))
     variant = res.scalar_one_or_none()
@@ -1211,7 +1228,7 @@ class SignatureBody(BaseModel):
 
 
 @router.post("/cloudinary/signature")
-async def cloudinary_signature(body: SignatureBody, _: bool = Depends(require_admin)):
+async def cloudinary_signature(body: SignatureBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING))):
     """Return params for a signed direct browser→Cloudinary upload. The api_secret
     never leaves the server — only the derived signature does."""
     if not settings.cloudinary_api_key or not settings.cloudinary_api_secret:
@@ -1249,13 +1266,13 @@ def _quiz_dict(q: QuizQuestion) -> dict:
 
 
 @router.get("/videos/{video_id}/quizzes")
-async def list_quizzes(video_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_quizzes(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(QuizQuestion).where(QuizQuestion.video_id == video_id).order_by(QuizQuestion.order_index))
     return [_quiz_dict(q) for q in res.scalars().all()]
 
 
 @router.post("/videos/{video_id}/quizzes")
-async def create_quiz(video_id: str, body: QuizBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_quiz(video_id: str, body: QuizBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     if not body.question.get("en"):
@@ -1269,7 +1286,7 @@ async def create_quiz(video_id: str, body: QuizBody, _: bool = Depends(require_a
 
 
 @router.put("/quizzes/{quiz_id}")
-async def update_quiz(quiz_id: str, body: QuizBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_quiz(quiz_id: str, body: QuizBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     q = await db.get(QuizQuestion, quiz_id)
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -1281,7 +1298,7 @@ async def update_quiz(quiz_id: str, body: QuizBody, _: bool = Depends(require_ad
 
 
 @router.delete("/quizzes/{quiz_id}")
-async def delete_quiz(quiz_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_quiz(quiz_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     q = await db.get(QuizQuestion, quiz_id)
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -1301,13 +1318,13 @@ def _assign_dict(a: AssignmentPrompt) -> dict:
 
 
 @router.get("/videos/{video_id}/assignments")
-async def list_assignments(video_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_assignments(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id).order_by(AssignmentPrompt.order_index))
     return [_assign_dict(a) for a in res.scalars().all()]
 
 
 @router.post("/videos/{video_id}/assignments")
-async def create_assignment(video_id: str, body: AssignmentBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def create_assignment(video_id: str, body: AssignmentBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if not await db.get(Video, video_id):
         raise HTTPException(status_code=404, detail="Video not found")
     if not body.question.get("en"):
@@ -1320,7 +1337,7 @@ async def create_assignment(video_id: str, body: AssignmentBody, _: bool = Depen
 
 
 @router.put("/assignments/{assignment_id}")
-async def update_assignment(assignment_id: str, body: AssignmentBody, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_assignment(assignment_id: str, body: AssignmentBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     a = await db.get(AssignmentPrompt, assignment_id)
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
@@ -1331,7 +1348,7 @@ async def update_assignment(assignment_id: str, body: AssignmentBody, _: bool = 
 
 
 @router.delete("/assignments/{assignment_id}")
-async def delete_assignment(assignment_id: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_assignment(assignment_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     a = await db.get(AssignmentPrompt, assignment_id)
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
@@ -1355,14 +1372,14 @@ def _intro_dict(iv: IntroVideo) -> dict:
 
 
 @router.get("/intro-videos")
-async def list_intro_videos(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_intro_videos(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(IntroVideo))
     return [_intro_dict(iv) for iv in res.scalars().all()]
 
 
 @router.put("/intro-videos/{language}")
 async def set_intro_video(language: str, body: IntroVideoBody,
-                          _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                          _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if language not in INTRO_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"language must be one of {sorted(INTRO_LANGUAGES)}")
     if not body.cloudinary_public_id.strip():
@@ -1378,7 +1395,7 @@ async def set_intro_video(language: str, body: IntroVideoBody,
 
 
 @router.delete("/intro-videos/{language}")
-async def delete_intro_video(language: str, _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def delete_intro_video(language: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     iv = await db.get(IntroVideo, language)
     if not iv:
         raise HTTPException(status_code=404, detail="Intro video not set for this language")
@@ -1407,7 +1424,7 @@ def _marketing_dict(a: MarketingAsset) -> dict:
 
 
 @router.get("/marketing-assets")
-async def list_marketing_assets(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(MarketingAsset))
     return {"days": MARKETING_DAYS, "languages": sorted(SUPPORTED_LANGUAGES),
             "items": [_marketing_dict(a) for a in res.scalars().all()]}
@@ -1415,7 +1432,7 @@ async def list_marketing_assets(_: bool = Depends(require_admin), db: AsyncSessi
 
 @router.put("/marketing-assets/{day}/{language}")
 async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
-                              _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     if day not in MARKETING_DAYS:
         raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
     if language not in SUPPORTED_LANGUAGES:
@@ -1440,7 +1457,7 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
 
 @router.delete("/marketing-assets/{day}/{language}")
 async def delete_marketing_asset(day: int, language: str,
-                                 _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     a = await db.get(MarketingAsset, f"{day}_{language}")
     if not a:
         raise HTTPException(status_code=404, detail="No asset for that day/language")
@@ -1882,7 +1899,7 @@ async def _fill_assign_gaps(items: list[dict]) -> list[dict]:
 @router.post("/videos/{video_id}/quizzes/bulk")
 async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                        replace: bool = Form(False),
-                       _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                       _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     """Upload a doc / paste text of MCQs → extract + translate. Appends by default;
     `replace=true` clears this lesson's existing quiz bank first (clean re-import)."""
     if not await db.get(Video, video_id):
@@ -1913,7 +1930,7 @@ async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text
 @router.post("/videos/{video_id}/assignments/bulk")
 async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
                            replace: bool = Form(False),
-                           _: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                           _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     """Upload a doc / paste text of assignment prompts → extract + translate. Appends
     by default; `replace=true` clears this lesson's existing assignment bank first."""
     if not await db.get(Video, video_id):
@@ -1962,7 +1979,7 @@ async def bulk_assignments(video_id: str, file: UploadFile | None = File(None), 
 
 
 @router.post("/sync-videos")
-async def sync_videos(_: bool = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def sync_videos(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     """Import known Cloudinary IDs (used by the learner site / WhatsApp) into the
     DB as per-language variants, matched by lesson title. Idempotent."""
     res = await db.execute(select(Video).options(selectinload(Video.language_variants)))

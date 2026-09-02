@@ -8,6 +8,7 @@ import {
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
   type CampaignRow, type UserFilters, type UserFacets,
+  getAdminRole, type AdminRole,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -484,7 +485,7 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(wa.recent ?? []).map((r, i) => (
-                      <tr key={i} onClick={() => setSel({ kind: "wa", id: r.id })}
+                      <tr key={i} onClick={() => { if (canOpenLearner()) setSel({ kind: "wa", id: r.id }); }}
                         className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                         <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
@@ -511,7 +512,7 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(web.recent ?? []).map((r, i) => (
-                      <tr key={i} onClick={() => setSel({ kind: "web", id: r.id })}
+                      <tr key={i} onClick={() => { if (canOpenLearner()) setSel({ kind: "web", id: r.id }); }}
                         className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2">
                           <span className="font-medium">{r.name ?? "—"}</span>
@@ -688,6 +689,17 @@ function SettingsPanel() {
       )}
     </section>
   );
+}
+
+
+/** Can this admin open a learner's detail (phone + full chat transcript)?
+ *
+ * Content admin gets read-only analytics but not transcripts, so their rows are
+ * inert. This mirrors the server, which returns 403 for those endpoints — the
+ * check here only avoids showing an error the person can do nothing about. */
+function canOpenLearner(): boolean {
+  const r = getAdminRole();
+  return r === "super" || r === "marketing";
 }
 
 // Where learners actually come from. Deliberately a funnel, not a click count:
@@ -919,7 +931,7 @@ function UserDirectory() {
               </thead>
               <tbody>
                 {(rows as WebLearnerRow[]).map((r, i) => (
-                  <tr key={r.id ?? i} onClick={() => setSel({ kind: "web", id: r.id })}
+                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner()) setSel({ kind: "web", id: r.id }); }}
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2">
                       <span className="font-medium">{r.name ?? "—"}</span>
@@ -954,7 +966,7 @@ function UserDirectory() {
               </thead>
               <tbody>
                 {(rows as WaSessionRow[]).map((r, i) => (
-                  <tr key={r.id ?? i} onClick={() => setSel({ kind: "wa", id: r.id })}
+                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner()) setSel({ kind: "wa", id: r.id }); }}
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                     <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
@@ -1085,6 +1097,18 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"content" | "analytics">("content");
+  // Presentation only — the server enforces the real permissions. See getAdminRole.
+  const [role, setRole] = useState<AdminRole>("super");
+  useEffect(() => {
+    const r = getAdminRole();
+    setRole(r);
+    // Marketing has no Content tab; don't leave them staring at nothing.
+    if (r === "marketing") setTab("analytics");
+    // Dashboard only mounts after a successful login, so once is enough.
+  }, []);
+  const canContent = role === "super" || role === "content";
+  const canMarketing = role === "super" || role === "marketing";
+  const isSuper = role === "super";
 
   const refresh = useCallback(async () => {
     try {
@@ -1146,7 +1170,9 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
       <div className="flex gap-1 mb-6 border-b border-zinc-200">
-        {([["content", "Content"], ["analytics", "Analytics"]] as const).map(([key, label]) => (
+        {(([["content", "Content"], ["analytics", "Analytics"]] as const)
+          // Marketing has no content-authoring surface, so the tab would open empty.
+          .filter(([key]) => key !== "content" || canContent)).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === key ? "border-emerald-600 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-800"}`}>
@@ -1156,17 +1182,22 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {tab === "analytics" && (<>
-        <SystemCheckPanel />
+        {/* Infrastructure state: super only. */}
+        {isSuper && <SystemCheckPanel />}
         <SystemStatus />
         <CampaignsPanel />
         <UserDirectory />
-        <ReferralsPanel />
+        {/* Referral payouts are a marketing surface. */}
+        {canMarketing && <ReferralsPanel />}
       </>)}
 
-      {tab === "content" && (<>
-      <SettingsPanel />
+      {tab === "content" && canContent && (<>
+      {/* These change the product for every learner (and gate certificates), so
+          they stay with the super admin. */}
+      {isSuper && <SettingsPanel />}
       <IntroVideosManager />
-      <MarketingAssetsManager />
+      {/* Campaign creative belongs to marketing. */}
+      {canMarketing && <MarketingAssetsManager />}
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar */}
