@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   adminApi, uploadMediaToCloudinary, getAdminToken, clearAdminToken,
   LANGUAGES, type AdminCourse, type AdminVideo, type QuizItem, type AssignmentItem,
@@ -830,13 +830,10 @@ function canOpenLearner(): boolean {
 }
 
 
-/** An expand/collapse toggle that keeps working inside a disabled <fieldset>.
+/** An expand/collapse toggle: a div with role="button" plus keyboard handling.
  *
- * fieldset[disabled] disables every nested FORM control, which is what makes the
- * read-only view safe — but an expand arrow is navigation, not a mutation, and a
- * viewer who cannot open a section cannot see anything. A div with role="button"
- * is not a form control, so it stays live while every real control around it
- * stays disabled. */
+ * Not a <button> on purpose — these sit inside editor forms, and a plain button
+ * there is one stray type attribute away from submitting the form it lives in. */
 function Toggle({ onClick, className, children }: {
   onClick: () => void; className?: string; children: React.ReactNode;
 }) {
@@ -850,6 +847,248 @@ function Toggle({ onClick, className, children }: {
     >
       {children}
     </div>
+  );
+}
+
+
+// ── Read-only content overview (marketing role) ──────────────────────────────
+// A purpose-built VIEW, not the editor with its controls switched off. The
+// question it answers is "what is uploaded, and what is still missing, in which
+// languages" — so every lesson is a row and every language a column, all shown
+// at once. Nothing here expands or collapses, so no toggle can be broken by a
+// read-only mode, and no edit control exists to be accidentally left live.
+
+// Three states, because "is it uploaded" has three real answers. The flow
+// resolves a video as: this language → English → the base file. So a lesson with
+// no Telugu video is not blank for a Telugu learner — they are shown the ENGLISH
+// video. Collapsing that into a tick or a dash would hide the thing this page
+// exists to reveal.
+type Cover = "own" | "fallback" | "none";
+
+function Tick({ state }: { state: Cover }) {
+  if (state === "own") return <span className="text-emerald-600 font-semibold" title="uploaded in this language">✓</span>;
+  if (state === "fallback") return <span className="text-amber-500" title="no video in this language — learners are shown the English one">↩</span>;
+  return <span className="text-zinc-300" title="nothing to play">—</span>;
+}
+
+function CoverageBar({ done, total }: { done: number; total: number }) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-24 rounded-full bg-zinc-200 overflow-hidden">
+        <div className={`h-full ${pct === 100 ? "bg-emerald-500" : "bg-amber-400"}`}
+             style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs tabular-nums text-zinc-500">{done}/{total}</span>
+    </div>
+  );
+}
+
+function ContentOverview() {
+  const [courses, setCourses] = useState<AdminCourse[]>([]);
+  const [intro, setIntro] = useState<IntroVideoItem[]>([]);
+  const [assets, setAssets] = useState<MarketingAssetRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [c, i, a] = await Promise.all([
+          adminApi.listCourses(), adminApi.listIntroVideos(), adminApi.listMarketingAssets(),
+        ]);
+        setCourses(c); setIntro(i); setAssets(a.items);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Failed to load content");
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-sm text-zinc-400 py-10 justify-center">
+      <Spinner className="w-4 h-4" /> Loading content…
+    </div>;
+  }
+  if (err) {
+    return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{err}</div>;
+  }
+
+  // Flatten to lessons in course order, carrying the same 1.1 / 1.2 label the
+  // learner-facing flow and the analytics table use.
+  const lessons: { label: string; title: string; module: string; level: number;
+                   cover: (lang: string) => Cover }[] = [];
+  for (const course of courses) {
+    course.modules.forEach((m, mi) => {
+      m.sections.forEach((sec, si) => {
+        sec.videos.forEach((v) => {
+          const has = (code: string) =>
+            v.variants.some((x) => x.language === code && !!x.cloudinaryPublicId);
+          // Mirrors _variant_public_id on the backend: this language, then
+          // English, then the base file.
+          const cover = (lang: string): Cover =>
+            has(lang) ? "own"
+            : (has("en") || !!v.baseCloudinaryId) ? "fallback"
+            : "none";
+          lessons.push({
+            label: `${mi + 1}.${si + 1}`, title: v.title,
+            module: m.title, level: m.level, cover,
+          });
+        });
+      });
+    });
+  }
+
+  const perLang = LANGUAGES.map((l) => ({
+    ...l,
+    done: lessons.filter((x) => x.cover(l.code) === "own").length,
+    fallback: lessons.filter((x) => x.cover(l.code) === "fallback").length,
+  }));
+  const introLangs = new Set(intro.map((i) => i.language));
+  const assetAt = (day: number, lang: string) =>
+    assets.find((a) => a.day === day && a.language === lang);
+
+  // Group rows by module so the table reads like the course, not a flat dump.
+  const byModule: { key: string; level: number; rows: typeof lessons }[] = [];
+  for (const l of lessons) {
+    const last = byModule[byModule.length - 1];
+    if (last && last.key === l.module) last.rows.push(l);
+    else byModule.push({ key: l.module, level: l.level, rows: [l] });
+  }
+
+  return (
+    <>
+      <div className="mb-4 rounded-xl border border-zinc-200 bg-white px-4 py-3">
+        <h2 className="text-sm font-semibold text-zinc-900">Content overview</h2>
+        <p className="text-xs text-zinc-500 mt-0.5">
+          What is uploaded and what is still missing — {lessons.length} lessons in the course.
+          Content is added by the content admin.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+          {perLang.map((l) => (
+            <div key={l.code} className="flex items-center gap-2">
+              <span className="text-xs font-medium w-16">{l.label}</span>
+              <CoverageBar done={l.done} total={lessons.length} />
+              {l.fallback > 0 && (
+                <span className="text-[11px] text-amber-600 whitespace-nowrap">
+                  +{l.fallback} playing in English
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+          <span><span className="text-emerald-600 font-semibold">✓</span> in this language</span>
+          <span><span className="text-amber-500">↩</span> no video yet — learners are shown the English one</span>
+          <span><span className="text-zinc-300">—</span> nothing to play</span>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-zinc-200 bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-zinc-500 text-xs">
+              <tr>
+                <th className="text-left font-medium px-3 py-2 w-14">#</th>
+                <th className="text-left font-medium px-3 py-2">Lesson</th>
+                {LANGUAGES.map((l) => (
+                  <th key={l.code} className="font-medium px-2 py-2 text-center whitespace-nowrap">{l.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {byModule.map((grp) => (
+                <Fragment key={grp.key}>
+                  <tr className="bg-zinc-50/70">
+                    <td colSpan={2 + LANGUAGES.length} className="px-3 py-1.5">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 mr-2">
+                        Level {grp.level}
+                      </span>
+                      <span className="text-xs font-medium text-zinc-700">{grp.key}</span>
+                    </td>
+                  </tr>
+                  {grp.rows.map((r) => (
+                    <tr key={r.label + r.title} className="border-t border-zinc-100">
+                      <td className="px-3 py-2 text-xs tabular-nums text-emerald-700 font-semibold">{r.label}</td>
+                      <td className="px-3 py-2">{r.title}</td>
+                      {LANGUAGES.map((l) => (
+                        <td key={l.code} className="px-2 py-2 text-center"><Tick state={r.cover(l.code)} /></td>
+                      ))}
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              {!lessons.length && (
+                <tr><td colSpan={2 + LANGUAGES.length} className="px-3 py-6 text-center text-zinc-400">
+                  No lessons yet.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-zinc-900">🎬 WhatsApp intro video</h3>
+        <p className="text-xs text-zinc-500 mt-0.5 mb-3">
+          Sent when someone first messages on WhatsApp. Default is used when a language
+          has no version of its own.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-lg border border-zinc-200 px-3 py-2 text-center">
+            <div className="text-xs font-medium">Default</div>
+            <div className="text-xs mt-0.5"><Tick state={introLangs.has("default") ? "own" : "none"} /></div>
+          </div>
+          {LANGUAGES.map((l) => (
+            <div key={l.code} className="rounded-lg border border-zinc-200 px-3 py-2 text-center">
+              <div className="text-xs font-medium">{l.label}</div>
+              <div className="text-xs mt-0.5"><Tick state={introLangs.has(l.code) ? "own" : "none"} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-zinc-900">📣 Pre-sale marketing (signup drip)</h3>
+        <p className="text-xs text-zinc-500 mt-0.5 mb-3">
+          Sent to people who started but never finished signup — after 1, 2, 3 and 7 days.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-zinc-500 text-xs">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">Day</th>
+                {LANGUAGES.map((l) => (
+                  <th key={l.code} className="font-medium px-2 py-2 text-center whitespace-nowrap">{l.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MARKETING_DAYS.map((day) => (
+                <tr key={day} className="border-t border-zinc-100">
+                  <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">Day {day}</td>
+                  {LANGUAGES.map((l) => {
+                    const a = assetAt(day, l.code);
+                    const has = !!(a && (a.imagePublicId || a.videoPublicId || a.text));
+                    return (
+                      <td key={l.code} className="px-2 py-2 text-center align-top">
+                        <Tick state={has ? "own" : "none"} />
+                        {has && (
+                          <div className="text-[10px] text-zinc-400 mt-0.5">
+                            {[a?.videoPublicId ? "video" : null,
+                              a?.imagePublicId ? "image" : null,
+                              a?.text ? "text" : null].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1345,23 +1584,14 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         {canMarketing && <ReferralsPanel />}
       </>)}
 
-      {tab === "content" && (<>
+      {tab === "content" && !canEdit && <ContentOverview />}
+
+      {tab === "content" && canEdit && (<>
       {/* These change the product for every learner (and gate certificates), so
           they stay with the super admin. */}
       {isSuper && <SettingsPanel />}
       {isSuper && <TeamLoginsPanel />}
 
-      {!canEdit && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-          View only — you can see everything here, including which languages each
-          lesson has, but changes are made by the content admin.
-        </div>
-      )}
-
-      {/* One fieldset rather than a `disabled` on each control: a disabled
-          fieldset disables every nested button and input natively, so a control
-          added later cannot be forgotten and left live for a read-only role. */}
-      <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0 m-0">
       <IntroVideosManager />
       {/* Pre-sale campaign assets. Uploading is the content admin's job; marketing
           can see what is scheduled. */}
@@ -1403,7 +1633,6 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           )}
         </main>
       </div>
-      </fieldset>
       </>)}
     </div>
   );
