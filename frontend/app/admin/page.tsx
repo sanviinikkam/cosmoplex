@@ -829,6 +829,30 @@ function canOpenLearner(): boolean {
   return r === "super" || r === "marketing";
 }
 
+
+/** An expand/collapse toggle that keeps working inside a disabled <fieldset>.
+ *
+ * fieldset[disabled] disables every nested FORM control, which is what makes the
+ * read-only view safe — but an expand arrow is navigation, not a mutation, and a
+ * viewer who cannot open a section cannot see anything. A div with role="button"
+ * is not a form control, so it stays live while every real control around it
+ * stays disabled. */
+function Toggle({ onClick, className, children }: {
+  onClick: () => void; className?: string; children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="button" tabIndex={0} onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); }
+      }}
+      className={`cursor-pointer ${className ?? ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 // Where learners actually come from. Deliberately a funnel, not a click count:
 // a campaign that sends 500 people who never reply is worth less than one that
 // sends 50 who finish, and only the funnel makes that visible.
@@ -1413,7 +1437,7 @@ function IntroVideosManager() {
 
   return (
     <div className="bg-white rounded-2xl border border-zinc-200 mb-6">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
+      <Toggle onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
         <div>
           <h2 className="font-semibold">🎬 WhatsApp intro video</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
@@ -1422,7 +1446,7 @@ function IntroVideosManager() {
           </p>
         </div>
         <span className="text-zinc-400 shrink-0 ml-3">{open ? "▲" : "▼"}</span>
-      </button>
+      </Toggle>
       {open && (
         <div className="px-5 pb-5">
           {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
@@ -1576,7 +1600,7 @@ function MarketingAssetsManager() {
 
   return (
     <div className="bg-white rounded-2xl border border-zinc-200 mb-6">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
+      <Toggle onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
         <div>
           <h2 className="font-semibold">📣 Pre-sale marketing (signup drip)</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
@@ -1585,7 +1609,7 @@ function MarketingAssetsManager() {
           </p>
         </div>
         <span className="text-zinc-400 shrink-0 ml-3">{open ? "▲" : "▼"}</span>
-      </button>
+      </Toggle>
       {open && (
         <div className="px-5 pb-5">
           {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
@@ -1784,13 +1808,13 @@ function ModuleContentDoc({ moduleId, hasDoc, preview, onChanged }: {
 
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 mb-4">
-      <button type="button" className="w-full flex items-center justify-between px-3 py-2 text-left"
+      <Toggle className="w-full flex items-center justify-between px-3 py-2 text-left"
         onClick={() => { const next = !open; setOpen(next); if (next && fullText === null) loadFull(); }}>
         <span className="text-sm font-medium">
           📄 Module content doc {hasDoc ? <span className="text-emerald-700">(uploaded)</span> : <span className="text-zinc-400">(not set)</span>}
         </span>
         <span className="text-zinc-400 text-xs">{open ? "▲" : "▼"}</span>
-      </button>
+      </Toggle>
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           <p className="text-[11px] text-zinc-600">
@@ -1849,12 +1873,12 @@ function LessonRow({ video, num, run }: { video: AdminVideo; num: string; run: (
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
       <div className="flex items-center justify-between gap-3">
-        <button className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)}>
+        <Toggle className="flex items-center gap-2 min-w-0 text-left" onClick={() => setOpen((o) => !o)}>
           <span className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
           <span className="text-xs font-semibold text-emerald-700 shrink-0">{num}</span>
           <span className="text-sm font-medium truncate">🎬 {video.title}</span>
           <span className="text-[11px] text-zinc-400 shrink-0">{langsSet}/6 languages</span>
-        </button>
+        </Toggle>
         <div className="flex gap-3 shrink-0">
           <button className="text-xs text-zinc-500 hover:text-zinc-800"
             onClick={async () => {
@@ -2016,10 +2040,10 @@ function QuizManager({ videoId }: { videoId: string }) {
 
   return (
     <div className="rounded-lg bg-white border border-zinc-200">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+      <Toggle onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
         <span>📝 Quiz questions {items.length ? `(${items.length})` : ""}</span>
         <span className="text-zinc-400">{open ? "▲" : "▼"}</span>
-      </button>
+      </Toggle>
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           {err && <p className="text-xs text-red-600">{err}</p>}
@@ -2132,10 +2156,10 @@ function AssignmentManager({ videoId }: { videoId: string }) {
 
   return (
     <div className="rounded-lg bg-white border border-zinc-200">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
+      <Toggle onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium">
         <span>📌 Assignments {items.length ? `(${items.length})` : ""}</span>
         <span className="text-zinc-400">{open ? "▲" : "▼"}</span>
-      </button>
+      </Toggle>
       {open && (
         <div className="px-3 pb-3 flex flex-col gap-2">
           {err && <p className="text-xs text-red-600">{err}</p>}
