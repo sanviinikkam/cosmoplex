@@ -619,6 +619,105 @@ function FilterHeader({
 }
 
 
+
+// Team logins. Super admin sets the content and marketing passwords here, so
+// they never live in Render (visible to anyone with dashboard access, and a
+// change restarts the service) and never in the repo. Stored bcrypt-hashed —
+// there is no endpoint that can read one back.
+function TeamLoginsPanel() {
+  const [roles, setRoles] = useState<Record<string, boolean>>({});
+  const [minLen, setMinLen] = useState(12);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const r = await adminApi.team();
+      setRoles(r.roles); setMinLen(r.minLength);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (role: string) => {
+    const pw = draft[role] ?? "";
+    if (pw.length < minLen) { setErr(`Password must be at least ${minLen} characters.`); return; }
+    setBusy(role); setErr(""); setMsg("");
+    try {
+      await adminApi.setTeamPassword(role, pw);
+      setDraft((d) => ({ ...d, [role]: "" }));
+      setMsg(`${role} password updated.`);
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save"); }
+    finally { setBusy(null); }
+  };
+
+  const disable = async (role: string) => {
+    setBusy(role); setErr(""); setMsg("");
+    try {
+      await adminApi.clearTeamPassword(role);
+      setMsg(`${role} login disabled.`);
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); }
+    finally { setBusy(null); }
+  };
+
+  const LABEL: Record<string, string> = {
+    content: "Content admin", marketing: "Marketing admin",
+  };
+  const HELP: Record<string, string> = {
+    content: "Courses, videos, quizzes, assignments, plus read-only analytics. No phone numbers or chat transcripts.",
+    marketing: "Campaigns, marketing assets, referrals, and full learner access including transcripts.",
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
+      <h2 className="text-sm font-semibold text-zinc-900 mb-1">Team logins</h2>
+      <p className="text-xs text-zinc-500 mb-4">
+        Your own login is the super admin and is not managed here. Passwords are stored
+        hashed — they cannot be read back, only replaced. Three ordinary words make a
+        password that is both easy to remember and hard to guess.
+      </p>
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
+      {msg && <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-3 py-2 mb-3">{msg}</div>}
+      <div className="space-y-3">
+        {["content", "marketing"].map((role) => (
+          <div key={role} className="rounded-xl border border-zinc-200 px-4 py-3">
+            <div className="flex items-center justify-between gap-4 mb-1">
+              <div className="text-sm font-medium text-zinc-900">{LABEL[role]}</div>
+              <span className={`text-xs rounded px-1.5 py-0.5 ${
+                roles[role] ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}>
+                {roles[role] ? "login active" : "no password — login disabled"}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500 mb-2 max-w-[70ch]">{HELP[role]}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="password" autoComplete="new-password"
+                placeholder={roles[role] ? "Set a new password" : `At least ${minLen} characters`}
+                value={draft[role] ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, [role]: e.target.value }))}
+                className="flex-1 min-w-[220px] rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              />
+              <button onClick={() => save(role)} disabled={busy === role}
+                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5 disabled:opacity-50">
+                {busy === role ? "Saving…" : roles[role] ? "Change" : "Set password"}
+              </button>
+              {roles[role] && (
+                <button onClick={() => disable(role)} disabled={busy === role}
+                  className="rounded-lg border border-zinc-300 text-zinc-600 hover:text-zinc-900 text-sm px-3 py-1.5 disabled:opacity-50">
+                  Disable
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // Runtime feature toggles. Saved to the DB, so a change takes effect on the very
 // next learner message — no redeploy, no env var, no Render login.
 function SettingsPanel() {
@@ -1195,6 +1294,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       {/* These change the product for every learner (and gate certificates), so
           they stay with the super admin. */}
       {isSuper && <SettingsPanel />}
+      {isSuper && <TeamLoginsPanel />}
       <IntroVideosManager />
       {/* Campaign creative belongs to marketing. */}
       {canMarketing && <MarketingAssetsManager />}

@@ -104,7 +104,8 @@ def _login_locked(ip: str, now: float) -> bool:
 
 
 @router.post("/login")
-async def admin_login(body: LoginBody, request: Request):
+async def admin_login(body: LoginBody, request: Request,
+                      db: AsyncSession = Depends(get_db)):
     ip = _client_ip(request)
     now = time.time()
     if _login_locked(ip, now):
@@ -113,20 +114,18 @@ async def admin_login(body: LoginBody, request: Request):
             detail="Too many failed attempts. Please wait a few minutes and try again.",
             headers={"Retry-After": str(_LOGIN_WINDOW)},
         )
-    # One password per role. Compared in a fixed order, every candidate always
-    # evaluated, so neither which role matched nor how many are configured leaks
-    # through response timing.
-    candidates = (
-        (ADMIN_SUPER, settings.admin_password),
-        (ADMIN_CONTENT, settings.admin_content_password),
-        (ADMIN_MARKETING, settings.admin_marketing_password),
-    )
-    given = body.password.encode("utf-8")
+    from core import admin_users
     matched: str | None = None
-    for role, expected in candidates:
-        if not expected:
-            continue          # unset password = that role cannot log in at all
-        if hmac.compare_digest(given, expected.encode("utf-8")) and matched is None:
+    # Super: the bootstrap credential, still ADMIN_PASSWORD. Constant-time so
+    # response timing cannot leak it.
+    if settings.admin_password and hmac.compare_digest(
+            body.password.encode("utf-8"), settings.admin_password.encode("utf-8")):
+        matched = ADMIN_SUPER
+    # Content / marketing: bcrypt hashes in the DB, set from the admin UI.
+    # Every configured role is checked even after a match, so the number of
+    # bcrypt verifications does not reveal which role a password belongs to.
+    for role in (ADMIN_CONTENT, ADMIN_MARKETING):
+        if await admin_users.check(db, role, body.password) and matched is None:
             matched = role
     if matched is None:
         _login_fails[ip].append(now)
@@ -441,6 +440,55 @@ async def system_check(request: Request, _: str = Depends(require_roles(ADMIN_SU
             overall = c["status"]
     return {"generatedAt": datetime.utcnow().isoformat(), "environment": settings.environment,
             "overall": overall, "checks": checks}
+
+
+class TeamPasswordBody(BaseModel):
+    password: str
+
+
+@router.get("/team")
+async def team_logins(
+    _: str = Depends(require_roles(ADMIN_SUPER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Which role logins are set up. Never returns a password or a hash."""
+    from core import admin_users
+    return {"roles": await admin_users.which_roles_configured(db),
+            "minLength": admin_users.MIN_PASSWORD_LEN}
+
+
+@router.put("/team/{role}/password")
+async def set_team_password(
+    role: str,
+    body: TeamPasswordBody,
+    _: str = Depends(require_roles(ADMIN_SUPER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the content or marketing password. Super admin only."""
+    from core import admin_users
+    if role not in admin_users.DB_ROLES:
+        raise HTTPException(status_code=400, detail=f"unknown role: {role}")
+    try:
+        await admin_users.set_password(db, role, body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    print(f"✓ Admin password set for role={role}")
+    return {"role": role, "configured": True}
+
+
+@router.delete("/team/{role}/password")
+async def clear_team_password(
+    role: str,
+    _: str = Depends(require_roles(ADMIN_SUPER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a role's password, disabling that login."""
+    from core import admin_users
+    if role not in admin_users.DB_ROLES:
+        raise HTTPException(status_code=400, detail=f"unknown role: {role}")
+    await admin_users.clear_password(db, role)
+    print(f"✓ Admin password cleared for role={role}")
+    return {"role": role, "configured": False}
 
 
 @router.get("/settings")

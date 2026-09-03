@@ -270,6 +270,15 @@ export const adminApi = {
     return adminFetch<UsersPage<WebLearnerRow | WaSessionRow>>(`/admin/users?${p.toString()}`);
   },
   referrals: () => adminFetch<ReferralsData>("/admin/referrals"),
+  team: () => adminFetch<{ roles: Record<string, boolean>; minLength: number }>("/admin/team"),
+  setTeamPassword: (role: string, password: string) =>
+    adminFetch<{ role: string; configured: boolean }>(`/admin/team/${role}/password`, {
+      method: "PUT", body: JSON.stringify({ password }),
+    }),
+  clearTeamPassword: (role: string) =>
+    adminFetch<{ role: string; configured: boolean }>(`/admin/team/${role}/password`, {
+      method: "DELETE",
+    }),
   settings: () => adminFetch<AppSettings>("/admin/settings"),
   setSetting: (key: string, value: boolean) =>
     adminFetch<{ key: string; value: boolean }>(`/admin/settings/${key}`, {
