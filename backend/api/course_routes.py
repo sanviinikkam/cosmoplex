@@ -39,16 +39,21 @@ def _progress_map(video: Video, learner_id: str) -> Optional[VideoProgress]:
 
 
 def _pick_cloudinary_id(video: Video, language: str) -> Optional[str]:
-    """Return the Cloudinary public ID for the requested language.
+    """Cloudinary public ID for this language, or None if it does not exist yet.
 
-    Priority: exact language match → 'en' fallback → base video field.
+    No English fallback, matching _variant_public_id in whatsapp_routes: a learner
+    who chose a language is never shown a video in a different one. None means the
+    lesson has no video for them and the caller should treat it as unavailable.
+
+    The base video field counts for English only — it is the original upload.
     """
     variants = {v.language: v for v in (video.language_variants or [])}
-    if language in variants:
+    if language in variants and variants[language].cloudinary_public_id:
         return variants[language].cloudinary_public_id
-    if "en" in variants:
-        return variants["en"].cloudinary_public_id
-    return video.cloudinary_public_id  # legacy / not yet uploaded per-language
+    if language == "en":
+        return video.cloudinary_public_id
+    # No video in this language yet. None, not the English one.
+    return None
 
 
 def _pick_duration(video: Video, language: str) -> Optional[int]:

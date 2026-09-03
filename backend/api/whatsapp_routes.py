@@ -1034,17 +1034,38 @@ async def _begin_onboarding(db, session, frm: str, lang: str) -> None:
 # on both surfaces and Lesson N is the same lesson everywhere.
 
 def _variant_public_id(video: Video, lang: str) -> str | None:
-    """Cloudinary ID for a lang. Same priority as course_routes._pick_cloudinary_id:
-    exact language → 'en' → base video field."""
+    """Cloudinary ID for a lesson IN THE LEARNER'S OWN LANGUAGE, or None.
+
+    Deliberately does NOT fall back to English. It used to, and the effect was
+    invisible and bad: a Telugu learner whose next lesson had no Telugu video was
+    silently shown the English one — 14 of Telugu's 17 "available" lessons were
+    English audio, and nothing in the flow or the admin view said so. Someone who
+    picked Telugu because they read Telugu was being handed a lesson they may not
+    understand, and counted as having completed it.
+
+    Returning None instead means _db_lessons drops the lesson, the learner reaches
+    the end of what exists in their language, and gets the "more lessons coming
+    soon" message — which is true, and is the behaviour they would want.
+
+    The base video field still counts for English only: it is the original upload,
+    so for an English learner it is their language, not someone else's.
+    """
     by_lang = {v.language: v.cloudinary_public_id for v in (video.language_variants or [])}
-    return by_lang.get(lang) or by_lang.get("en") or video.cloudinary_public_id
+    own = by_lang.get(lang)
+    if own:
+        return own
+    return video.cloudinary_public_id if lang == "en" else None
 
 
 async def _db_lessons(db, lang: str) -> list[dict]:
-    """Ordered playable lessons from the DB — the same course the web serves,
-    in the same order (module → section → video, all by order_index).
-    Only lessons that actually have an uploaded video for this learner are
-    included, so nobody gets an empty 'coming soon' lesson over chat."""
+    """Ordered lessons that exist IN THIS LANGUAGE, in course order
+    (module → section → video, all by order_index).
+
+    A lesson with no video in `lang` is not in this list at all — see
+    _variant_public_id. So the list length is "how far this language goes", and
+    running past the end is what triggers the coming-soon message rather than
+    handing the learner a video in a language they did not pick.
+    """
     res = await db.execute(
         select(Course).order_by(Course.created_at).options(
             selectinload(Course.modules)
@@ -1057,16 +1078,30 @@ async def _db_lessons(db, lang: str) -> list[dict]:
     if not course:
         return []
     lessons: list[dict] = []
+    stop = False
     for module in course.modules:            # relationships already order_by order_index
+        if stop:
+            break
         for section in module.sections:
+            if stop:
+                break
             for video in section.videos:
                 cloud_id = _variant_public_id(video, lang)
-                if cloud_id:
-                    lessons.append({"video_id": video.id, "title": video.title,
-                                    "cloud_id": cloud_id,
-                                    "label": f"{module.order_index + 1}.{section.order_index + 1}",
-                                    "module_id": module.id,
-                                    "module_title": module.title, "content_doc": module.content_doc})
+                if not cloud_id:
+                    # First lesson with no video in this language ends the course
+                    # HERE, rather than skipping ahead to the next one that does
+                    # have a video. The course is sequential — module 2 assumes
+                    # module 1 — so jumping a learner from 1.1 to 2.1 because 1.2
+                    # is not translated yet teaches the wrong thing in the wrong
+                    # order. Stopping means they get the coming-soon message and
+                    # resume exactly where they left off once 1.2 is uploaded.
+                    stop = True
+                    break
+                lessons.append({"video_id": video.id, "title": video.title,
+                                "cloud_id": cloud_id,
+                                "label": f"{module.order_index + 1}.{section.order_index + 1}",
+                                "module_id": module.id,
+                                "module_title": module.title, "content_doc": module.content_doc})
     if not lessons:
         # DB not populated in this environment — fall back to the built-in lesson
         # so the flow never dead-ends. (video_id=None → quiz/assignment fall back too.)
