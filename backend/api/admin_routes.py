@@ -979,7 +979,7 @@ async def learner_detail(learner_id: str, _: str = Depends(require_roles(ADMIN_S
 
 
 @router.get("/courses")
-async def list_courses(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def list_courses(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Course).options(_FULL_TREE).order_by(Course.created_at))
     return [_course_tree(c) for c in res.scalars().all()]
 
@@ -1080,7 +1080,7 @@ class ContentDocBody(BaseModel):
 
 
 @router.get("/modules/{module_id}/content-doc")
-async def get_module_content_doc(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def get_module_content_doc(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -1296,7 +1296,7 @@ class SignatureBody(BaseModel):
 
 
 @router.post("/cloudinary/signature")
-async def cloudinary_signature(body: SignatureBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING))):
+async def cloudinary_signature(body: SignatureBody, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT))):
     """Return params for a signed direct browser→Cloudinary upload. The api_secret
     never leaves the server — only the derived signature does."""
     if not settings.cloudinary_api_key or not settings.cloudinary_api_secret:
@@ -1334,7 +1334,7 @@ def _quiz_dict(q: QuizQuestion) -> dict:
 
 
 @router.get("/videos/{video_id}/quizzes")
-async def list_quizzes(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def list_quizzes(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(QuizQuestion).where(QuizQuestion.video_id == video_id).order_by(QuizQuestion.order_index))
     return [_quiz_dict(q) for q in res.scalars().all()]
 
@@ -1386,7 +1386,7 @@ def _assign_dict(a: AssignmentPrompt) -> dict:
 
 
 @router.get("/videos/{video_id}/assignments")
-async def list_assignments(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def list_assignments(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(AssignmentPrompt).where(AssignmentPrompt.video_id == video_id).order_by(AssignmentPrompt.order_index))
     return [_assign_dict(a) for a in res.scalars().all()]
 
@@ -1440,7 +1440,7 @@ def _intro_dict(iv: IntroVideo) -> dict:
 
 
 @router.get("/intro-videos")
-async def list_intro_videos(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def list_intro_videos(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(IntroVideo))
     return [_intro_dict(iv) for iv in res.scalars().all()]
 
@@ -1500,7 +1500,7 @@ async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMI
 
 @router.put("/marketing-assets/{day}/{language}")
 async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
-                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if day not in MARKETING_DAYS:
         raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
     if language not in SUPPORTED_LANGUAGES:
@@ -1525,7 +1525,7 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
 
 @router.delete("/marketing-assets/{day}/{language}")
 async def delete_marketing_asset(day: int, language: str,
-                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     a = await db.get(MarketingAsset, f"{day}_{language}")
     if not a:
         raise HTTPException(status_code=404, detail="No asset for that day/language")

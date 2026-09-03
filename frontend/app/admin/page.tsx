@@ -1233,9 +1233,13 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     if (r === "marketing") setTab("analytics");
     // Dashboard only mounts after a successful login, so once is enough.
   }, []);
-  const canContent = role === "super" || role === "content";
   const canMarketing = role === "super" || role === "marketing";
   const isSuper = role === "super";
+  // Marketing can read the whole content page — which lessons exist in which
+  // languages, the intro video, the pre-sale assets — but changes nothing. The
+  // API agrees: marketing has no write endpoint at all, so this only decides
+  // whether we render controls that would fail.
+  const canEdit = role === "super" || role === "content";
 
   const refresh = useCallback(async () => {
     try {
@@ -1287,6 +1291,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               const r = await adminApi.syncVideos();
               window.alert(`Synced existing content:\n• ${r.videosSynced} lesson video set(s)\n• ${r.quizzesAdded} quiz question(s) added\n• ${r.assignmentsAdded} assignment(s) added`);
             })}
+            hidden={!canEdit}
             className="text-sm rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-50 inline-flex items-center gap-1.5">
             {saving ? <Spinner className="w-3.5 h-3.5" /> : "⟳"} Sync existing content
           </button>
@@ -1321,13 +1326,24 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           they stay with the super admin. */}
       {isSuper && <SettingsPanel />}
       {isSuper && <TeamLoginsPanel />}
-      {canContent && <IntroVideosManager />}
-      {/* Pre-sale campaign assets. Content admin does the uploading; marketing
-          owns the campaigns — so both need it, and marketing can only reach it
-          from this tab. */}
+
+      {!canEdit && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          View only — you can see everything here, including which languages each
+          lesson has, but changes are made by the content admin.
+        </div>
+      )}
+
+      {/* One fieldset rather than a `disabled` on each control: a disabled
+          fieldset disables every nested button and input natively, so a control
+          added later cannot be forgotten and left live for a read-only role. */}
+      <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0 m-0">
+      <IntroVideosManager />
+      {/* Pre-sale campaign assets. Uploading is the content admin's job; marketing
+          can see what is scheduled. */}
       <MarketingAssetsManager />
 
-      {canContent && (<div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar */}
         <aside className="bg-white rounded-2xl border border-zinc-200 p-3 h-fit">
           <button onClick={newCourse}
@@ -1362,7 +1378,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             </div>
           )}
         </main>
-      </div>)}
+      </div>
+      </fieldset>
       </>)}
     </div>
   );
