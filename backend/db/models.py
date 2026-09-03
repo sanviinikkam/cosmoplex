@@ -388,7 +388,11 @@ class WhatsAppSession(Base):
     ctwa_clid = Column(String(256), nullable=True)     # Meta click id — needed to report conversions back to Ads Manager
     source_headline = Column(String(255), nullable=True)  # ad headline, so a campaign is recognisable without Ads Manager
     first_seen_at = Column(DateTime, default=datetime.utcnow)
-    opt_out = Column(Boolean, default=False)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
+    opt_out = Column(Boolean, default=False)
+    # End-of-content feedback: asked once, answered at most once.
+    feedback_asked_at = Column(DateTime, nullable=True)
+    feedback_text = Column(Text, nullable=True)
+    feedback_at = Column(DateTime, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):

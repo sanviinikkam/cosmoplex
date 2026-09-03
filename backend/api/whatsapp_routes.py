@@ -1392,6 +1392,26 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
     return True   # announced this turn → caller should end the turn (no Teacher greeting)
 
 
+async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str) -> None:
+    """Ask for feedback the first time a learner runs out of lessons.
+
+    Once, ever — guarded on feedback_asked_at. Without that guard it would fire
+    on every message they send while parked at the end, which is exactly the
+    person most likely to keep messaging.
+
+    The prompt says they can reply with a voice note, and that is not just
+    politeness: this asks four open questions of people who may be more fluent
+    speaking than typing, in a script their keyboard may not even have. A voice
+    note arrives here already transcribed, through the same path as text, so it
+    is captured the same way.
+    """
+    if session.feedback_asked_at or session.feedback_text:
+        return
+    session.feedback_asked_at = datetime.utcnow()
+    await db.commit()
+    await send_text(frm, tr(lang, "feedback_ask").format(name=nm))
+
+
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     """After finishing the current lesson, move to the next and auto-deliver it.
     Returns True if a next lesson was sent, False if the course is complete."""
@@ -1414,6 +1434,10 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     finished = await get_flag(db, "course_complete")
     await send_text(frm, tr(lang, "done" if finished else "no_more").format(name=nm))
     await _deliver_certificate(db, session, frm, lang, nm)
+    # They have seen everything that exists in their language — the moment their
+    # opinion is worth the most, and the only moment we are not interrupting a
+    # lesson to ask for it.
+    await _maybe_ask_feedback(db, session, frm, lang, nm)
     return False
 
 
@@ -2230,6 +2254,21 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             lessons = await _db_lessons(db, lang)
             if (session.lesson_index or 0) + 1 < len(lessons):
                 await _advance_lesson(db, session, frm, lang, nm)
+                return
+
+            # Still at the end, and we asked for feedback they have not given.
+            # Their next free-text message (typed OR a transcribed voice note) is
+            # the answer, so store it instead of handing it to the Teacher agent,
+            # which would reply about lesson content and lose it. Checked only
+            # AFTER the new-lesson branch above: once more lessons exist, "next"
+            # means next, not feedback.
+            if (reply_id is None and session.feedback_asked_at
+                    and not session.feedback_text and (text or "").strip()):
+                session.feedback_text = (text or "").strip()[:4000]
+                session.feedback_at = datetime.utcnow()
+                await db.commit()
+                print(f"✓ Feedback from {frm}: {session.feedback_text[:80]!r}")
+                await send_text(frm, tr(lang, "feedback_thanks").format(name=nm))
                 return
 
         # Otherwise (stage done/quiz_failed with free text) → Teacher agent

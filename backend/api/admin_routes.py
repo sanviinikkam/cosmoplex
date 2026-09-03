@@ -892,6 +892,11 @@ async def whatsapp_detail(phone: str, _: str = Depends(require_roles(ADMIN_SUPER
                    "percent": round(idx / total * 100) if total else 0,
                    "label": (cur or {}).get("label"), "title": (cur or {}).get("title")},
         "quiz": {"index": s.quiz_index or 0, "correct": s.quiz_correct or 0},
+        "feedback": {
+            "askedAt": s.feedback_asked_at.isoformat() if s.feedback_asked_at else None,
+            "text": s.feedback_text,
+            "at": s.feedback_at.isoformat() if s.feedback_at else None,
+        },
         "nudgesSent": nudges,
         "createdAt": s.created_at.isoformat() if s.created_at else None,
         "lastActive": s.last_active_at.isoformat() if s.last_active_at else None,
