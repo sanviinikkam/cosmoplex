@@ -75,7 +75,14 @@ export default function AdminPage() {
 }
 
 // ── Login ────────────────────────────────────────────────────────────────────
+const LOGIN_ROLES: { key: AdminRole; label: string; blurb: string }[] = [
+  { key: "super", label: "Super admin", blurb: "Everything, including settings and team logins" },
+  { key: "content", label: "Content admin", blurb: "Courses, videos, quizzes and all uploads" },
+  { key: "marketing", label: "Marketing admin", blurb: "Campaigns, learners and referrals" },
+];
+
 function Login({ onSuccess }: { onSuccess: () => void }) {
+  const [role, setRole] = useState<AdminRole>("super");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,10 +91,13 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      await adminApi.login(password);
+      // The chosen role goes to the server, which checks only that role's
+      // password. Picking the wrong one fails even with a valid password —
+      // deliberate, so you always get the account you asked for.
+      await adminApi.login(password, role);
       onSuccess();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+    } catch {
+      setError("Incorrect password for this login.");
     } finally {
       setBusy(false);
     }
@@ -98,12 +108,30 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
       <form onSubmit={submit} className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 flex flex-col gap-5">
         <div>
           <h1 className="text-xl font-semibold">Cosmoplex Admin</h1>
-          <p className="text-sm text-zinc-500 mt-1">Enter the admin password to continue.</p>
+          <p className="text-sm text-zinc-500 mt-1">Choose your login, then enter its password.</p>
         </div>
+
+        <div className="flex flex-col gap-2">
+          {LOGIN_ROLES.map((r) => {
+            const on = role === r.key;
+            return (
+              <button
+                key={r.key} type="button" onClick={() => { setRole(r.key); setError(""); }}
+                aria-pressed={on}
+                className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                  on ? "border-emerald-500 bg-emerald-50/60 ring-1 ring-emerald-500/30"
+                     : "border-zinc-200 hover:border-zinc-300"}`}>
+                <div className={`text-sm font-medium ${on ? "text-emerald-800" : "text-zinc-800"}`}>{r.label}</div>
+                <div className="text-[11px] text-zinc-500 mt-0.5">{r.blurb}</div>
+              </button>
+            );
+          })}
+        </div>
+
         <input
           type="password" value={password} autoFocus
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Admin password"
+          placeholder={`${LOGIN_ROLES.find((r) => r.key === role)?.label} password`}
           className="w-full rounded-xl border border-zinc-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -1269,9 +1297,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
       <div className="flex gap-1 mb-6 border-b border-zinc-200">
-        {(([["content", "Content"], ["analytics", "Analytics"]] as const)
-          // Marketing has no content-authoring surface, so the tab would open empty.
-          .filter(([key]) => key !== "content" || canContent)).map(([key, label]) => (
+        {(([["content", "Content"], ["analytics", "Analytics"]] as const)).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === key ? "border-emerald-600 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-800"}`}>
@@ -1290,16 +1316,18 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         {canMarketing && <ReferralsPanel />}
       </>)}
 
-      {tab === "content" && canContent && (<>
+      {tab === "content" && (<>
       {/* These change the product for every learner (and gate certificates), so
           they stay with the super admin. */}
       {isSuper && <SettingsPanel />}
       {isSuper && <TeamLoginsPanel />}
-      <IntroVideosManager />
-      {/* Campaign creative belongs to marketing. */}
-      {canMarketing && <MarketingAssetsManager />}
+      {canContent && <IntroVideosManager />}
+      {/* Pre-sale campaign assets. Content admin does the uploading; marketing
+          owns the campaigns — so both need it, and marketing can only reach it
+          from this tab. */}
+      <MarketingAssetsManager />
 
-      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+      {canContent && (<div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar */}
         <aside className="bg-white rounded-2xl border border-zinc-200 p-3 h-fit">
           <button onClick={newCourse}
@@ -1334,7 +1362,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             </div>
           )}
         </main>
-      </div>
+      </div>)}
       </>)}
     </div>
   );

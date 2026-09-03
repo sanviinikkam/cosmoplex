@@ -73,6 +73,10 @@ KNOWN_VIDEO_IDS = {
 # ── Auth ──────────────────────────────────────────────────────────────────────
 class LoginBody(BaseModel):
     password: str
+    # Which login the person picked. Optional so an older client still works;
+    # when present, ONLY that role's password is checked, so the same password
+    # cannot quietly sign you in as a different role than the one you chose.
+    role: str | None = None
 
 
 # ── Brute-force throttle for /admin/login ─────────────────────────────────────
@@ -115,18 +119,34 @@ async def admin_login(body: LoginBody, request: Request,
             headers={"Retry-After": str(_LOGIN_WINDOW)},
         )
     from core import admin_users
+
+    async def _matches(role: str) -> bool:
+        if role == ADMIN_SUPER:
+            # The bootstrap credential, still ADMIN_PASSWORD. Constant-time so
+            # response timing cannot leak it.
+            return bool(settings.admin_password) and hmac.compare_digest(
+                body.password.encode("utf-8"), settings.admin_password.encode("utf-8"))
+        return await admin_users.check(db, role, body.password)
+
+    wanted = (body.role or "").strip().lower() or None
+    if wanted is not None and wanted not in (ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING):
+        # Unknown role: fail like a wrong password rather than saying which roles
+        # exist, and still count against the throttle.
+        _login_fails[ip].append(now)
+        raise HTTPException(status_code=401, detail="Incorrect password")
+
     matched: str | None = None
-    # Super: the bootstrap credential, still ADMIN_PASSWORD. Constant-time so
-    # response timing cannot leak it.
-    if settings.admin_password and hmac.compare_digest(
-            body.password.encode("utf-8"), settings.admin_password.encode("utf-8")):
-        matched = ADMIN_SUPER
-    # Content / marketing: bcrypt hashes in the DB, set from the admin UI.
-    # Every configured role is checked even after a match, so the number of
-    # bcrypt verifications does not reveal which role a password belongs to.
-    for role in (ADMIN_CONTENT, ADMIN_MARKETING):
-        if await admin_users.check(db, role, body.password) and matched is None:
-            matched = role
+    if wanted:
+        # Only the chosen role is checked, so picking "Content" and typing the
+        # super password does not hand out a super token.
+        if await _matches(wanted):
+            matched = wanted
+    else:
+        # No role given: check every one, and keep checking after a match so the
+        # number of comparisons does not reveal which role the password belongs to.
+        for role in (ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING):
+            if await _matches(role) and matched is None:
+                matched = role
     if matched is None:
         _login_fails[ip].append(now)
         raise HTTPException(status_code=401, detail="Incorrect password")
@@ -1472,7 +1492,7 @@ def _marketing_dict(a: MarketingAsset) -> dict:
 
 
 @router.get("/marketing-assets")
-async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(MarketingAsset))
     return {"days": MARKETING_DAYS, "languages": sorted(SUPPORTED_LANGUAGES),
             "items": [_marketing_dict(a) for a in res.scalars().all()]}
@@ -1480,7 +1500,7 @@ async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMI
 
 @router.put("/marketing-assets/{day}/{language}")
 async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
-                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     if day not in MARKETING_DAYS:
         raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
     if language not in SUPPORTED_LANGUAGES:
@@ -1505,7 +1525,7 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
 
 @router.delete("/marketing-assets/{day}/{language}")
 async def delete_marketing_asset(day: int, language: str,
-                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
     a = await db.get(MarketingAsset, f"{day}_{language}")
     if not a:
         raise HTTPException(status_code=404, detail="No asset for that day/language")

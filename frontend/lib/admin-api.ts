@@ -245,11 +245,11 @@ export type UserFilters = {
 };
 
 export const adminApi = {
-  login: async (password: string) => {
+  login: async (password: string, role?: AdminRole) => {
     const res = await fetch(`${API_BASE}/admin/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, role }),
     });
     if (!res.ok) throw new Error("Incorrect password");
     const data = (await res.json()) as { access_token: string; role?: string };
