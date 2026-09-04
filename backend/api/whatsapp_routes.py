@@ -1681,7 +1681,8 @@ async def _send_quiz_question(to: str, lang: str, qidx: int, items: list[dict]) 
     q = item["q"].get(lang, item["q"]["en"])
     opts = item["opts"].get(lang, item["opts"]["en"])
     numbered = "\n".join(f"{NUM_EMOJI[i]} {opt}" for i, opt in enumerate(opts))
-    body = f"{tr(lang, 'quiz_progress').format(n=qidx + 1)}\n\n{q}\n\n{numbered}"
+    body = (f"{tr(lang, 'quiz_progress').format(n=qidx + 1, t=len(items))}"
+            f"\n\n{q}\n\n{numbered}")
     rows = [(f"ans_{i}", NUM_EMOJI[i], opts[i]) for i in range(len(opts))]
     await send_list(to, header="Quiz", body=body, button=tr(lang, "answer_btn"),
                     rows=rows, section_title=tr(lang, "answer_btn"))
