@@ -1447,9 +1447,12 @@ function UserDirectory() {
                     label="Lesson" align="center" options={facets.lesson}
                     value={f.lesson ?? ""} onChange={(v) => setFilter("lesson", v)}
                     extra={
-                      // Only meaningful once a lesson is chosen. "Passed" is
+                      // Only meaningful once a real lesson is chosen. "Passed" is
                       // lesson_index > that lesson: someone sitting on 1.3 has
-                      // not cleared it, so they are not counted.
+                      // not cleared it, so they are not counted. Hidden for
+                      // "Not started", where there is no lesson to be on or past
+                      // — the server ignores the mode there anyway.
+                      f.lesson === "Not started" ? null :
                       <select
                         aria-label="Lesson match mode"
                         value={f.lesson_mode ?? "at"}

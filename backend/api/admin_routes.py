@@ -612,6 +612,11 @@ async def write_setting(
 # language. Someone at ask_profile or howto has not started a lesson at all;
 # their lesson_index is a default, not a position. Those rows show "—" and are
 # excluded from the Lesson filter and its dropdown.
+# Dropdown value for "has not started a lesson at all". A named sentinel rather
+# than the "—" the column prints, so the filter reads the same in a URL as it
+# does on screen.
+NOT_STARTED = "Not started"
+
 LESSON_STAGES = frozenset({
     "lesson", "quiz", "quiz_failed", "practice", "assignment",
     "between_lessons", "clarify", "done",
@@ -661,7 +666,16 @@ async def _lesson_facet(db) -> list[str]:
             WhatsAppSession.lesson_index.is_not(None),
             WhatsAppSession.stage.in_(LESSON_STAGES)))).scalars().all()
     present = sorted({int(i) for i in idxs})
-    return [labels[i] for i in present if 0 <= i < len(labels) and labels[i]]
+    out = [labels[i] for i in present if 0 <= i < len(labels) and labels[i]]
+
+    # "Not started" leads the list because it is the largest group by far, and
+    # the question it answers — how many never got as far as lesson 1 — is not
+    # answerable from any other column. Offered only if someone is in it, like
+    # every other facet value.
+    unstarted = (await db.execute(
+        select(func.count()).select_from(WhatsAppSession).where(
+            WhatsAppSession.stage.not_in(LESSON_STAGES)))).scalar() or 0
+    return ([NOT_STARTED] + out) if unstarted else out
 
 
 async def _facets(db, channel: str) -> dict:
@@ -851,8 +865,18 @@ async def all_users(
             # 0-based index the column actually stores.
             labels_for_filter = await _lesson_labels(db)
             want = lesson.strip()
+            if want == NOT_STARTED:
+                # Everyone who has not reached a lesson. lesson_mode is
+                # meaningless here — there is no lesson to be on or past — so it
+                # is ignored rather than silently narrowing the result.
+                base = base.where(WhatsAppSession.stage.not_in(LESSON_STAGES))
+                labels_for_filter = None
             try:
+                if labels_for_filter is None:
+                    raise StopIteration
                 idx = labels_for_filter.index(want)
+            except StopIteration:
+                pass                      # "Not started": already filtered above
             except ValueError:
                 # Unknown label — match nothing rather than silently ignoring it,
                 # so a stale bookmark cannot look like "no filter applied".
