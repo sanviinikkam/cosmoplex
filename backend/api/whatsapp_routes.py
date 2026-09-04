@@ -1385,8 +1385,11 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
 # Where we ask how it is going. "lesson4" catches people while they are still
 # engaged — the end-only version could only ever hear from finishers, which on a
 # part-uploaded course is almost nobody.
-FEEDBACK_AFTER_LESSONS = 4          # completed lessons that trigger the mid ask
-FB_MID, FB_END = "lesson4", "end"
+FEEDBACK_AFTER_LESSONS = 2          # completed lessons that trigger the mid ask
+# "mid", not "lesson2": the key is stored per learner, so encoding the threshold
+# would mean every learner already asked gets asked again the next time the
+# number moves — and it has moved once already.
+FB_MID, FB_END = "mid", "end"
 FEEDBACK_COPY = {FB_MID: "feedback_ask_mid", FB_END: "feedback_ask"}
 
 
@@ -1456,7 +1459,8 @@ async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str,
                        "text": None, "at": None, "skipped": False}
     session.feedback_log = log
     await db.commit()
-    await send_text(frm, tr(lang, FEEDBACK_COPY[checkpoint]).format(name=nm))
+    await send_text(frm, tr(lang, FEEDBACK_COPY[checkpoint]).format(
+        name=nm, n=FEEDBACK_AFTER_LESSONS))
 
 
 async def _record_feedback(db, session, checkpoint: str, text: str) -> None:

@@ -1123,8 +1123,11 @@ function FeedbackPanel() {
   }, [checkpoint, language]);
   useEffect(() => { load(); }, [load]);
 
+  // Deliberately no lesson count: the threshold is a server-side constant that
+  // has already moved once, and a number here would drift out of sync silently.
+  // "lesson4" is the old key, kept so pre-rename rows still render a label.
   const CHECKPOINT_LABEL: Record<string, string> = {
-    lesson4: "After 4 lessons", end: "Reached the end",
+    mid: "Part-way through", lesson4: "Part-way through", end: "Reached the end",
   };
 
   return (
@@ -1135,7 +1138,7 @@ function FeedbackPanel() {
           <select value={checkpoint} onChange={(e) => setCheckpoint(e.target.value)}
             className="text-xs border border-zinc-300 rounded px-2 py-1">
             <option value="">All checkpoints</option>
-            <option value="lesson4">After 4 lessons</option>
+            <option value="mid">Part-way through</option>
             <option value="end">Reached the end</option>
           </select>
           <select value={language} onChange={(e) => setLanguage(e.target.value)}

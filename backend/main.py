@@ -81,6 +81,15 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS feedback_log JSONB"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_module_announced VARCHAR(64)"))
+            # The mid-course feedback checkpoint used to be keyed "lesson4".
+            # Rename in place so learners already asked are not asked a second
+            # time, and an answer already given is not orphaned. Idempotent: the
+            # WHERE clause stops matching once there is nothing left to move.
+            await conn.execute(text(
+                "UPDATE whatsapp_sessions "
+                "SET feedback_log = (feedback_log - 'lesson4') "
+                "  || jsonb_build_object('mid', feedback_log->'lesson4') "
+                "WHERE feedback_log ? 'lesson4'"))
             await conn.execute(text(
                 "ALTER TABLE course_modules ADD COLUMN IF NOT EXISTS title_i18n JSONB"))
             # The single-checkpoint columns these replace were added earlier today
@@ -299,7 +308,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "howto-two-steps",
+        "build": "feedback-after-2",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
