@@ -226,6 +226,12 @@ export type FeedbackPage = {
   items: FeedbackRow[]; asked: number; answered: number; responseRate: number;
 };
 
+export type AuditRow = {
+  id: string; at: string | null; role: string; action: string;
+  targetType: string; targetId: string | null;
+  summary: string | null; detail: Record<string, unknown> | null; ip: string | null;
+};
+
 export type AppSettings = { settings: Record<string, boolean> };
 
 export type UserFacets = {
@@ -298,6 +304,9 @@ export const adminApi = {
     const q = p.toString();
     return adminFetch<FeedbackPage>(`/admin/feedback${q ? `?${q}` : ""}`);
   },
+  audit: (targetType?: string) =>
+    adminFetch<{ items: AuditRow[] }>(
+      `/admin/audit${targetType ? `?target_type=${targetType}` : ""}`),
   settings: () => adminFetch<AppSettings>("/admin/settings"),
   setSetting: (key: string, value: boolean) =>
     adminFetch<{ key: string; value: boolean }>(`/admin/settings/${key}`, {

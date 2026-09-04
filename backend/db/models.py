@@ -418,6 +418,31 @@ class WhatsAppMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AdminAudit(Base):
+    """A record of destructive admin actions — who removed what, and when.
+
+    Exists because an intro video disappeared and there was no way to tell
+    whether it was deleted, by whom, or when. The deleted value itself is stored
+    in `detail`, so a mistaken removal can be undone by reading this table rather
+    than re-uploading from memory.
+
+    "Who" is the admin ROLE, not a person: the three logins are shared
+    passwords, so that is genuinely all the system knows. Per-person attribution
+    would need per-person accounts.
+    """
+    __tablename__ = "admin_audit"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    at = Column(DateTime, default=datetime.utcnow, index=True)
+    role = Column(String(20), nullable=False)          # super | content | marketing
+    action = Column(String(40), nullable=False)        # delete | replace
+    target_type = Column(String(40), nullable=False)   # intro_video, video, quiz, ...
+    target_id = Column(String(200), nullable=True)
+    summary = Column(String(500), nullable=True)       # human-readable, for the panel
+    detail = Column(JSONB, nullable=True)              # what was removed, to restore it
+    ip = Column(String(64), nullable=True)
+
+
 class AppSetting(Base):
     """Runtime settings an admin can flip WITHOUT a redeploy.
 

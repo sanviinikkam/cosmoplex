@@ -8,7 +8,7 @@ import {
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
   type CampaignRow, type UserFilters, type UserFacets,
-  getAdminRole, type AdminRole, type FeedbackRow,
+  getAdminRole, type AdminRole, type FeedbackRow, type AuditRow,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -746,6 +746,120 @@ function TeamLoginsPanel() {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+
+// What has been deleted, by which role, and when — with the removed value kept
+// so a mistake can be undone from here rather than re-uploaded from memory.
+// Super admin only: it is a record of other admins' actions.
+function AuditPanel() {
+  const [rows, setRows] = useState<AuditRow[]>([]);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try { setRows((await adminApi.audit(filter || undefined)).items); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Failed to load"); }
+    finally { setLoading(false); }
+  }, [filter]);
+  useEffect(() => { load(); }, [load]);
+
+  const TYPE_LABEL: Record<string, string> = {
+    intro_video: "Intro video", video: "Lesson video", video_variant: "Language variant",
+    marketing_asset: "Pre-sale asset", course: "Course", module: "Module",
+    section: "Section", quiz: "Quiz question", assignment: "Assignment",
+  };
+  const ROLE_STYLE: Record<string, string> = {
+    super: "bg-zinc-800 text-white", content: "bg-emerald-50 text-emerald-700",
+    marketing: "bg-indigo-50 text-indigo-700",
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 className="text-sm font-semibold text-zinc-900">Deletion log</h2>
+        <div className="flex items-center gap-2">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}
+            className="text-xs border border-zinc-300 rounded px-2 py-1">
+            <option value="">Everything</option>
+            {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <button onClick={load}
+            className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50">
+            Refresh
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-zinc-500 mb-4">
+        Every deletion and every intro-video replacement. The removed value is kept, so
+        something deleted by mistake can be put back. Shows the <em>role</em> that did it —
+        the three logins are shared, so that is all the system knows.
+      </p>
+
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : !rows.length ? (
+        <div className="text-sm text-zinc-400 py-6 text-center">Nothing deleted yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-zinc-500 text-xs">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">When</th>
+                <th className="text-left font-medium px-3 py-2">Who</th>
+                <th className="text-left font-medium px-3 py-2">What</th>
+                <th className="text-left font-medium px-3 py-2">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <Fragment key={r.id}>
+                  <tr className="border-t border-zinc-100 align-top">
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-zinc-500">{timeAgo(r.at)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[11px] rounded px-1.5 py-0.5 ${ROLE_STYLE[r.role] ?? "bg-zinc-100"}`}>
+                        {r.role}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[11px] rounded px-1.5 py-0.5 mr-2 ${
+                        r.action === "delete" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
+                        {r.action}
+                      </span>
+                      <span className="text-zinc-700">{r.summary ?? TYPE_LABEL[r.targetType] ?? r.targetType}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {r.detail
+                        ? <button onClick={() => setOpen(open === r.id ? null : r.id)}
+                            className="text-emerald-700 hover:underline">
+                            {open === r.id ? "hide" : "what was removed"}
+                          </button>
+                        : <span className="text-zinc-300">—</span>}
+                    </td>
+                  </tr>
+                  {open === r.id && r.detail && (
+                    <tr className="border-t border-zinc-50">
+                      <td colSpan={4} className="px-3 pb-3">
+                        <pre className="text-[11px] bg-zinc-50 rounded-lg p-3 overflow-x-auto text-zinc-700">
+{JSON.stringify(r.detail, null, 2)}
+                        </pre>
+                        {r.ip && <div className="text-[10px] text-zinc-400 mt-1">from {r.ip}</div>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -1710,6 +1824,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           they stay with the super admin. */}
       {isSuper && <SettingsPanel />}
       {isSuper && <TeamLoginsPanel />}
+      {isSuper && <AuditPanel />}
 
       <IntroVideosManager />
       {/* Pre-sale campaign assets. Uploading is the content admin's job; marketing

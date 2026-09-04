@@ -92,6 +92,10 @@ async def lifespan(app: FastAPI):
                 "WHERE feedback_log ? 'lesson4'"))
             await conn.execute(text(
                 "ALTER TABLE course_modules ADD COLUMN IF NOT EXISTS title_i18n JSONB"))
+            # create_all() makes the admin_audit table; this only adds the index
+            # the panel's "newest first" read depends on.
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_admin_audit_at ON admin_audit (at DESC)"))
             # The single-checkpoint columns these replace were added earlier today
             # and never held a row (verified: 0 asked, 0 answered) before feedback
             # became per-checkpoint. Dropped so nothing later reads them and
@@ -308,7 +312,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "feedback-after-2",
+        "build": "audit-log",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

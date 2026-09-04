@@ -42,6 +42,7 @@ from core.config import settings
 from db.database import get_db
 from api.whatsapp_drip import SIGNUP_STAGES
 from db.models import (
+    AdminAudit,
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo, MarketingAsset,
     LearnerProfile, WhatsAppSession, WhatsAppMessage, Certificate,
@@ -121,11 +122,9 @@ async def admin_login(body: LoginBody, request: Request,
     from core import admin_users
 
     async def _matches(role: str) -> bool:
-        if role == ADMIN_SUPER:
-            # The bootstrap credential, still ADMIN_PASSWORD. Constant-time so
-            # response timing cannot leak it.
-            return bool(settings.admin_password) and hmac.compare_digest(
-                body.password.encode("utf-8"), settings.admin_password.encode("utf-8"))
+        # All three go through the same path now. For super, admin_users.check
+        # falls back to ADMIN_PASSWORD only while no super password has been set
+        # from the panel, so a fresh deploy is never locked out.
         return await admin_users.check(db, role, body.password)
 
     wanted = (body.role or "").strip().lower() or None
@@ -572,6 +571,56 @@ async def list_feedback(
         "answered": answered,
         "responseRate": round(100 * answered / asked) if asked else 0,
     }
+
+
+async def _audit(db, role: str, action: str, target_type: str,
+                 target_id: str | None = None, summary: str | None = None,
+                 detail: dict | None = None, request: Request | None = None) -> None:
+    """Record a destructive admin action, with enough detail to undo it.
+
+    Exists because an intro video disappeared and there was no way to tell
+    whether it had been deleted, by whom, or when. The removed value is kept in
+    `detail`, so a mistake can be reversed by reading this table rather than
+    re-uploading from memory.
+
+    "Who" is the admin ROLE, not a person — the three logins are shared
+    passwords, so a role is genuinely all the system knows. Per-person
+    attribution would need per-person accounts.
+
+    Never raises: an audit failure must not turn a working delete into a 500. A
+    missing row is a gap in the log; an exception would be a broken feature.
+    """
+    try:
+        db.add(AdminAudit(
+            role=role or "?", action=action, target_type=target_type,
+            target_id=(str(target_id)[:200] if target_id is not None else None),
+            summary=(summary or "")[:500] or None,
+            detail=detail,
+            ip=_client_ip(request) if request is not None else None,
+        ))
+        await db.commit()
+    except Exception as e:
+        print(f"WARN audit write failed ({action} {target_type}): {type(e).__name__}: {e}")
+
+
+@router.get("/audit")
+async def read_audit(
+    limit: int = 100,
+    target_type: str | None = None,
+    _: str = Depends(require_roles(ADMIN_SUPER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recent destructive actions, newest first. Super admin only."""
+    q = select(AdminAudit).order_by(AdminAudit.at.desc()).limit(max(1, min(limit, 500)))
+    if target_type:
+        q = q.where(AdminAudit.target_type == target_type)
+    rows = (await db.execute(q)).scalars().all()
+    return {"items": [{
+        "id": r.id, "at": r.at.isoformat() if r.at else None,
+        "role": r.role, "action": r.action,
+        "targetType": r.target_type, "targetId": r.target_id,
+        "summary": r.summary, "detail": r.detail, "ip": r.ip,
+    } for r in rows]}
 
 
 @router.get("/settings")
@@ -1135,7 +1184,10 @@ async def update_course(course_id: str, body: CourseBody, _: str = Depends(requi
 
 
 @router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_course(course_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+    await _audit(db, role, "delete", "course", course_id,
+                 "Course deleted (with all its modules, sections and videos)",
+                 None, request)
     module_ids = select(CourseModule.id).where(CourseModule.course_id == course_id)
     section_ids = select(Section.id).where(Section.module_id.in_(module_ids))
     video_ids = select(Video.id).where(Video.section_id.in_(section_ids))
@@ -1182,10 +1234,12 @@ async def update_module(module_id: str, body: ModuleBody, _: str = Depends(requi
 
 
 @router.delete("/modules/{module_id}")
-async def delete_module(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_module(module_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
+    await _audit(db, role, "delete", "module", module_id,
+                 f"Module deleted: {m.title}", {"title": m.title}, request)
     course_id = m.course_id
     section_ids = select(Section.id).where(Section.module_id == module_id)
     video_ids = select(Video.id).where(Video.section_id.in_(section_ids))
@@ -1276,10 +1330,12 @@ async def update_section(section_id: str, body: SectionBody, _: str = Depends(re
 
 
 @router.delete("/sections/{section_id}")
-async def delete_section(section_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_section(section_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     s = await db.get(Section, section_id)
     if not s:
         raise HTTPException(status_code=404, detail="Section not found")
+    await _audit(db, role, "delete", "section", section_id,
+                 f"Section deleted: {s.title}", {"title": s.title}, request)
     m = await db.get(CourseModule, s.module_id)
     video_ids = select(Video.id).where(Video.section_id == section_id)
     await db.execute(delete(VideoLanguageVariant).where(VideoLanguageVariant.video_id.in_(video_ids)))
@@ -1354,10 +1410,13 @@ async def update_video(video_id: str, body: VideoBody, background_tasks: Backgro
 
 
 @router.delete("/videos/{video_id}")
-async def delete_video(video_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_video(video_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
+    await _audit(db, role, "delete", "video", video_id,
+                 f"Lesson video deleted: {v.title}",
+                 {"title": v.title, "cloudinary_public_id": v.cloudinary_public_id}, request)
     s = await db.get(Section, v.section_id)
     m = await db.get(CourseModule, s.module_id)
     await db.execute(delete(VideoLanguageVariant).where(VideoLanguageVariant.video_id == video_id))
@@ -1402,12 +1461,16 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
 
 
 @router.delete("/videos/{video_id}/variant/{language}")
-async def delete_variant(video_id: str, language: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_variant(video_id: str, language: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(VideoLanguageVariant).where(
         VideoLanguageVariant.video_id == video_id, VideoLanguageVariant.language == language))
     variant = res.scalar_one_or_none()
     if not variant:
         raise HTTPException(status_code=404, detail="Variant not found")
+    await _audit(db, role, "delete", "video_variant", video_id,
+                 f"{language} variant removed from a lesson video",
+                 {"language": language,
+                  "cloudinary_public_id": getattr(variant, "cloudinary_public_id", None)}, request)
     await db.delete(variant)
     await db.commit()
     return {"deleted": True, "videoId": video_id, "language": language}
@@ -1490,10 +1553,12 @@ async def update_quiz(quiz_id: str, body: QuizBody, _: str = Depends(require_rol
 
 
 @router.delete("/quizzes/{quiz_id}")
-async def delete_quiz(quiz_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_quiz(quiz_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     q = await db.get(QuizQuestion, quiz_id)
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+    await _audit(db, role, "delete", "quiz", quiz_id,
+                 "Quiz question deleted", None, request)
     await db.delete(q)
     await db.commit()
     return {"deleted": True, "id": quiz_id}
@@ -1540,10 +1605,12 @@ async def update_assignment(assignment_id: str, body: AssignmentBody, _: str = D
 
 
 @router.delete("/assignments/{assignment_id}")
-async def delete_assignment(assignment_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_assignment(assignment_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     a = await db.get(AssignmentPrompt, assignment_id)
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    await _audit(db, role, "delete", "assignment", assignment_id,
+                 "Assignment deleted", None, request)
     await db.delete(a)
     await db.commit()
     return {"deleted": True, "id": assignment_id}
@@ -1571,7 +1638,7 @@ async def list_intro_videos(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CO
 
 @router.put("/intro-videos/{language}")
 async def set_intro_video(language: str, body: IntroVideoBody,
-                          _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+                          request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if language not in INTRO_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"language must be one of {sorted(INTRO_LANGUAGES)}")
     if not body.cloudinary_public_id.strip():
@@ -1580,17 +1647,26 @@ async def set_intro_video(language: str, body: IntroVideoBody,
     if iv is None:
         iv = IntroVideo(language=language)
         db.add(iv)
+    previous = iv.cloudinary_public_id
     iv.cloudinary_public_id = body.cloudinary_public_id.strip()
     iv.duration_seconds = body.duration_seconds
     await db.commit()
+    if previous and previous != iv.cloudinary_public_id:
+        await _audit(db, role, "replace", "intro_video", language,
+                     f"Intro video replaced for {language}",
+                     {"previous": previous, "now": iv.cloudinary_public_id}, request)
     return _intro_dict(iv)
 
 
 @router.delete("/intro-videos/{language}")
-async def delete_intro_video(language: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_intro_video(language: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     iv = await db.get(IntroVideo, language)
     if not iv:
         raise HTTPException(status_code=404, detail="Intro video not set for this language")
+    await _audit(db, role, "delete", "intro_video", language,
+                 f"Intro video removed for {language}",
+                 {"cloudinary_public_id": iv.cloudinary_public_id,
+                  "duration_seconds": iv.duration_seconds}, request)
     await db.delete(iv)
     await db.commit()
     return {"deleted": True, "language": language}
@@ -1649,10 +1725,14 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
 
 @router.delete("/marketing-assets/{day}/{language}")
 async def delete_marketing_asset(day: int, language: str,
-                                 _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+                                 request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     a = await db.get(MarketingAsset, f"{day}_{language}")
     if not a:
         raise HTTPException(status_code=404, detail="No asset for that day/language")
+    await _audit(db, role, "delete", "marketing_asset", f"{day}_{language}",
+                 f"Pre-sale asset removed: day {day}, {language}",
+                 {"day": day, "language": language,
+                  "image": a.image_public_id, "video": a.video_public_id}, request)
     await db.delete(a)
     await db.commit()
     return {"deleted": True, "day": day, "language": language}

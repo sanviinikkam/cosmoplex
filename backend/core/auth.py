@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -47,8 +48,9 @@ def create_admin_token(admin_role: str = ADMIN_SUPER) -> str:
         raise ValueError(f"unknown admin role: {admin_role}")
     # role="admin" is kept so any existing check still passes; "adm" carries the
     # new, finer role.
+    # iat lets a password change invalidate tokens minted before it.
     return create_access_token({"sub": f"admin:{admin_role}", "role": "admin",
-                                "adm": admin_role})
+                                "adm": admin_role, "iat": int(time.time())})
 
 
 def _admin_role_from(creds: HTTPAuthorizationCredentials | None) -> str:
@@ -75,15 +77,29 @@ def _admin_role_from(creds: HTTPAuthorizationCredentials | None) -> str:
     adm = payload.get("adm") or ADMIN_SUPER
     if adm not in ADMIN_ROLES:
         raise exc
-    return adm
+    return adm, int(payload.get("iat") or 0)
+
+
+async def _check_epoch(db, issued_at: int) -> None:
+    """Refuse tokens minted before the last password change."""
+    from core.admin_users import get_token_epoch
+    if issued_at < await get_token_epoch(db):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Signed out — the password was changed. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def admin_role(
     creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> str:
     """Dependency giving the caller's admin role. Use when an endpoint serves
     several roles but must vary what it returns."""
-    return _admin_role_from(creds)
+    role, issued = _admin_role_from(creds)
+    await _check_epoch(db, issued)
+    return role
 
 
 def require_roles(*allowed: str):
@@ -97,8 +113,10 @@ def require_roles(*allowed: str):
         if r not in ADMIN_ROLES:
             raise ValueError(f"unknown admin role: {r}")
 
-    async def _dep(creds: HTTPAuthorizationCredentials = Depends(admin_scheme)) -> str:
-        role = _admin_role_from(creds)     # 401 if not an admin at all
+    async def _dep(creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+                   db: AsyncSession = Depends(get_db)) -> str:
+        role, issued = _admin_role_from(creds)   # 401 if not an admin at all
+        await _check_epoch(db, issued)           # 401 if the password has changed since
         if role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -115,9 +133,11 @@ def require_roles(*allowed: str):
 
 async def require_admin(
     creds: HTTPAuthorizationCredentials = Depends(admin_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> bool:
     """Guard for /admin endpoints — any of the three admin roles."""
-    _admin_role_from(creds)
+    _, issued = _admin_role_from(creds)
+    await _check_epoch(db, issued)
     return True
 
 
