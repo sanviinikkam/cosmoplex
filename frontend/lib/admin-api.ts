@@ -248,6 +248,8 @@ export type UserFilters = {
   campaign?: string;
   source_type?: string;
   lesson?: string;          // microlesson label, e.g. "1.3"
+  // "at" = sitting on that lesson, "passed" = already cleared it.
+  lesson_mode?: "at" | "passed";
   active_within_days?: number;
   certificate?: string;
   limit?: number;

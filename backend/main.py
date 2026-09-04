@@ -299,7 +299,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "feedback-persist-fix",
+        "build": "lesson-passed-filter",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

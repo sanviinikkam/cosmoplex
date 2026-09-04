@@ -609,13 +609,16 @@ function DateRange({
 // for a value nobody has. Uses a native <select> so it works on mobile and with
 // a keyboard without hand-rolled click-outside handling.
 function FilterHeader({
-  label, align = "left", options, value, onChange,
+  label, align = "left", options, value, onChange, extra,
 }: {
   label: string;
   align?: "left" | "center" | "right";
   options?: (string | number)[];
   value?: string;
   onChange?: (v: string) => void;
+  // Rendered under the label when a value is picked — for a companion control
+  // that only makes sense once this column is filtering.
+  extra?: React.ReactNode;
 }) {
   const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
   // No options (or only one) means there is nothing to choose between.
@@ -642,6 +645,7 @@ function FilterHeader({
           </span>
         )}
       </div>
+      {active && extra}
     </th>
   );
 }
@@ -1305,6 +1309,9 @@ function UserDirectory() {
       const next = { ...prev };
       if (v === "" || v === undefined) delete next[k];
       else if (k === "active_within_days") next[k] = Number(v);
+      // A mode with no lesson filters nothing and would linger in the active
+      // count, so it goes when the lesson does.
+      else if (k === "lesson" && !v) delete next.lesson_mode;
       else (next as Record<string, unknown>)[k] = v;
       return next;
     });
@@ -1436,8 +1443,24 @@ function UserDirectory() {
                     value={f.signup_state} onChange={(v) => setFilter("signup_state", v)} />
                   <FilterHeader label="Campaign" options={facets.campaign}
                     value={f.campaign} onChange={(v) => setFilter("campaign", v)} />
-                  <FilterHeader label="Lesson" align="center" options={facets.lesson}
-                    value={f.lesson ?? ""} onChange={(v) => setFilter("lesson", v)} />
+                  <FilterHeader
+                    label="Lesson" align="center" options={facets.lesson}
+                    value={f.lesson ?? ""} onChange={(v) => setFilter("lesson", v)}
+                    extra={
+                      // Only meaningful once a lesson is chosen. "Passed" is
+                      // lesson_index > that lesson: someone sitting on 1.3 has
+                      // not cleared it, so they are not counted.
+                      <select
+                        aria-label="Lesson match mode"
+                        value={f.lesson_mode ?? "at"}
+                        onChange={(e) => setFilter("lesson_mode", e.target.value)}
+                        className="mt-1 w-full text-[10px] font-normal border border-zinc-200 rounded px-1 py-0.5 text-zinc-600 bg-white cursor-pointer focus:outline-none"
+                      >
+                        <option value="at">on this lesson</option>
+                        <option value="passed">passed it</option>
+                      </select>
+                    }
+                  />
                   <FilterHeader label="Lang" options={facets.language}
                     value={f.language} onChange={(v) => setFilter("language", v)} />
                   <FilterHeader label="Active" align="right" />

@@ -782,6 +782,7 @@ async def all_users(
     campaign: str | None = None,
     source_type: str | None = None,
     lesson: str | None = None,          # microlesson label, e.g. "1.3"
+    lesson_mode: str | None = "at",     # "at" = on that lesson, "passed" = cleared it
     active_within_days: int | None = None,
     certificate: str | None = None,   # web only: "yes" | "no"
     limit: int = 500,
@@ -830,11 +831,19 @@ async def all_users(
             labels_for_filter = await _lesson_labels(db)
             want = lesson.strip()
             try:
-                base = base.where(WhatsAppSession.lesson_index == labels_for_filter.index(want))
+                idx = labels_for_filter.index(want)
             except ValueError:
                 # Unknown label — match nothing rather than silently ignoring it,
                 # so a stale bookmark cannot look like "no filter applied".
                 base = base.where(WhatsAppSession.lesson_index == -1)
+            else:
+                if (lesson_mode or "at").strip().lower() == "passed":
+                    # lesson_index is the lesson they are ON, so everything below
+                    # it is finished. "Passed 1.3" is therefore index > 1.3's
+                    # index: someone sitting on 1.3 has not cleared it yet.
+                    base = base.where(WhatsAppSession.lesson_index > idx)
+                else:
+                    base = base.where(WhatsAppSession.lesson_index == idx)
         if active_within_days is not None and active_within_days > 0:
             from datetime import datetime, timedelta
             cutoff = datetime.utcnow() - timedelta(days=active_within_days)
