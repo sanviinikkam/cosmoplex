@@ -299,7 +299,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "module-i18n",
+        "build": "feedback-persist-fix",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

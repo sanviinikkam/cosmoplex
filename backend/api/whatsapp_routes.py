@@ -1401,8 +1401,20 @@ FEEDBACK_COPY = {FB_MID: "feedback_ask_mid", FB_END: "feedback_ask"}
 
 
 def _fb_log(session) -> dict:
+    """A DEEP copy of the feedback log.
+
+    Deep, not shallow, and that is the whole point: feedback_log is a plain JSON
+    column with no mutation tracking. A shallow copy shares the per-checkpoint
+    dicts with the instance SQLAlchemy loaded, so editing one edits the value the
+    ORM holds as "old". Reassigning then looks like no change, the UPDATE is
+    skipped, and the write is silently lost — which is exactly what happened to
+    the first real feedback reply: asked_at persisted (a fresh nested dict) while
+    text did not (an edit to a shared one).
+    """
     log = session.feedback_log
-    return dict(log) if isinstance(log, dict) else {}
+    if not isinstance(log, dict):
+        return {}
+    return {k: (dict(v) if isinstance(v, dict) else v) for k, v in log.items()}
 
 
 def _feedback_pending(session) -> str | None:
@@ -1459,7 +1471,7 @@ async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str,
 
 async def _record_feedback(db, session, checkpoint: str, text: str) -> None:
     log = _fb_log(session)
-    entry = log.get(checkpoint) or {}
+    entry = dict(log.get(checkpoint) or {})   # never edit a tracked dict in place
     entry["text"] = (text or "").strip()[:4000]
     entry["at"] = datetime.utcnow().isoformat()
     log[checkpoint] = entry
