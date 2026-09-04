@@ -1267,7 +1267,7 @@ async def get_module_content_doc(module_id: str, _: str = Depends(require_roles(
 
 @router.post("/modules/{module_id}/content-doc")
 async def upload_module_content_doc(module_id: str, file: UploadFile | None = File(None), text: str | None = Form(None),
-                                    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+                                    request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     """Upload (or paste) the detailed sub-lesson content for a module — this
     becomes the Teacher agent's knowledge source for that module. Replaces
     whatever was there before (one doc per module)."""
@@ -1289,12 +1289,20 @@ async def upload_module_content_doc(module_id: str, file: UploadFile | None = Fi
 
 
 @router.delete("/modules/{module_id}/content-doc")
-async def delete_module_content_doc(module_id: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def delete_module_content_doc(module_id: str, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     m = await db.get(CourseModule, module_id)
     if not m:
         raise HTTPException(status_code=404, detail="Module not found")
+    # The Teacher agent's knowledge source for this module. Keep the text itself
+    # in the log — it is typed prose, not an upload sitting safely in Cloudinary,
+    # so nothing else holds a copy once this row is cleared.
+    was = m.content_doc
     m.content_doc = None
     await db.commit()
+    if was:
+        await _audit(db, role, "delete", "content_doc", module_id,
+                     f"Module content doc removed ({len(was)} characters)",
+                     {"content_doc": was[:20000]}, request)
     return {"deleted": True, "moduleId": module_id}
 
 
@@ -1391,7 +1399,7 @@ async def _warm_derivative(public_id: str) -> None:
 
 
 @router.put("/videos/{video_id}")
-async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def update_video(video_id: str, body: VideoBody, background_tasks: BackgroundTasks, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     v = await db.get(Video, video_id)
     if not v:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -1434,7 +1442,7 @@ class VariantBody(BaseModel):
 
 
 @router.put("/videos/{video_id}/variant")
-async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+async def upsert_variant(video_id: str, body: VariantBody, background_tasks: BackgroundTasks, request: Request = None, role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Supported: {sorted(SUPPORTED_LANGUAGES)}")
     v = await db.get(Video, video_id)
@@ -1443,8 +1451,14 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
     res = await db.execute(select(VideoLanguageVariant).where(
         VideoLanguageVariant.video_id == video_id, VideoLanguageVariant.language == body.language))
     variant = res.scalar_one_or_none()
+    replaced_from = None
     if variant:
         new_upload = body.cloudinary_public_id != variant.cloudinary_public_id
+        if new_upload and variant.cloudinary_public_id:
+            # Uploading over a language video loses the old file's id as surely
+            # as deleting it. Recorded so it can be put back — the previous
+            # upload is still in Cloudinary, only the reference to it is gone.
+            replaced_from = variant.cloudinary_public_id
         variant.cloudinary_public_id = body.cloudinary_public_id
         if body.duration_seconds is not None:
             variant.duration_seconds = body.duration_seconds
@@ -1457,6 +1471,11 @@ async def upsert_variant(video_id: str, body: VariantBody, background_tasks: Bac
     if new_upload and variant.cloudinary_public_id:
         background_tasks.add_task(_warm_derivative, variant.cloudinary_public_id)
     await db.commit()
+    if replaced_from:
+        await _audit(db, role, "replace", "video_variant", video_id,
+                     f"{body.language} lesson video replaced",
+                     {"language": body.language, "previous": replaced_from,
+                      "now": variant.cloudinary_public_id}, request)
     return {"ok": True, "videoId": video_id, "language": body.language}
 
 
