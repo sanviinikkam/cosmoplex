@@ -299,7 +299,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "nudge-variations",
+        "build": "quiz-3-of-2",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

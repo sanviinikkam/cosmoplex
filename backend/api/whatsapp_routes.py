@@ -1136,7 +1136,7 @@ async def _jump_index(db, lang: str, mod: int, sec: int) -> int | None:
     return None
 
 
-QUIZ_PER_ATTEMPT = 5   # how many questions we ask per quiz
+QUIZ_PER_ATTEMPT = 3   # how many questions we ask per quiz
 
 
 async def _all_quiz(db, video_id: str | None) -> list[dict]:
@@ -2257,6 +2257,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         if reply_id in ("quiz", "retake"):
             await _start_quiz(db, session, frm, lang)
             return
+
+        # Failed the quiz and chose to move on instead of retaking. Goes exactly
+        # where a pass goes — the quiz gates the lesson, not the course, and a
+        # learner stuck on one set of questions should not be stuck forever.
+        # Their score is not marked as passed; they simply continue.
+        if reply_id == "skip_quiz":
+            session.stage = "between_lessons"
+            session.quiz_index = 0
+            session.quiz_correct = 0
+            session.quiz_current = None
+            await db.commit()
+            await _send_between_choice(db, session, frm, lang, nm)
+            return
         if reply_id == "practice_quiz":
             await _start_quiz(db, session, frm, lang, practice=True)
             return
@@ -2284,15 +2297,22 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                     await _send_quiz_question(frm, qlang, qidx, items)
                     return
                 score = session.quiz_correct or 0
+                # Clamp to what was actually asked. A bank thinner than
+                # QUIZ_PER_ATTEMPT yields fewer questions, and a fixed pass mark
+                # above that count makes the lesson impossible to clear — with
+                # assignments off, the quiz is the only gate, so that would be a
+                # dead end with nothing to skip past it.
+                pass_mark = min(QUIZ_PASS, len(items))
                 if practice:
                     # Practice doesn't gate progress — show the score, back to the menu
                     await send_text(frm, tr(qlang, "practice_result").format(s=score, n=len(items), name=nm))
                     await _send_between_choice(db, session, frm, lang, nm)
-                elif score >= QUIZ_PASS:
+                elif score >= pass_mark:
                     session.stage = "assignment"
                     session.assignment_draft = None
                     await db.commit()
-                    await send_text(frm, tr(qlang, "score_pass").format(s=score, name=nm))
+                    await send_text(frm, tr(qlang, "score_pass").format(
+                        s=score, n=len(items), name=nm))
                     # Assignments are an admin toggle (default OFF). When off the
                     # flow is video -> quiz -> next lesson, so go straight to the
                     # between-lessons choices instead of the assignment step.
@@ -2308,9 +2328,14 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 else:
                     session.stage = "quiz_failed"
                     await db.commit()
+                    # Retake OR move on. Failing a quiz used to be a wall with one
+                    # way through it; the quiz is the only gate left, so a learner
+                    # who cannot clear it had no way forward at all.
                     await send_buttons(
-                        frm, tr(qlang, "score_fail").format(s=score, p=QUIZ_PASS, name=nm),
-                        [("retake", tr(qlang, "retake_btn"))],
+                        frm, tr(qlang, "score_fail").format(
+                            s=score, p=pass_mark, n=len(items), name=nm),
+                        [("retake", tr(qlang, "retake_btn")),
+                         ("skip_quiz", SKIP_BTN.get(qlang, SKIP_BTN["en"]))],
                     )
                 return
             # Nudge: they typed instead of tapping — resend the current question
