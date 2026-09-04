@@ -1392,24 +1392,79 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
     return True   # announced this turn → caller should end the turn (no Teacher greeting)
 
 
-async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str) -> None:
-    """Ask for feedback the first time a learner runs out of lessons.
+# Where we ask how it is going. "lesson4" catches people while they are still
+# engaged — the end-only version could only ever hear from finishers, which on a
+# part-uploaded course is almost nobody.
+FEEDBACK_AFTER_LESSONS = 4          # completed lessons that trigger the mid ask
+FB_MID, FB_END = "lesson4", "end"
+FEEDBACK_COPY = {FB_MID: "feedback_ask_mid", FB_END: "feedback_ask"}
 
-    Once, ever — guarded on feedback_asked_at. Without that guard it would fire
-    on every message they send while parked at the end, which is exactly the
-    person most likely to keep messaging.
+
+def _fb_log(session) -> dict:
+    log = session.feedback_log
+    return dict(log) if isinstance(log, dict) else {}
+
+
+def _feedback_pending(session) -> str | None:
+    """Checkpoint we asked about and are still waiting on, or None.
+
+    "Waiting" ends when they answer OR when they tap a button — see
+    _clear_feedback_pending. Without that second exit a doubt typed three
+    lessons later would be filed as feedback on lesson 4.
+    """
+    for key, entry in _fb_log(session).items():
+        if isinstance(entry, dict) and entry.get("asked_at") and not entry.get("text") \
+                and not entry.get("skipped"):
+            return key
+    return None
+
+
+def _clear_feedback_pending(session) -> None:
+    """They moved on instead of answering. Stop treating the next thing they
+    type as feedback."""
+    log = _fb_log(session)
+    changed = False
+    for key, entry in log.items():
+        if isinstance(entry, dict) and entry.get("asked_at") and not entry.get("text") \
+                and not entry.get("skipped"):
+            entry["skipped"] = True
+            changed = True
+    if changed:
+        session.feedback_log = log
+
+
+async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str,
+                              checkpoint: str = FB_END) -> None:
+    """Ask for feedback once per checkpoint.
+
+    Guarded on the log: without it the end ask would re-fire on every message
+    from someone parked at the end, which is exactly the person most likely to
+    keep messaging.
 
     The prompt says they can reply with a voice note, and that is not just
-    politeness: this asks four open questions of people who may be more fluent
+    politeness: it asks four open questions of people who may be far more fluent
     speaking than typing, in a script their keyboard may not even have. A voice
-    note arrives here already transcribed, through the same path as text, so it
-    is captured the same way.
+    note arrives already transcribed, through the same path as text, so it is
+    captured identically.
     """
-    if session.feedback_asked_at or session.feedback_text:
-        return
-    session.feedback_asked_at = datetime.utcnow()
+    log = _fb_log(session)
+    if isinstance(log.get(checkpoint), dict):
+        return                      # already asked at this checkpoint
+    log[checkpoint] = {"asked_at": datetime.utcnow().isoformat(),
+                       "text": None, "at": None, "skipped": False}
+    session.feedback_log = log
     await db.commit()
-    await send_text(frm, tr(lang, "feedback_ask").format(name=nm))
+    await send_text(frm, tr(lang, FEEDBACK_COPY[checkpoint]).format(name=nm))
+
+
+async def _record_feedback(db, session, checkpoint: str, text: str) -> None:
+    log = _fb_log(session)
+    entry = log.get(checkpoint) or {}
+    entry["text"] = (text or "").strip()[:4000]
+    entry["at"] = datetime.utcnow().isoformat()
+    log[checkpoint] = entry
+    session.feedback_log = log
+    await db.commit()
 
 
 async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
@@ -1437,7 +1492,7 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     # They have seen everything that exists in their language — the moment their
     # opinion is worth the most, and the only moment we are not interrupting a
     # lesson to ask for it.
-    await _maybe_ask_feedback(db, session, frm, lang, nm)
+    await _maybe_ask_feedback(db, session, frm, lang, nm, FB_END)
     return False
 
 
@@ -1457,6 +1512,11 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
              ("practice_quiz", tr(lang, "practice_btn")),
              ("ask_doubt", tr(lang, "doubt_btn"))],
         )
+        # cur is the lesson they just finished (0-based), so cur + 1 is how many
+        # they have completed. Asked AFTER the buttons so it never stands between
+        # them and the next lesson: they can answer, or just tap and carry on.
+        if (cur + 1) == FEEDBACK_AFTER_LESSONS:
+            await _maybe_ask_feedback(db, session, frm, lang, nm, FB_MID)
     else:
         session.stage = "done"
         await db.commit()
@@ -1791,6 +1851,36 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             ref_code = _extract_ref_code(text)
             if ref_code:
                 session.referred_by_code = ref_code
+
+        # ── An outstanding feedback ask owns the next reply ───────────────────
+        # Placed here, before the stage handlers, because the answer arrives in
+        # different stages depending on which checkpoint asked: between_lessons
+        # after lesson 4, done at the end. Handling it in each stage would mean
+        # remembering to add it to the next stage too.
+        #
+        # A button tap means they chose to carry on rather than answer, so stop
+        # waiting — otherwise a doubt typed three lessons later would be filed as
+        # feedback on lesson 4. Only free text counts, and a transcribed voice
+        # note arrives as free text, so it is captured identically.
+        #
+        # Runs after the unsubscribe/refer keywords below would... it does not:
+        # those are checked further down, so "refer" typed while feedback is
+        # pending is treated as the feedback. That is the right call — someone
+        # just asked a question, and the reply belongs to it.
+        _pending_fb = _feedback_pending(session)
+        if _pending_fb and session.stage in ("between_lessons", "done", "clarify"):
+            if reply_id is not None:
+                _clear_feedback_pending(session)
+                await db.commit()
+            elif (text or "").strip():
+                await _record_feedback(db, session, _pending_fb, text)
+                print(f"✓ Feedback ({_pending_fb}) from {frm}: {(text or '')[:80]!r}")
+                # nm is derived further down, so compute the display name here
+                # the same way rather than reaching for a variable that does not
+                # exist yet.
+                _nm = (session.name or name or "").strip() or "friend"
+                await send_text(frm, tr(session.language or "en", "feedback_thanks").format(name=_nm))
+                return
 
         # "refer" / "invite" → the learner's own code + share link
         if reply_id is None and low in ("refer", "referral", "invite", "refer a friend", "my code"):
@@ -2254,21 +2344,6 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             lessons = await _db_lessons(db, lang)
             if (session.lesson_index or 0) + 1 < len(lessons):
                 await _advance_lesson(db, session, frm, lang, nm)
-                return
-
-            # Still at the end, and we asked for feedback they have not given.
-            # Their next free-text message (typed OR a transcribed voice note) is
-            # the answer, so store it instead of handing it to the Teacher agent,
-            # which would reply about lesson content and lose it. Checked only
-            # AFTER the new-lesson branch above: once more lessons exist, "next"
-            # means next, not feedback.
-            if (reply_id is None and session.feedback_asked_at
-                    and not session.feedback_text and (text or "").strip()):
-                session.feedback_text = (text or "").strip()[:4000]
-                session.feedback_at = datetime.utcnow()
-                await db.commit()
-                print(f"✓ Feedback from {frm}: {session.feedback_text[:80]!r}")
-                await send_text(frm, tr(lang, "feedback_thanks").format(name=nm))
                 return
 
         # Otherwise (stage done/quiz_failed with free text) → Teacher agent

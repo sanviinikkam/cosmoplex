@@ -77,10 +77,15 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_issued_at TIMESTAMP"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_name VARCHAR(255)"))
-            for _c, _t in (("feedback_asked_at", "TIMESTAMP"), ("feedback_text", "TEXT"),
-                           ("feedback_at", "TIMESTAMP")):
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS feedback_log JSONB"))
+            # The single-checkpoint columns these replace were added earlier today
+            # and never held a row (verified: 0 asked, 0 answered) before feedback
+            # became per-checkpoint. Dropped so nothing later reads them and
+            # believes they are the source of truth.
+            for _c in ("feedback_asked_at", "feedback_text", "feedback_at"):
                 await conn.execute(text(
-                    f"ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS {_c} {_t}"))
+                    f"ALTER TABLE whatsapp_sessions DROP COLUMN IF EXISTS {_c}"))
             for _col, _type in (("source_type","VARCHAR(20)"), ("campaign","VARCHAR(80)"),
                                 ("ad_id","VARCHAR(64)"), ("ctwa_clid","VARCHAR(256)"),
                                 ("source_headline","VARCHAR(255)"), ("first_seen_at","TIMESTAMP")):
@@ -290,7 +295,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "end-feedback",
+        "build": "feedback-checkpoints",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

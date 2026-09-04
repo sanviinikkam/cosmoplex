@@ -389,10 +389,12 @@ class WhatsAppSession(Base):
     source_headline = Column(String(255), nullable=True)  # ad headline, so a campaign is recognisable without Ads Manager
     first_seen_at = Column(DateTime, default=datetime.utcnow)
     opt_out = Column(Boolean, default=False)
-    # End-of-content feedback: asked once, answered at most once.
-    feedback_asked_at = Column(DateTime, nullable=True)
-    feedback_text = Column(Text, nullable=True)
-    feedback_at = Column(DateTime, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
+    # Feedback, keyed by checkpoint:
+    #   {"lesson4": {"asked_at": iso, "text": str|None, "at": iso|None,
+    #                "skipped": bool}, "end": {...}}
+    # A keyed log rather than a column set per checkpoint, so adding "after
+    # module 2" later is a constant, not a migration.
+    feedback_log = Column(JSONB, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):
