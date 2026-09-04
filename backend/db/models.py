@@ -220,6 +220,10 @@ class CourseModule(Base):
     order_index = Column(Integer, nullable=False)
     level = Column(Integer, nullable=False, default=1)   # 1=Beginner 2=Intermediate 3=Advanced
     content_doc = Column(Text, nullable=True)   # detailed sub-lesson content (admin-uploaded); Teacher agent's knowledge source
+    # Module title per language, translated once and cached: {"hi": "...", ...}.
+    # Lesson titles already cache on the language variant; modules had nowhere to
+    # put one, which is why they read in English to everyone.
+    title_i18n = Column(JSONB, nullable=True)
 
     course = relationship("Course", back_populates="modules")
     sections = relationship(
@@ -394,7 +398,11 @@ class WhatsAppSession(Base):
     #                "skipped": bool}, "end": {...}}
     # A keyed log rather than a column set per checkpoint, so adding "after
     # module 2" later is a constant, not a migration.
-    feedback_log = Column(JSONB, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
+    feedback_log = Column(JSONB, nullable=True)
+    # Last module we announced as complete. Guards the milestone message, which
+    # is otherwise re-sent every time the post-lesson menu is shown again — after
+    # a practice quiz, or after answering the feedback prompt.
+    last_module_announced = Column(String(64), nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):

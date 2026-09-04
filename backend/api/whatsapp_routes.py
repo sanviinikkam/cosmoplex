@@ -1496,10 +1496,36 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     return False
 
 
+async def _localized_module_title(db, module_id: str | None, english_title: str, lang: str) -> str:
+    """Module title in the learner's language.
+
+    Same shape as _localized_title, but modules had no per-language column at
+    all, so every module name read in English no matter which language the
+    learner picked. Translated once and cached on the module, so this is a read
+    for everyone after the first learner in that language.
+    """
+    if lang == "en" or not module_id or not english_title:
+        return english_title
+    module = await db.get(CourseModule, module_id)
+    if module is None:
+        return english_title
+    cached = module.title_i18n if isinstance(module.title_i18n, dict) else {}
+    if cached.get(lang):
+        return cached[lang]
+    translated = await _translate_title(english_title, lang)
+    if translated and translated != english_title:
+        # Reassign rather than mutate: SQLAlchemy does not see in-place edits to
+        # a JSON column, and the translation would be paid for on every message.
+        module.title_i18n = {**cached, lang: translated}
+        await db.commit()
+        return translated
+    return english_title
+
+
 NEWLINE = "\n"
 
 
-async def _maybe_announce_module_done(db, lessons: list[dict], cur: int,
+async def _maybe_announce_module_done(db, session, lessons: list[dict], cur: int,
                                       frm: str, lang: str, nm: str) -> None:
     """When the lesson just finished was the last of its module, say so.
 
@@ -1517,6 +1543,11 @@ async def _maybe_announce_module_done(db, lessons: list[dict], cur: int,
     finished, nxt = lessons[cur], lessons[cur + 1]
     if finished.get("module_id") == nxt.get("module_id"):
         return                      # still inside the same module
+    # Once per module. The post-lesson menu is shown again after a practice quiz
+    # and after answering the feedback prompt, and without this the milestone
+    # would be re-announced each time.
+    if session.last_module_announced == str(finished.get("module_id")):
+        return
 
     done = [l for l in lessons[:cur + 1] if l.get("module_id") == finished.get("module_id")]
     lines = []
@@ -1525,12 +1556,16 @@ async def _maybe_announce_module_done(db, lessons: list[dict], cur: int,
         # burst of translation calls.
         title = await _localized_title(db, l.get("video_id"), l.get("title") or "", lang)
         lines.append(f"✅ {l.get('label', '')} {title}".rstrip())
-    nxt_title = nxt.get("module_title") or ""
+    # The learner picked a language; the module name has to be in it too.
+    nxt_title = await _localized_module_title(
+        db, nxt.get("module_id"), nxt.get("module_title") or "", lang)
     # Module number comes from the label ("2.1" → 2) so it matches what the
     # learner sees on every lesson, rather than a separate counter.
     def _mod_no(l):
         lab = (l.get("label") or "")
         return lab.split(".")[0] if "." in lab else "?"
+    session.last_module_announced = str(finished.get("module_id"))
+    await db.commit()
     await send_text(frm, tr(lang, "module_done").format(
         n=_mod_no(finished), nx=_mod_no(nxt), name=nm,
         list=NEWLINE.join(lines), title=nxt_title))
@@ -1544,7 +1579,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
     # Announced before the next-lesson buttons: it is about what they just
     # finished, so it reads as the closing beat of the module rather than a
     # preamble to the next one.
-    await _maybe_announce_module_done(db, lessons, cur, frm, lang, nm)
+    await _maybe_announce_module_done(db, session, lessons, cur, frm, lang, nm)
     if cur + 1 < len(lessons):
         nxt = lessons[cur + 1]
         nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
@@ -1923,7 +1958,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # the same way rather than reaching for a variable that does not
                 # exist yet.
                 _nm = (session.name or name or "").strip() or "friend"
-                await send_text(frm, tr(session.language or "en", "feedback_thanks").format(name=_nm))
+                _lg = session.language or "en"
+                await send_text(frm, tr(_lg, "feedback_thanks").format(name=_nm))
+                # Put the menu back. Answering the prompt used up the only
+                # message that had buttons, so without this the learner is
+                # thanked and then left with no way to continue.
+                await _send_between_choice(db, session, frm, _lg, _nm)
                 return
 
         # "refer" / "invite" → the learner's own code + share link

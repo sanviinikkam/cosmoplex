@@ -79,6 +79,10 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS certificate_name VARCHAR(255)"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS feedback_log JSONB"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_module_announced VARCHAR(64)"))
+            await conn.execute(text(
+                "ALTER TABLE course_modules ADD COLUMN IF NOT EXISTS title_i18n JSONB"))
             # The single-checkpoint columns these replace were added earlier today
             # and never held a row (verified: 0 asked, 0 answered) before feedback
             # became per-checkpoint. Dropped so nothing later reads them and
@@ -295,7 +299,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "module-milestones",
+        "build": "module-i18n",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
