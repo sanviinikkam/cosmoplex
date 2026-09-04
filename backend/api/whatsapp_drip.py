@@ -123,6 +123,12 @@ PRESALE_VIDEO_TEMPLATE = "cosmoplex_presale_video"
 PRESALE_TEMPLATE_LANG = "en"
 
 # Free-form fallback text (used while templates aren't approved), per language.
+# key -> language -> either one string, or a LIST of variations.
+#
+# A repeat nudge that is word-for-word the first one reads as a bug, so every
+# stage nudge has two, alternated by how many times that key has already fired
+# for that learner. finish_signup stays a single string: the pre-sale drip
+# already varies by tier and carries its own admin-uploaded creative.
 NUDGE_TEXT = {
     "finish_signup": {
         "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?",
@@ -133,52 +139,160 @@ NUDGE_TEXT = {
         "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?",
     },
     "next_lesson": {
-        "en": "{name}, one lesson down 🎉 the next one's already queued up — 2 minutes and you're ahead of where you were yesterday. Carry on?",
-        "hi": "{name}, एक पाठ पूरा 🎉 अगला पहले से तैयार है — 2 मिनट और आप कल से आगे निकल जाओगे। चलें आगे?",
-        "mr": "{name}, एक धडा पूर्ण 🎉 पुढचा आधीच तयार आहे — 2 मिनिटं आणि तुम्ही कालपेक्षा पुढे. पुढे जाऊया?",
-        "te": "{name}, ఒక పాఠం పూర్తి 🎉 తర్వాతిది ఇప్పటికే సిద్ధం — 2 నిమిషాలు, నిన్నటి కంటే ముందుంటారు. కొనసాగిద్దామా?",
-        "ta": "{name}, ஒரு பாடம் முடிந்தது 🎉 அடுத்தது ஏற்கனவே தயார் — 2 நிமிடம், நேற்றை விட முன்னேறிடுவீங்க. தொடரலாமா?",
-        "kn": "{name}, ಒಂದು ಪಾಠ ಮುಗಿತು 🎉 ಮುಂದಿನದು ಈಗಾಗಲೇ ಸಿದ್ಧ — 2 ನಿಮಿಷ, ನಿನ್ನೆಗಿಂತ ಮುಂದೆ ಇರುತ್ತೀರಿ. ಮುಂದುವರಿಸೋಣವೇ?",
+        "en": [
+            "{name}, one lesson down 🎉 the next one's already queued up — 2 minutes and you're ahead of where you were yesterday. Carry on?",
+            "{name}, your next lesson is still on read 👀 two minutes is all it takes — want to keep the streak alive? 🔥",
+        ],
+        "hi": [
+            "{name}, एक पाठ पूरा 🎉 अगला पहले से तैयार है — 2 मिनट और आप कल से आगे निकल जाओगे। चलें आगे?",
+            "{name}, अगला पाठ अब भी इंतज़ार में है 👀 सिर्फ़ दो मिनट लगेंगे — streak बचा लें? 🔥",
+        ],
+        "mr": [
+            "{name}, एक धडा पूर्ण 🎉 पुढचा आधीच तयार आहे — 2 मिनिटं आणि तुम्ही कालपेक्षा पुढे. पुढे जाऊया?",
+            "{name}, पुढचा धडा अजूनही वाट बघतोय 👀 फक्त दोन मिनिटं — streak वाचवूया? 🔥",
+        ],
+        "te": [
+            "{name}, ఒక పాఠం పూర్తి 🎉 తర్వాతిది ఇప్పటికే సిద్ధం — 2 నిమిషాలు, నిన్నటి కంటే ముందుంటారు. కొనసాగిద్దామా?",
+            "{name}, తర్వాతి పాఠం ఇంకా ఎదురుచూస్తోంది 👀 కేవలం రెండు నిమిషాలు — streak నిలబెడదామా? 🔥",
+        ],
+        "ta": [
+            "{name}, ஒரு பாடம் முடிந்தது 🎉 அடுத்தது ஏற்கனவே தயார் — 2 நிமிடம், நேற்றை விட முன்னேறிடுவீங்க. தொடரலாமா?",
+            "{name}, அடுத்த பாடம் இன்னும் காத்திருக்கு 👀 வெறும் இரண்டு நிமிடம் — streak-ஐ காப்பாத்தலாமா? 🔥",
+        ],
+        "kn": [
+            "{name}, ಒಂದು ಪಾಠ ಮುಗಿತು 🎉 ಮುಂದಿನದು ಈಗಾಗಲೇ ಸಿದ್ಧ — 2 ನಿಮಿಷ, ನಿನ್ನೆಗಿಂತ ಮುಂದೆ ಇರುತ್ತೀರಿ. ಮುಂದುವರಿಸೋಣವೇ?",
+            "{name}, ಮುಂದಿನ ಪಾಠ ಇನ್ನೂ ಕಾಯುತ್ತಿದೆ 👀 ಕೇವಲ ಎರಡು ನಿಮಿಷ — streak ಉಳಿಸೋಣವೇ? 🔥",
+        ],
     },
     "start_lesson": {
-        "en": "{name}, your first lesson is just sitting here waiting 🎬 2 mins and you'll have 10 AI words to casually drop in any conversation 💬 shall we?",
-        "hi": "{name}, आपका पहला पाठ यहीं बैठा इंतज़ार कर रहा है 🎬 2 मिनट में 10 AI शब्द जो किसी भी बातचीत में casually डाल सको 💬 चलें?",
-        "mr": "{name}, तुमचा पहिला धडा इथेच वाट बघत बसलाय 🎬 2 मिनिटांत 10 AI शब्द जे कोणत्याही गप्पांमध्ये सहज टाकता येतील 💬 सुरू करूया?",
-        "te": "{name}, మీ మొదటి పాఠం ఇక్కడే వేచి ఉంది 🎬 2 నిమిషాల్లో ఏ సంభాషణలోనైనా casualగా చెప్పగలిగే 10 AI పదాలు 💬 మొదలుపెడదామా?",
-        "ta": "{name}, உங்க முதல் பாடம் இங்கயே காத்திருக்கு 🎬 2 நிமிஷத்துல எந்த பேச்சிலயும் casual-ஆ சொல்ற 10 AI வார்த்தைகள் 💬 ஆரம்பிக்கலாமா?",
-        "kn": "{name}, ನಿಮ್ಮ ಮೊದಲ ಪಾಠ ಇಲ್ಲೇ ಕಾಯ್ತಾ ಇದೆ 🎬 2 ನಿಮಿಷದಲ್ಲಿ ಯಾವ ಮಾತುಕತೆಯಲ್ಲೂ casual ಆಗಿ ಹೇಳಬಹುದಾದ 10 AI ಪದಗಳು 💬 ಶುರುಮಾಡೋಣ್ವಾ?",
+        "en": [
+            "{name}, your first lesson is just sitting here waiting 🎬 2 mins and you'll have 10 AI words to casually drop in any conversation 💬 shall we?",
+            "{name}, lesson one is still unopened 🎬 everyone starts at zero — two minutes and you won't be there any more. Shall we? 🚀",
+        ],
+        "hi": [
+            "{name}, आपका पहला पाठ यहीं बैठा इंतज़ार कर रहा है 🎬 2 मिनट में 10 AI शब्द जो किसी भी बातचीत में casually डाल सको 💬 चलें?",
+            "{name}, पहला पाठ अब तक खुला ही नहीं 🎬 शुरुआत सब शून्य से करते हैं — दो मिनट और आप वहाँ नहीं रहोगे। शुरू करें? 🚀",
+        ],
+        "mr": [
+            "{name}, तुमचा पहिला धडा इथेच वाट बघत बसलाय 🎬 2 मिनिटांत 10 AI शब्द जे कोणत्याही गप्पांमध्ये सहज टाकता येतील 💬 सुरू करूया?",
+            "{name}, पहिला धडा अजून उघडलाच नाही 🎬 सुरुवात सगळेच शून्यापासून करतात — दोन मिनिटं आणि तुम्ही तिथे नसाल. सुरू करूया? 🚀",
+        ],
+        "te": [
+            "{name}, మీ మొదటి పాఠం ఇక్కడే వేచి ఉంది 🎬 2 నిమిషాల్లో ఏ సంభాషణలోనైనా casualగా చెప్పగలిగే 10 AI పదాలు 💬 మొదలుపెడదామా?",
+            "{name}, మొదటి పాఠం ఇంకా తెరవనే లేదు 🎬 అందరూ సున్నా నుంచే మొదలు — రెండు నిమిషాలు, మీరు అక్కడ ఉండరు. మొదలుపెడదామా? 🚀",
+        ],
+        "ta": [
+            "{name}, உங்க முதல் பாடம் இங்கயே காத்திருக்கு 🎬 2 நிமிஷத்துல எந்த பேச்சிலயும் casual-ஆ சொல்ற 10 AI வார்த்தைகள் 💬 ஆரம்பிக்கலாமா?",
+            "{name}, முதல் பாடம் இன்னும் திறக்கவே இல்லை 🎬 எல்லாரும் பூஜ்ஜியத்தில் இருந்துதான் ஆரம்பிக்கிறாங்க — இரண்டு நிமிடம், நீங்க அங்க இருக்க மாட்டீங்க. ஆரம்பிக்கலாமா? 🚀",
+        ],
+        "kn": [
+            "{name}, ನಿಮ್ಮ ಮೊದಲ ಪಾಠ ಇಲ್ಲೇ ಕಾಯ್ತಾ ಇದೆ 🎬 2 ನಿಮಿಷದಲ್ಲಿ ಯಾವ ಮಾತುಕತೆಯಲ್ಲೂ casual ಆಗಿ ಹೇಳಬಹುದಾದ 10 AI ಪದಗಳು 💬 ಶುರುಮಾಡೋಣ್ವಾ?",
+            "{name}, ಮೊದಲ ಪಾಠ ಇನ್ನೂ ತೆರೆದೇ ಇಲ್ಲ 🎬 ಎಲ್ಲರೂ ಸೊನ್ನೆಯಿಂದಲೇ ಶುರು — ಎರಡು ನಿಮಿಷ, ನೀವು ಅಲ್ಲಿ ಇರಲ್ಲ. ಶುರು ಮಾಡೋಣವೇ? 🚀",
+        ],
     },
     "resume_lesson": {
-        "en": "{name}, you paused mid-lesson like it's a web-series cliffhanger 😅 the quiz is right there — finish the last few mins? 💪",
-        "hi": "{name}, आपने पाठ बीच में ही pause कर दिया जैसे web-series का cliffhanger 😅 quiz बस सामने है — आख़िरी कुछ मिनट पूरे कर लो? 💪",
-        "mr": "{name}, तुम्ही धडा मधेच pause केलात जसं web-series चा cliffhanger 😅 quiz अगदी समोर आहे — शेवटची काही मिनिटं पूर्ण करूया? 💪",
-        "te": "{name}, పాఠాన్ని మధ్యలో pause చేశారు web-series cliffhanger లా 😅 quiz ఇదిగో ఎదురుగా ఉంది — చివరి కొన్ని నిమిషాలు పూర్తి చేద్దామా? 💪",
-        "ta": "{name}, பாடத்த பாதியில pause பண்ணீட்டீங்க web-series cliffhanger மாதிரி 😅 quiz இதோ முன்னாடி — கடைசி சில நிமிஷம் முடிச்சிடலாமா? 💪",
-        "kn": "{name}, ಪಾಠವನ್ನ ಮಧ್ಯದಲ್ಲೇ pause ಮಾಡಿದ್ರಿ web-series cliffhanger ತರ 😅 quiz ಇಲ್ಲೇ ಮುಂದೆ ಇದೆ — ಕೊನೆ ಕೆಲ ನಿಮಿಷ ಮುಗಿಸೋಣ್ವಾ? 💪",
+        "en": [
+            "{name}, you paused mid-lesson like it's a web-series cliffhanger 😅 the quiz is right there — finish the last few mins? 💪",
+            "{name}, that lesson is still paused right where you left it ⏸️ pick it up from there — you're closer to the end than the start 💪",
+        ],
+        "hi": [
+            "{name}, आपने पाठ बीच में ही pause कर दिया जैसे web-series का cliffhanger 😅 quiz बस सामने है — आख़िरी कुछ मिनट पूरे कर लो? 💪",
+            "{name}, वो पाठ अब भी वहीं रुका है जहाँ आपने छोड़ा ⏸️ वहीं से उठा लीजिए — आप शुरुआत से ज़्यादा अंत के करीब हैं 💪",
+        ],
+        "mr": [
+            "{name}, तुम्ही धडा मधेच pause केलात जसं web-series चा cliffhanger 😅 quiz अगदी समोर आहे — शेवटची काही मिनिटं पूर्ण करूया? 💪",
+            "{name}, तो धडा अजूनही तिथेच थांबलाय जिथे तुम्ही सोडलात ⏸️ तिथूनच पुढे — तुम्ही सुरुवातीपेक्षा शेवटाच्या जवळ आहात 💪",
+        ],
+        "te": [
+            "{name}, పాఠాన్ని మధ్యలో pause చేశారు web-series cliffhanger లా 😅 quiz ఇదిగో ఎదురుగా ఉంది — చివరి కొన్ని నిమిషాలు పూర్తి చేద్దామా? 💪",
+            "{name}, ఆ పాఠం మీరు ఆపిన చోటే ఆగి ఉంది ⏸️ అక్కడి నుంచే కొనసాగించండి — మీరు మొదలు కంటే చివరికే దగ్గర 💪",
+        ],
+        "ta": [
+            "{name}, பாடத்த பாதியில pause பண்ணீட்டீங்க web-series cliffhanger மாதிரி 😅 quiz இதோ முன்னாடி — கடைசி சில நிமிஷம் முடிச்சிடலாமா? 💪",
+            "{name}, அந்தப் பாடம் நீங்க நிறுத்தின இடத்திலேயே இருக்கு ⏸️ அங்கிருந்தே தொடருங்க — ஆரம்பத்தை விட முடிவுக்குத்தான் நெருக்கம் 💪",
+        ],
+        "kn": [
+            "{name}, ಪಾಠವನ್ನ ಮಧ್ಯದಲ್ಲೇ pause ಮಾಡಿದ್ರಿ web-series cliffhanger ತರ 😅 quiz ಇಲ್ಲೇ ಮುಂದೆ ಇದೆ — ಕೊನೆ ಕೆಲ ನಿಮಿಷ ಮುಗಿಸೋಣ್ವಾ? 💪",
+            "{name}, ಆ ಪಾಠ ನೀವು ನಿಲ್ಲಿಸಿದಲ್ಲೇ ಇದೆ ⏸️ ಅಲ್ಲಿಂದಲೇ ಮುಂದುವರಿಸಿ — ಶುರುವಿಗಿಂತ ಕೊನೆಗೇ ಹತ್ತಿರ 💪",
+        ],
     },
     "finish_quiz": {
-        "en": "{name}, one quiz stands between you and 'certified smart' 🧠 come back and bully it a little ✅",
-        "hi": "{name}, बस एक quiz और आप बन जाओगे 'certified smart' 🧠 वापस आकर उसे थोड़ा हरा दो ✅",
-        "mr": "{name}, फक्त एक quiz आणि तुम्ही व्हाल 'certified smart' 🧠 परत येऊन त्याला थोडं हरवा ✅",
-        "te": "{name}, ఒక్క quiz దాటితే మీరు 'certified smart' 🧠 తిరిగి వచ్చి దాన్ని కొంచెం ఓడించండి ✅",
-        "ta": "{name}, ஒரே ஒரு quiz தாண்டினா நீங்க 'certified smart' 🧠 திரும்பி வந்து அத கொஞ்சம் ஜெயிச்சிடுங்க ✅",
-        "kn": "{name}, ಒಂದೇ quiz ದಾಟಿದ್ರೆ ನೀವು 'certified smart' 🧠 ವಾಪಸ್ ಬಂದು ಅದನ್ನ ಸ್ವಲ್ಪ ಸೋಲಿಸಿ ✅",
+        "en": [
+            "{name}, one quiz stands between you and 'certified smart' 🧠 come back and bully it a little ✅",
+            "{name}, the quiz is still open and it is not getting any harder ✅ a few taps and that lesson is properly done 🧠",
+        ],
+        "hi": [
+            "{name}, बस एक quiz और आप बन जाओगे 'certified smart' 🧠 वापस आकर उसे थोड़ा हरा दो ✅",
+            "{name}, क्विज़ अब भी खुला है और मुश्किल नहीं होने वाला ✅ कुछ tap और वो पाठ पूरा हो जाएगा 🧠",
+        ],
+        "mr": [
+            "{name}, फक्त एक quiz आणि तुम्ही व्हाल 'certified smart' 🧠 परत येऊन त्याला थोडं हरवा ✅",
+            "{name}, क्विझ अजूनही उघडी आहे आणि अवघड होणार नाही ✅ काही tap आणि तो धडा पूर्ण 🧠",
+        ],
+        "te": [
+            "{name}, ఒక్క quiz దాటితే మీరు 'certified smart' 🧠 తిరిగి వచ్చి దాన్ని కొంచెం ఓడించండి ✅",
+            "{name}, క్విజ్ ఇంకా తెరిచే ఉంది, కష్టం అవదు ✅ కొన్ని tap-లు, ఆ పాఠం పూర్తి 🧠",
+        ],
+        "ta": [
+            "{name}, ஒரே ஒரு quiz தாண்டினா நீங்க 'certified smart' 🧠 திரும்பி வந்து அத கொஞ்சம் ஜெயிச்சிடுங்க ✅",
+            "{name}, குவிஸ் இன்னும் திறந்தே இருக்கு, கஷ்டமாகப் போவதில்லை ✅ சில tap, அந்தப் பாடம் முழுசா முடியும் 🧠",
+        ],
+        "kn": [
+            "{name}, ಒಂದೇ quiz ದಾಟಿದ್ರೆ ನೀವು 'certified smart' 🧠 ವಾಪಸ್ ಬಂದು ಅದನ್ನ ಸ್ವಲ್ಪ ಸೋಲಿಸಿ ✅",
+            "{name}, ಕ್ವಿಜ್ ಇನ್ನೂ ತೆರೆದಿದೆ, ಕಷ್ಟ ಆಗಲ್ಲ ✅ ಕೆಲವು tap, ಆ ಪಾಠ ಪೂರ್ಣ 🧠",
+        ],
     },
     "submit_assignment": {
-        "en": "{name}, your assignment is sitting there tapping its foot ✍️ type your answer, I'll grade it, we end on a high 🎯",
-        "hi": "{name}, आपका assignment वहीं बैठा आपका इंतज़ार कर रहा है ✍️ अपना जवाब type करो, मैं grade कर दूँगा, ज़बरदस्त ending करते हैं 🎯",
-        "mr": "{name}, तुमचं assignment तिथेच तुमची वाट बघत बसलंय ✍️ उत्तर type करा, मी तपासतो, दणक्यात शेवट करूया 🎯",
-        "te": "{name}, మీ assignment అక్కడే మీ కోసం ఎదురుచూస్తోంది ✍️ మీ సమాధానం type చేయండి, నేను grade చేస్తా, అదిరిపోయేలా ముగిద్దాం 🎯",
-        "ta": "{name}, உங்க assignment அங்கயே உங்களுக்காக காத்திருக்கு ✍️ பதில type பண்ணுங்க, நான் grade பண்றேன், அசத்தலா முடிப்போம் 🎯",
-        "kn": "{name}, ನಿಮ್ಮ assignment ಅಲ್ಲೇ ನಿಮಗಾಗಿ ಕಾಯ್ತಿದೆ ✍️ ನಿಮ್ಮ ಉತ್ತರ type ಮಾಡಿ, ನಾನು grade ಮಾಡ್ತೀನಿ, ಜೋರಾಗಿ ಮುಗಿಸೋಣ 🎯",
+        "en": [
+            "{name}, your assignment is sitting there tapping its foot ✍️ type your answer, I'll grade it, we end on a high 🎯",
+            "{name}, your assignment is still half-written in your head ✍️ send it as it is — I'll grade it and tell you what to fix 🎯",
+        ],
+        "hi": [
+            "{name}, आपका assignment वहीं बैठा आपका इंतज़ार कर रहा है ✍️ अपना जवाब type करो, मैं grade कर दूँगा, ज़बरदस्त ending करते हैं 🎯",
+            "{name}, आपका असाइनमेंट अब भी दिमाग़ में आधा लिखा है ✍️ जैसा है वैसा भेज दीजिए — मैं जाँच कर बता दूँगा क्या सुधारना है 🎯",
+        ],
+        "mr": [
+            "{name}, तुमचं assignment तिथेच तुमची वाट बघत बसलंय ✍️ उत्तर type करा, मी तपासतो, दणक्यात शेवट करूया 🎯",
+            "{name}, तुमचं असाइनमेंट अजून डोक्यातच अर्धं लिहिलंय ✍️ जसं आहे तसं पाठवा — मी तपासून काय सुधारायचं ते सांगतो 🎯",
+        ],
+        "te": [
+            "{name}, మీ assignment అక్కడే మీ కోసం ఎదురుచూస్తోంది ✍️ మీ సమాధానం type చేయండి, నేను grade చేస్తా, అదిరిపోయేలా ముగిద్దాం 🎯",
+            "{name}, మీ అసైన్‌మెంట్ ఇంకా మనసులోనే సగం రాసి ఉంది ✍️ ఉన్నదున్నట్టు పంపండి — నేను చూసి ఏం సరిచేయాలో చెప్తాను 🎯",
+        ],
+        "ta": [
+            "{name}, உங்க assignment அங்கயே உங்களுக்காக காத்திருக்கு ✍️ பதில type பண்ணுங்க, நான் grade பண்றேன், அசத்தலா முடிப்போம் 🎯",
+            "{name}, உங்க பணி இன்னும் மனசுலயே பாதி எழுதியிருக்கு ✍️ இருக்கிறபடியே அனுப்புங்க — நான் பார்த்து என்ன சரிசெய்யணும்னு சொல்றேன் 🎯",
+        ],
+        "kn": [
+            "{name}, ನಿಮ್ಮ assignment ಅಲ್ಲೇ ನಿಮಗಾಗಿ ಕಾಯ್ತಿದೆ ✍️ ನಿಮ್ಮ ಉತ್ತರ type ಮಾಡಿ, ನಾನು grade ಮಾಡ್ತೀನಿ, ಜೋರಾಗಿ ಮುಗಿಸೋಣ 🎯",
+            "{name}, ನಿಮ್ಮ ಅಸೈನ್‌ಮೆಂಟ್ ಇನ್ನೂ ತಲೆಯಲ್ಲೇ ಅರ್ಧ ಬರೆದಿದೆ ✍️ ಇರೋ ಹಾಗೇ ಕಳುಹಿಸಿ — ನಾನು ನೋಡಿ ಏನು ಸರಿಪಡಿಸಬೇಕು ಅಂತ ಹೇಳ್ತೀನಿ 🎯",
+        ],
     },
     "keep_learning": {
-        "en": "{name}, you finished Lesson 1 like a pro 😎 more coming soon — got AI questions? my DMs are always open 🌟",
-        "hi": "{name}, पाठ 1 को चुटकी में निपटा दिया 😎 और पाठ आ रहे हैं — AI का कोई सवाल हो तो DM खुला है 🌟",
-        "mr": "{name}, धडा 1 चुटकीसरशी संपवला 😎 अजून धडे येतायत — AI बद्दल काही प्रश्न? DM नेहमी खुला आहे 🌟",
-        "te": "{name}, పాఠం 1ని చిటికెలో ముగించారు 😎 ఇంకా పాఠాలు వస్తున్నాయి — AI గురించి ఏ doubt అయినా? నా DM ఎప్పుడూ open 🌟",
-        "ta": "{name}, பாடம் 1-ஐ நொடியில முடிச்சிட்டீங்க 😎 இன்னும் பாடங்க வருது — AI பத்தி ஏதாவது doubt? என் DM எப்பவும் open 🌟",
-        "kn": "{name}, ಪಾಠ 1 ನ್ನ ಚಿಟಿಕೆಯಲ್ಲಿ ಮುಗಿಸಿದ್ರಿ 😎 ಇನ್ನೂ ಪಾಠಗಳು ಬರ್ತಿವೆ — AI ಬಗ್ಗೆ ಯಾವ doubt ಇದ್ರೂ? ನನ್ DM ಯಾವಾಗ್ಲೂ open 🌟",
+        "en": [
+            "{name}, you finished Lesson 1 like a pro 😎 more coming soon — got AI questions? my DMs are always open 🌟",
+            "{name}, still here 👋 new lessons are on the way — in the meantime, ask me anything about what you learned 🌟",
+        ],
+        "hi": [
+            "{name}, पाठ 1 को चुटकी में निपटा दिया 😎 और पाठ आ रहे हैं — AI का कोई सवाल हो तो DM खुला है 🌟",
+            "{name}, अब भी यहीं हूँ 👋 नए पाठ रास्ते में हैं — तब तक, जो सीखा उस पर मुझसे कुछ भी पूछिए 🌟",
+        ],
+        "mr": [
+            "{name}, धडा 1 चुटकीसरशी संपवला 😎 अजून धडे येतायत — AI बद्दल काही प्रश्न? DM नेहमी खुला आहे 🌟",
+            "{name}, अजूनही इथेच आहे 👋 नवे धडे येतायत — तोपर्यंत, जे शिकलात त्याबद्दल मला काहीही विचारा 🌟",
+        ],
+        "te": [
+            "{name}, పాఠం 1ని చిటికెలో ముగించారు 😎 ఇంకా పాఠాలు వస్తున్నాయి — AI గురించి ఏ doubt అయినా? నా DM ఎప్పుడూ open 🌟",
+            "{name}, ఇంకా ఇక్కడే ఉన్నాను 👋 కొత్త పాఠాలు వస్తున్నాయి — అప్పటిదాకా, నేర్చుకున్నదాని గురించి ఏదైనా అడగండి 🌟",
+        ],
+        "ta": [
+            "{name}, பாடம் 1-ஐ நொடியில முடிச்சிட்டீங்க 😎 இன்னும் பாடங்க வருது — AI பத்தி ஏதாவது doubt? என் DM எப்பவும் open 🌟",
+            "{name}, இன்னும் இங்கதான் இருக்கேன் 👋 புதுப் பாடங்கள் வந்துட்டு இருக்கு — அதுவரை, கத்துக்கிட்டதைப் பத்தி எதுவும் கேளுங்க 🌟",
+        ],
+        "kn": [
+            "{name}, ಪಾಠ 1 ನ್ನ ಚಿಟಿಕೆಯಲ್ಲಿ ಮುಗಿಸಿದ್ರಿ 😎 ಇನ್ನೂ ಪಾಠಗಳು ಬರ್ತಿವೆ — AI ಬಗ್ಗೆ ಯಾವ doubt ಇದ್ರೂ? ನನ್ DM ಯಾವಾಗ್ಲೂ open 🌟",
+            "{name}, ಇನ್ನೂ ಇಲ್ಲೇ ಇದ್ದೀನಿ 👋 ಹೊಸ ಪಾಠಗಳು ಬರುತ್ತಿವೆ — ಅಲ್ಲಿಯವರೆಗೆ, ಕಲಿತದ್ದರ ಬಗ್ಗೆ ಏನಾದರೂ ಕೇಳಿ 🌟",
+        ],
     },
 }
 
@@ -335,7 +449,15 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
 
             lang = s.language or "en"
             name = (s.name or "").strip() or "there"
-            text = NUDGE_TEXT[text_key].get(lang, NUDGE_TEXT[text_key]["en"]).format(name=name)
+            _copy = NUDGE_TEXT[text_key].get(lang) or NUDGE_TEXT[text_key]["en"]
+            if isinstance(_copy, (list, tuple)) and _copy:
+                # Alternate on how many times THIS key has already gone out to
+                # THIS learner, so the second nudge is never a copy of the first.
+                # Recomputed here rather than reusing sent_count, which is only
+                # set on the course-nudge branch.
+                _n = ((s.nudge_log or {}).get(_log_key(key, s)) or {}).get("n", 0)
+                _copy = _copy[_n % len(_copy)]
+            text = _copy.format(name=name)
             try:
                 # Pre-sales tiers carry admin-uploaded photo/video/text for (day, lang).
                 asset = await db.get(MarketingAsset, f"{day}_{lang}") if day is not None else None
