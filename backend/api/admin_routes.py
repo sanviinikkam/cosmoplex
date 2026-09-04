@@ -294,7 +294,8 @@ async def dashboard(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, A
                 "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
                 "stage": r.stage,
                 "lesson": (_dash_labels[r.lesson_index or 0]
-                           if 0 <= (r.lesson_index or 0) < len(_dash_labels) else None),
+                           if r.stage in LESSON_STAGES
+                           and 0 <= (r.lesson_index or 0) < len(_dash_labels) else None),
                 "lessonIndex": r.lesson_index,
                 "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
             } for r in recent_wa],
@@ -604,6 +605,19 @@ async def write_setting(
     return {"key": key, "value": body.value}
 
 
+# Stages where the learner is genuinely working through a lesson.
+#
+# lesson_index defaults to 0, so before this every signed-up-or-not learner
+# looked like they were "on 1.1" — 296 of 322, including 108 who never picked a
+# language. Someone at ask_profile or howto has not started a lesson at all;
+# their lesson_index is a default, not a position. Those rows show "—" and are
+# excluded from the Lesson filter and its dropdown.
+LESSON_STAGES = frozenset({
+    "lesson", "quiz", "quiz_failed", "practice", "assignment",
+    "between_lessons", "clarify", "done",
+})
+
+
 PRE_SIGNUP = "Pre sign-up"
 POST_SIGNUP = "Post sign-up"
 
@@ -635,10 +649,17 @@ async def _lesson_labels(db) -> list[str]:
 
 
 async def _lesson_facet(db) -> list[str]:
-    """Microlesson labels that at least one learner is currently on."""
+    """Microlesson labels at least one learner is actually on.
+
+    Restricted to LESSON_STAGES for the same reason the column is: a learner who
+    has not started would otherwise put "1.1" in the dropdown purely because
+    lesson_index defaults to 0.
+    """
     labels = await _lesson_labels(db)
-    idxs = (await db.execute(select(WhatsAppSession.lesson_index).distinct()
-                            .where(WhatsAppSession.lesson_index.is_not(None)))).scalars().all()
+    idxs = (await db.execute(
+        select(WhatsAppSession.lesson_index).distinct().where(
+            WhatsAppSession.lesson_index.is_not(None),
+            WhatsAppSession.stage.in_(LESSON_STAGES)))).scalars().all()
     present = sorted({int(i) for i in idxs})
     return [labels[i] for i in present if 0 <= i < len(labels) and labels[i]]
 
@@ -837,6 +858,9 @@ async def all_users(
                 # so a stale bookmark cannot look like "no filter applied".
                 base = base.where(WhatsAppSession.lesson_index == -1)
             else:
+                # Only learners actually in a lesson, so "on 1.1" cannot sweep
+                # up everyone still stuck in signup at the default index of 0.
+                base = base.where(WhatsAppSession.stage.in_(LESSON_STAGES))
                 if (lesson_mode or "at").strip().lower() == "passed":
                     # lesson_index is the lesson they are ON, so everything below
                     # it is finished. "Passed 1.3" is therefore index > 1.3's
@@ -855,7 +879,10 @@ async def all_users(
                 .offset(max(0, offset)).limit(limit))).scalars().all()
         labels = await _lesson_labels(db)
 
-        def lesson_label(i):
+        def lesson_label(stage, i):
+            """The microlesson they are on, or None if they have not started one."""
+            if stage not in LESSON_STAGES:
+                return None
             i = i or 0
             return labels[i] if 0 <= i < len(labels) and labels[i] else str(i + 1)
 
@@ -863,7 +890,7 @@ async def all_users(
             "id": r.phone,
             "name": r.name or "—", "phone": mask(r.phone), "language": r.language,
             "stage": r.stage, "signupState": _signup_state(r.stage),
-            "lesson": lesson_label(r.lesson_index),
+            "lesson": lesson_label(r.stage, r.lesson_index),
             "lessonIndex": r.lesson_index,
             "campaign": r.campaign, "sourceType": r.source_type,
             "lastActive": r.last_active_at.isoformat() if r.last_active_at else None,
