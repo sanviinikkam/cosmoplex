@@ -312,7 +312,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "lesson-replace-audit",
+        "build": "course-facts-agent",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

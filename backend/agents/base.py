@@ -194,6 +194,23 @@ LANGUAGE_NAMES = {
 }
 
 
+SCRIPT_NAMES = {
+    "en": "Latin", "hi": "Devanagari", "mr": "Devanagari",
+    "te": "Telugu", "ta": "Tamil", "kn": "Kannada",
+}
+
+
+def script_name(code) -> str:
+    """The writing system a reply must use.
+
+    Named explicitly because "respond in Hindi" alone does not stop a model from
+    answering romanised Hindi with romanised Hindi — it mirrors whatever the
+    learner typed. A Hindi learner who types "Kya aap paisa bhi loge" still
+    wants Devanagari back.
+    """
+    return SCRIPT_NAMES.get(str(code or "en").lower(), "Latin")
+
+
 def language_name(code) -> str:
     """Map a language code (e.g. 'te') to its English name (e.g. 'Telugu')."""
     return LANGUAGE_NAMES.get(code or "en", "English")
@@ -216,3 +233,8 @@ class LearnerState:
     use_real_knowledge: bool = False
     knowledge_text: str = ""
     not_yet_covered: list = field(default_factory=list)
+    # Facts ABOUT the course — price, length, certificate, how it works. Separate
+    # from knowledge_text, which is lesson content: "what does this cost" is a
+    # fair question that no lesson will ever answer, and deflecting it reads as
+    # evasive rather than careful.
+    course_facts: str = ""

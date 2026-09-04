@@ -25,7 +25,7 @@ from datetime import datetime
 import anthropic
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Request, Response, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
@@ -1614,6 +1614,86 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         await _deliver_certificate(db, session, frm, lang, nm)
 
 
+# Things about the course that no lesson will ever teach, but learners keep
+# asking: what it costs, how long it is, whether they get a certificate. The
+# Teacher used to call these "outside what this course covers", which reads as
+# evasive when someone is simply asking the price.
+#
+# The COUNTS ARE COMPUTED, not written down. Modules, the full programme size and
+# what is reachable in each language all come from the database, so uploading a
+# lesson or adding a module updates what the Teacher says without anyone
+# remembering to edit a prompt. Only genuine policy — the price, the certificate
+# rule — is fixed text, because only a person can decide those.
+COURSE_POLICY = """- The course is FREE for this learner. They pay nothing to take it. It is presented as a Rs.699
+  course given free. There is no payment step anywhere and no way to be charged.
+- FUTURE PRICING — asked in ANY language, however phrased: the ONLY thing you may say is that it is
+  free for them, right now. Then stop. You have no information about future pricing and must not imply
+  that you do. Adding ANY reassurance about later is forbidden, in every language — not just in English.
+  Forbidden in English: "not now and not later", "always free", "free forever", "you will never be
+  charged". The SAME BAN covers their equivalents in every other language, for example the Hindi
+  "न अभी, न बाद में" or "हमेशा मुफ़्त", the Marathi "कधीच नाही", and any similar phrasing in Telugu,
+  Tamil or Kannada. Saying it in Hindi is not a loophole — it is the same promise, and the company has
+  not made it. If the learner presses, say you do not have information about future pricing.
+- Certificate: awarded when they finish the whole course. Not for a single lesson or module.
+- Lessons are about 2 minutes each. Self-paced — they can watch any time, and pick up where they left off.
+- After each lesson there are 3 quiz questions; 2 correct passes. They can retake, or skip and move on.
+- Available in 6 languages: English, Hindi, Marathi, Telugu, Tamil, Kannada. They can switch at any time
+  by replying with the language name.
+- Useful replies: "refer" for an invite link to share, "restart" to begin again, "unsubscribe" to stop
+  messages.
+- Built by Cosmoplex. No coding needed, and no prior AI experience required."""
+
+
+def _whatsapp_markdown(text: str, lang: str) -> str:
+    """Make model output safe for WhatsApp, which is not Markdown.
+
+    WhatsApp bolds with *single* asterisks, so **double** ones arrive as literal
+    asterisks around the words. Models reach for Markdown by habit, and a prompt
+    rule alone does not reliably stop it — so it is normalised here as well as
+    asked for there.
+
+    Indic replies drop emphasis entirely, matching the pitch: asterisks sit badly
+    against conjunct scripts and the bold rarely survives the shaping cleanly.
+    """
+    if not text:
+        return text
+    # **bold** and __bold__ -> WhatsApp's *bold*
+    out = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text, flags=re.S)
+    out = re.sub(r"__(.+?)__", r"*\1*", out, flags=re.S)
+    # Markdown headings mean nothing here and just leave stray hashes.
+    out = re.sub(r"^\s{0,3}#{1,6}\s*", "", out, flags=re.M)
+    if lang != "en":
+        out = _strip_bold(out)
+    return out
+
+
+async def _course_facts(db, lang: str) -> str:
+    """The COURSE FACTS block handed to the Teacher, with live numbers."""
+    try:
+        res = await db.execute(select(Course).order_by(Course.created_at).options(
+            selectinload(Course.modules)))
+        course = res.scalars().first()
+        title = course.title if course else "AI101: AI Literacy Certification"
+        modules = [m.title for m in (course.modules if course else [])]
+        total = (await db.execute(select(func.count()).select_from(Video))).scalar() or 0
+        available = len(await _db_lessons(db, lang))
+    except Exception as e:
+        print(f"WARN course facts unavailable: {type(e).__name__}: {e}")
+        return COURSE_POLICY
+
+    lines = [f"- Course: {title}."]
+    if modules:
+        lines.append(f"- {len(modules)} modules: {', '.join(modules)}.")
+    lines.append(f"- The full programme is {total} short video lessons.")
+    # Said plainly, because it is the honest answer and the gap is real: a Telugu
+    # learner can reach one lesson today while the programme is fifty.
+    lines.append(f"- {available} of them are ready in this learner's language right now; more are added "
+                 f"regularly. If they ask how many lessons there are, give the full programme size and "
+                 f"mention how many are ready in their language so far.")
+    lines.append(COURSE_POLICY)
+    return chr(10).join(lines)
+
+
 async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) -> None:
     """Answer a free-text question via the Teacher agent, scoped to exactly what
     this learner has actually completed (admin-uploaded module content docs)."""
@@ -1632,6 +1712,7 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
     completed_ids = {l["video_id"] for l in lessons[:completed_up_to] if l["video_id"]}
     ctx = build_teacher_context(lessons, lambda l: l["video_id"] in completed_ids)
 
+    facts = await _course_facts(db, lang)
     state = LearnerState(
         learner_id=f"wa:{frm}",
         name=session.name or "there",
@@ -1642,9 +1723,10 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         use_real_knowledge=True,
         knowledge_text=ctx["knowledge_text"],
         not_yet_covered=ctx["not_yet_covered"],
+        course_facts=facts,
     )
     reply = await run_teacher(state, text or "")
-    await send_text(frm, reply)
+    await send_text(frm, _whatsapp_markdown(reply, lang))
 
 
 def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
