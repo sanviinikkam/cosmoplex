@@ -2020,13 +2020,27 @@ function MarketingCell({ day, label, asset, onPatch }: {
         <span className="text-[10px] uppercase tracking-wide text-zinc-400">Text</span>
         <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2}
           placeholder="Marketing copy…"
-          onBlur={() => { if (draft !== (asset?.text ?? "")) onPatch({ text: draft.trim() || null }); }}
+          onBlur={() => {
+            if (draft === (asset?.text ?? "")) return;
+            // Emptying the box and clicking away used to delete the copy
+            // outright — no confirmation, no undo, and the only record was the
+            // text simply being gone. Blur may now only SAVE text, never remove
+            // it; clearing has to be deliberate, via the button below.
+            if (!draft.trim() && asset?.text) return;
+            onPatch({ text: draft.trim() || null });
+          }}
           className="mt-0.5 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-200 resize-y" />
         {textDirty ? (
           <div className="mt-1 flex items-center gap-2">
             <button className="text-[11px] rounded bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5"
-              onClick={() => onPatch({ text: draft.trim() || null })}>Save</button>
-            <span className="text-[10px] text-zinc-400">also saves when you click away</span>
+              onClick={() => {
+                if (!draft.trim() && asset?.text
+                    && !window.confirm(`Delete the ${label} copy for day ${day}? It cannot be recovered from here.`)) return;
+                onPatch({ text: draft.trim() || null });
+              }}>{!draft.trim() && asset?.text ? "Delete copy" : "Save"}</button>
+            <span className="text-[10px] text-zinc-400">
+              {!draft.trim() && asset?.text ? "clearing needs this button" : "also saves when you click away"}
+            </span>
           </div>
         ) : (
           asset?.text ? <span className="mt-1 inline-block text-[10px] text-emerald-600">✓ saved</span> : null
