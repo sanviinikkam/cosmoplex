@@ -216,6 +216,16 @@ export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 
 // Distinct values actually present in the data, per filterable column. The column
 // dropdowns are built from this so they can never offer a value that matches nothing.
+export type FeedbackRow = {
+  id: string; name: string; phone: string; language: string | null;
+  checkpoint: string; text: string | null; at: string | null;
+  askedAt: string | null; skipped: boolean;
+  lesson: string | null; stage: string;
+};
+export type FeedbackPage = {
+  items: FeedbackRow[]; asked: number; answered: number; responseRate: number;
+};
+
 export type AppSettings = { settings: Record<string, boolean> };
 
 export type UserFacets = {
@@ -279,6 +289,13 @@ export const adminApi = {
     adminFetch<{ role: string; configured: boolean }>(`/admin/team/${role}/password`, {
       method: "DELETE",
     }),
+  feedback: (opts?: { checkpoint?: string; language?: string }) => {
+    const p = new URLSearchParams();
+    if (opts?.checkpoint) p.set("checkpoint", opts.checkpoint);
+    if (opts?.language) p.set("language", opts.language);
+    const q = p.toString();
+    return adminFetch<FeedbackPage>(`/admin/feedback${q ? `?${q}` : ""}`);
+  },
   settings: () => adminFetch<AppSettings>("/admin/settings"),
   setSetting: (key: string, value: boolean) =>
     adminFetch<{ key: string; value: boolean }>(`/admin/settings/${key}`, {

@@ -8,7 +8,7 @@ import {
   type WaTranscript,
   type WebLearnerRow, type WaSessionRow, type MarketingAssetRow, type SystemCheck,
   type CampaignRow, type UserFilters, type UserFacets,
-  getAdminRole, type AdminRole,
+  getAdminRole, type AdminRole, type FeedbackRow,
 } from "@/lib/admin-api";
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dlpl4inio";
@@ -1092,6 +1092,95 @@ function ContentOverview() {
   );
 }
 
+
+// What learners said about the course, in their own words. Asked at two points
+// (after the 4th lesson, and when they run out), so the checkpoint is shown —
+// "four lessons in" and "reached the end" are different kinds of opinion.
+function FeedbackPanel() {
+  const [rows, setRows] = useState<FeedbackRow[]>([]);
+  const [asked, setAsked] = useState(0);
+  const [answered, setAnswered] = useState(0);
+  const [rate, setRate] = useState(0);
+  const [checkpoint, setCheckpoint] = useState("");
+  const [language, setLanguage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const r = await adminApi.feedback({
+        checkpoint: checkpoint || undefined, language: language || undefined,
+      });
+      setRows(r.items); setAsked(r.asked); setAnswered(r.answered); setRate(r.responseRate);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load feedback");
+    } finally { setLoading(false); }
+  }, [checkpoint, language]);
+  useEffect(() => { load(); }, [load]);
+
+  const CHECKPOINT_LABEL: Record<string, string> = {
+    lesson4: "After 4 lessons", end: "Reached the end",
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 className="text-sm font-semibold text-zinc-900">Learner feedback</h2>
+        <div className="flex items-center gap-2">
+          <select value={checkpoint} onChange={(e) => setCheckpoint(e.target.value)}
+            className="text-xs border border-zinc-300 rounded px-2 py-1">
+            <option value="">All checkpoints</option>
+            <option value="lesson4">After 4 lessons</option>
+            <option value="end">Reached the end</option>
+          </select>
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}
+            className="text-xs border border-zinc-300 rounded px-2 py-1">
+            <option value="">All languages</option>
+            {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+          <button onClick={load}
+            className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50">
+            Refresh
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-zinc-500 mb-4">
+        {answered} of {asked} asked have replied ({rate}%). Replies can be typed or a voice note.
+      </p>
+
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 mb-3">{err}</div>}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-6"><Spinner className="w-4 h-4" /> Loading…</div>
+      ) : !rows.length ? (
+        <div className="text-sm text-zinc-400 py-6 text-center">
+          No replies yet. Learners are asked after their 4th lesson and again when they
+          run out of lessons in their language.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {rows.map((r, i) => (
+            <div key={`${r.id}-${r.checkpoint}-${i}`} className="rounded-xl border border-zinc-200 p-3">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="text-sm font-medium">{r.name}</span>
+                <span className="text-xs text-zinc-400">{r.phone}</span>
+                {r.language && <span className="text-[11px] rounded bg-zinc-100 px-1.5 py-0.5">{r.language}</span>}
+                <span className="text-[11px] rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5">
+                  {CHECKPOINT_LABEL[r.checkpoint] ?? r.checkpoint}
+                </span>
+                {r.lesson && <span className="text-[11px] text-zinc-400">on {r.lesson}</span>}
+                <span className="ml-auto text-[11px] text-zinc-400">{timeAgo(r.at)}</span>
+              </div>
+              <p className="text-sm text-zinc-700 whitespace-pre-wrap">{r.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // Where learners actually come from. Deliberately a funnel, not a click count:
 // a campaign that sends 500 people who never reply is worth less than one that
 // sends 50 who finish, and only the funnel makes that visible.
@@ -1579,6 +1668,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         {isSuper && <SystemCheckPanel />}
         <SystemStatus />
         <CampaignsPanel />
+        <FeedbackPanel />
         <UserDirectory />
         {/* Referral payouts are a marketing surface. */}
         {canMarketing && <ReferralsPanel />}

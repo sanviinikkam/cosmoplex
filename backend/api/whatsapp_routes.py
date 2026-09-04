@@ -1496,11 +1496,55 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     return False
 
 
+NEWLINE = "\n"
+
+
+async def _maybe_announce_module_done(db, lessons: list[dict], cur: int,
+                                      frm: str, lang: str, nm: str) -> None:
+    """When the lesson just finished was the last of its module, say so.
+
+    Without this a module boundary is invisible: lesson 1.6 is followed by 2.1
+    exactly the way 1.5 was followed by 1.6, so finishing a module feels like
+    nothing happened. Naming what they completed is the only progress marker the
+    course has between signup and the certificate.
+
+    Detected from the module_id changing between consecutive lessons in THIS
+    language's list, so it fires wherever the boundary falls for them — the lists
+    differ per language.
+    """
+    if cur + 1 >= len(lessons):
+        return                      # no next lesson: the coming-soon path owns this
+    finished, nxt = lessons[cur], lessons[cur + 1]
+    if finished.get("module_id") == nxt.get("module_id"):
+        return                      # still inside the same module
+
+    done = [l for l in lessons[:cur + 1] if l.get("module_id") == finished.get("module_id")]
+    lines = []
+    for l in done:
+        # Cached per language after the lesson was sent, so this is a read, not a
+        # burst of translation calls.
+        title = await _localized_title(db, l.get("video_id"), l.get("title") or "", lang)
+        lines.append(f"✅ {l.get('label', '')} {title}".rstrip())
+    nxt_title = nxt.get("module_title") or ""
+    # Module number comes from the label ("2.1" → 2) so it matches what the
+    # learner sees on every lesson, rather than a separate counter.
+    def _mod_no(l):
+        lab = (l.get("label") or "")
+        return lab.split(".")[0] if "." in lab else "?"
+    await send_text(frm, tr(lang, "module_done").format(
+        n=_mod_no(finished), nx=_mod_no(nxt), name=nm,
+        list=NEWLINE.join(lines), title=nxt_title))
+
+
 async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> None:
     """The post-lesson menu: continue to the next lesson, practice another quiz
     (a fresh non-repeating set), or ask a doubt."""
     lessons = await _db_lessons(db, lang)
     cur = session.lesson_index or 0
+    # Announced before the next-lesson buttons: it is about what they just
+    # finished, so it reads as the closing beat of the module rather than a
+    # preamble to the next one.
+    await _maybe_announce_module_done(db, lessons, cur, frm, lang, nm)
     if cur + 1 < len(lessons):
         nxt = lessons[cur + 1]
         nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)

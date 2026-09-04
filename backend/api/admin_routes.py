@@ -511,6 +511,68 @@ async def clear_team_password(
     return {"role": role, "configured": False}
 
 
+@router.get("/feedback")
+async def list_feedback(
+    checkpoint: str | None = None,
+    language: str | None = None,
+    answered_only: bool = True,
+    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Learner feedback, newest first.
+
+    Open to all three roles, phone masked for every one of them: this is what
+    learners said about the COURSE, and the content admin — who cannot open a
+    transcript — is the person who most needs to read it. Masking keeps it an
+    opinion attached to a learner rather than a contact list.
+    """
+    rows = (await db.execute(
+        select(WhatsAppSession).where(WhatsAppSession.feedback_log.is_not(None)))).scalars().all()
+
+    items = []
+    asked = answered = 0
+    for r in rows:
+        log = r.feedback_log if isinstance(r.feedback_log, dict) else {}
+        for key, entry in log.items():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("asked_at"):
+                asked += 1
+            text_val = (entry.get("text") or "").strip()
+            if text_val:
+                answered += 1
+            if answered_only and not text_val:
+                continue
+            if checkpoint and key != checkpoint:
+                continue
+            if language and (r.language or "") != language:
+                continue
+            phone = r.phone or ""
+            items.append({
+                "id": r.phone,
+                "name": r.name or "—",
+                "phone": ("•••• " + phone[-4:]) if len(phone) >= 4 else phone,
+                "language": r.language,
+                "checkpoint": key,
+                "text": text_val or None,
+                "at": entry.get("at"),
+                "askedAt": entry.get("asked_at"),
+                "skipped": bool(entry.get("skipped")),
+                "lesson": r.lesson_index,
+                "stage": r.stage,
+            })
+
+    # Newest first; entries with no timestamp sort last rather than crashing the
+    # comparison against None.
+    items.sort(key=lambda x: (x["at"] or x["askedAt"] or ""), reverse=True)
+    return {
+        "items": items,
+        "asked": asked,
+        "answered": answered,
+        "responseRate": round(100 * answered / asked) if asked else 0,
+    }
+
+
 @router.get("/settings")
 async def read_settings(
     _: str = Depends(require_roles(ADMIN_SUPER)),
