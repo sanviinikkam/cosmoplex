@@ -1700,7 +1700,8 @@ async def list_marketing_assets(_: str = Depends(require_roles(ADMIN_SUPER, ADMI
 
 @router.put("/marketing-assets/{day}/{language}")
 async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
-                              _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
+                              request: Request = None,
+                              role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)), db: AsyncSession = Depends(get_db)):
     if day not in MARKETING_DAYS:
         raise HTTPException(status_code=400, detail=f"day must be one of {MARKETING_DAYS}")
     if language not in SUPPORTED_LANGUAGES:
@@ -1713,13 +1714,25 @@ async def set_marketing_asset(day: int, language: str, body: MarketingAssetBody,
     # Patch only the fields present in the request (exclude_unset), so each of the
     # three fields — photo, video, text — can be set or cleared independently.
     patch = body.model_dump(exclude_unset=True)
+    # Clearing a field here destroys an upload exactly as a delete does — the ✕
+    # on a photo is a PUT with image_public_id=null, not a DELETE. That is how a
+    # Day 1 English poster went missing with nothing in the log to show for it,
+    # so the cleared values are captured before they are overwritten.
+    cleared = {}
     for field in ("image_public_id", "video_public_id", "video_duration_seconds", "text"):
         if field in patch:
             val = patch[field]
             if isinstance(val, str):
                 val = val.strip() or None
+            was = getattr(a, field, None)
+            if was and val is None:
+                cleared[field] = was
             setattr(a, field, val)
     await db.commit()
+    if cleared:
+        await _audit(db, role, "clear", "marketing_asset", key,
+                     f"Pre-sale {'/'.join(cleared)} cleared: day {day}, {language}",
+                     cleared, request)
     return _marketing_dict(a)
 
 

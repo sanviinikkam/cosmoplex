@@ -1986,7 +1986,7 @@ function MarketingCell({ day, label, asset, onPatch }: {
           <span className="text-[10px] uppercase tracking-wide text-zinc-400">Photo</span>
           {asset?.imagePublicId && (
             <button className="text-[11px] text-red-500 hover:text-red-700"
-              onClick={() => onPatch({ image_public_id: null })}>✕</button>
+              onClick={() => { if (window.confirm(`Remove the ${label} photo for day ${day}? The upload is not recoverable from here.`)) onPatch({ image_public_id: null }); }}>✕</button>
           )}
         </div>
         {asset?.imagePublicId
@@ -2004,7 +2004,7 @@ function MarketingCell({ day, label, asset, onPatch }: {
           <span className="text-[10px] uppercase tracking-wide text-zinc-400">Video</span>
           {asset?.videoPublicId && (
             <button className="text-[11px] text-red-500 hover:text-red-700"
-              onClick={() => onPatch({ video_public_id: null, video_duration_seconds: null })}>✕</button>
+              onClick={() => { if (window.confirm(`Remove the ${label} video for day ${day}?`)) onPatch({ video_public_id: null, video_duration_seconds: null }); }}>✕</button>
           )}
         </div>
         {asset?.videoPublicId
