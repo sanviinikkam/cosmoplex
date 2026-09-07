@@ -284,7 +284,10 @@ async def dashboard(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, A
             "total": await count(WhatsAppSession),
             "active24h": await count(WhatsAppSession, WhatsAppSession.last_active_at >= now - timedelta(hours=24)),
             "active7d": await count(WhatsAppSession, WhatsAppSession.last_active_at >= now - timedelta(days=7)),
+            # "caught up", not "completed" — see the note in the campaigns funnel.
             "completed": await count(WhatsAppSession, WhatsAppSession.stage == "done"),
+            "certified": await count(WhatsAppSession,
+                                     WhatsAppSession.certificate_code.is_not(None)),
             "byStage": await group(WhatsAppSession.stage),
             "byLanguage": await group(WhatsAppSession.language),
             # Same microlesson label the user directory shows. This payload shares
@@ -895,7 +898,7 @@ async def campaign_report(
             "headline": r.source_headline,
             "ad_id": r.ad_id,
             "arrived": 0, "picked_language": 0, "signed_up": 0,
-            "started_lesson": 0, "completed": 0, "opted_out": 0,
+            "started_lesson": 0, "completed": 0, "certified": 0, "opted_out": 0,
         })
         b["arrived"] += 1
         if r.language:
@@ -911,8 +914,17 @@ async def campaign_report(
                                                     "assignment", "between_lessons",
                                                     "clarify", "done"):
             b["started_lesson"] += 1
+        # stage == "done" means they have seen everything available IN THEIR
+        # LANGUAGE — not that they finished the course. Since lessons became
+        # own-language-only, a Marathi learner reaches it after 12 of 50 videos
+        # and a Telugu learner after 1. Reported as "caught up", because calling
+        # it "completed" claimed something that had not happened.
         if r.stage == "done":
             b["completed"] += 1
+        # The real completion signal: a certificate is only ever issued once the
+        # whole course is finished, and only while course_complete is on.
+        if getattr(r, "certificate_code", None):
+            b["certified"] += 1
         if getattr(r, "opt_out", False):
             b["opted_out"] += 1
         # Keep the most descriptive label seen for this campaign.
@@ -926,6 +938,7 @@ async def campaign_report(
         a = b["arrived"] or 1
         b["signup_rate"] = round(100 * b["signed_up"] / a)
         b["completion_rate"] = round(100 * b["completed"] / a)
+        b["certified_rate"] = round(100 * b["certified"] / a)
     return {"campaigns": out, "total_users": len(rows),
             "from_date": from_date or None, "to_date": to_date or None}
 

@@ -464,7 +464,12 @@ function SystemStatus() {
               <StatTile label="Total users" value={wa.total ?? 0} accent="text-emerald-700" />
               <StatTile label="Active · 24h" value={wa.active24h ?? 0} />
               <StatTile label="Active · 7d" value={wa.active7d ?? 0} />
-              <StatTile label="Completed course" value={wa.completed ?? 0} />
+              {/* "Caught up", not "completed": stage=done means they have seen
+                  everything available IN THEIR LANGUAGE. Since lessons became
+                  own-language-only that is 12 of 50 for Marathi and 1 for
+                  Telugu, so the old label overstated it badly. */}
+              <StatTile label="Caught up (seen all in their language)" value={wa.completed ?? 0} />
+              <StatTile label="Certified" value={wa.certified ?? 0} accent="text-emerald-700" />
             </div>
             <div className="mt-3 grid md:grid-cols-2 gap-4">
               <div><div className="text-xs text-zinc-500 mb-1.5">By stage</div><Pills data={wa.byStage} /></div>
@@ -1430,7 +1435,8 @@ function CampaignsPanel() {
                 <th className="py-2 px-3 font-medium text-right">Picked lang</th>
                 <th className="py-2 px-3 font-medium text-right">Signed up</th>
                 <th className="py-2 px-3 font-medium text-right">Started</th>
-                <th className="py-2 px-3 font-medium text-right">Completed</th>
+                <th className="py-2 px-3 font-medium text-right" title="Seen everything available in their language — not the whole course">Caught up</th>
+                <th className="py-2 px-3 font-medium text-right" title="Finished the entire course and received a certificate">Certified</th>
                 <th className="py-2 px-3 font-medium text-right">Opted out</th>
               </tr>
             </thead>
@@ -1458,9 +1464,13 @@ function CampaignsPanel() {
                     {r.signed_up}<span className="text-zinc-400 text-xs ml-1">{r.signup_rate}%</span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-zinc-700">{r.started_lesson}</td>
-                  <td className="py-2.5 px-3 text-right">
-                    <span className="font-medium text-emerald-700">{r.completed}</span>
+                  <td className="py-2.5 px-3 text-right text-zinc-700">
+                    {r.completed}
                     <span className="text-zinc-400 text-xs ml-1">{r.completion_rate}%</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    <span className="font-medium text-emerald-700">{r.certified}</span>
+                    <span className="text-zinc-400 text-xs ml-1">{r.certified_rate}%</span>
                   </td>
                   <td className="py-2.5 px-3 text-right text-zinc-500">{r.opted_out || "—"}</td>
                 </tr>
@@ -1478,8 +1488,9 @@ function CampaignsPanel() {
                 signed_up: a.signed_up + r.signed_up,
                 started_lesson: a.started_lesson + r.started_lesson,
                 completed: a.completed + r.completed,
+                certified: a.certified + r.certified,
                 opted_out: a.opted_out + r.opted_out,
-              }), { arrived: 0, picked_language: 0, signed_up: 0, started_lesson: 0, completed: 0, opted_out: 0 });
+              }), { arrived: 0, picked_language: 0, signed_up: 0, started_lesson: 0, completed: 0, certified: 0, opted_out: 0 });
               const pct = (n: number) => Math.round((100 * n) / (t.arrived || 1));
               return (
                 <tfoot>
@@ -1498,9 +1509,13 @@ function CampaignsPanel() {
                       {t.started_lesson}
                       <span className="text-zinc-400 text-xs ml-1">{pct(t.started_lesson)}%</span>
                     </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <span className="text-emerald-700">{t.completed}</span>
+                    <td className="py-2.5 px-3 text-right text-zinc-700">
+                      {t.completed}
                       <span className="text-zinc-400 text-xs ml-1">{pct(t.completed)}%</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span className="text-emerald-700">{t.certified}</span>
+                      <span className="text-zinc-400 text-xs ml-1">{pct(t.certified)}%</span>
                     </td>
                     <td className="py-2.5 px-3 text-right text-zinc-500">{t.opted_out || "—"}</td>
                   </tr>

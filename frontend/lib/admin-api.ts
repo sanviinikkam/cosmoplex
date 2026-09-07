@@ -108,7 +108,7 @@ export type AdminDashboard = {
   generatedAt: string;
   content: { error?: string; courses?: number; modules?: number; sections?: number; videos?: number; quizzes?: number; assignments?: number };
   web: { error?: string; total?: number; testAccounts?: number; certificates?: number; withProgress?: number; byLanguage?: Record<string, number>; recent?: WebLearnerRow[] };
-  whatsapp: { error?: string; total?: number; active24h?: number; active7d?: number; completed?: number; byStage?: Record<string, number>; byLanguage?: Record<string, number>; recent?: WaSessionRow[] };
+  whatsapp: { error?: string; total?: number; active24h?: number; active7d?: number; completed?: number; certified?: number; byStage?: Record<string, number>; byLanguage?: Record<string, number>; recent?: WaSessionRow[] };
 };
 
 export const LANGUAGES: { code: string; label: string }[] = [
@@ -211,6 +211,8 @@ export type CampaignRow = {
   opted_out: number;
   signup_rate: number;
   completion_rate: number;
+  certified: number;
+  certified_rate: number;
 };
 export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 
