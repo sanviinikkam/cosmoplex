@@ -1222,11 +1222,27 @@ function VoiceNote({ audioId }: { audioId: string }) {
   // Object URLs are not garbage collected on their own.
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
 
+  async function download() {
+    // The untouched upload, not the MP3 re-encode — if someone wants the file
+    // the learner actually sent, they should get exactly that.
+    const raw = await adminApi.feedbackAudioUrl(audioId, true);
+    const a = document.createElement("a");
+    a.href = raw; a.download = `feedback-${audioId.slice(0, 8)}.ogg`;
+    a.click();
+    URL.revokeObjectURL(raw);
+  }
+
   if (url) {
     return (
-      <audio controls autoPlay src={url} className="mt-2 w-full max-w-sm h-9">
-        Your browser cannot play this recording.
-      </audio>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <audio controls autoPlay src={url} className="w-full max-w-sm h-9">
+          Your browser cannot play this recording.
+        </audio>
+        <button onClick={download}
+          className="text-[11px] text-zinc-500 hover:text-zinc-900 underline decoration-dotted">
+          download original
+        </button>
+      </div>
     );
   }
   return (
@@ -1450,6 +1466,47 @@ function CampaignsPanel() {
                 </tr>
               ))}
             </tbody>
+            {rows.length > 1 && (() => {
+              // Percentages are RECOMPUTED from the totals, never averaged from
+              // the rows. Averaging a rate across campaigns of wildly different
+              // sizes gives a number that belongs to no one — a 2-arrival
+              // campaign at 100% would pull the overall figure up as hard as a
+              // 200-arrival campaign at 10% pulls it down.
+              const t = rows.reduce((a, r) => ({
+                arrived: a.arrived + r.arrived,
+                picked_language: a.picked_language + r.picked_language,
+                signed_up: a.signed_up + r.signed_up,
+                started_lesson: a.started_lesson + r.started_lesson,
+                completed: a.completed + r.completed,
+                opted_out: a.opted_out + r.opted_out,
+              }), { arrived: 0, picked_language: 0, signed_up: 0, started_lesson: 0, completed: 0, opted_out: 0 });
+              const pct = (n: number) => Math.round((100 * n) / (t.arrived || 1));
+              return (
+                <tfoot>
+                  <tr className="border-t-2 border-zinc-300 font-medium">
+                    <td className="py-2.5 pr-3 text-zinc-900">All campaigns</td>
+                    <td className="py-2.5 px-3 text-zinc-400 text-[11px]">{rows.length} rows</td>
+                    <td className="py-2.5 px-3 text-right text-zinc-900">{t.arrived}</td>
+                    <td className="py-2.5 px-3 text-right text-zinc-700">
+                      {t.picked_language}
+                      <span className="text-zinc-400 text-xs ml-1">{pct(t.picked_language)}%</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-zinc-700">
+                      {t.signed_up}<span className="text-zinc-400 text-xs ml-1">{pct(t.signed_up)}%</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-zinc-700">
+                      {t.started_lesson}
+                      <span className="text-zinc-400 text-xs ml-1">{pct(t.started_lesson)}%</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span className="text-emerald-700">{t.completed}</span>
+                      <span className="text-zinc-400 text-xs ml-1">{pct(t.completed)}%</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-zinc-500">{t.opted_out || "—"}</td>
+                  </tr>
+                </tfoot>
+              );
+            })()}
           </table>
         </div>
       )}

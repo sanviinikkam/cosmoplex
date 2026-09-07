@@ -312,7 +312,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "feedback-audio",
+        "build": "mp3-and-totals",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

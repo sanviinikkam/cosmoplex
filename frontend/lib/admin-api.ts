@@ -313,9 +313,10 @@ export const adminApi = {
    * bytes are fetched here and handed to the player as an object URL. The caller
    * must revokeObjectURL when done, or every play leaks a blob.
    */
-  feedbackAudioUrl: async (audioId: string): Promise<string> => {
+  feedbackAudioUrl: async (audioId: string, original = false): Promise<string> => {
     const token = getAdminToken();
-    const res = await fetch(`${API_BASE}/admin/feedback/audio/${audioId}`, {
+    const res = await fetch(
+      `${API_BASE}/admin/feedback/audio/${audioId}${original ? "?original=true" : ""}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (res.status === 401) { clearAdminToken(); throw new Error("Session expired — please log in again."); }

@@ -6,6 +6,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 # System libraries WeasyPrint needs to render PDF certificates, plus Noto +
 # Indic fonts so learner names in Hindi/Marathi/Telugu/Tamil/Kannada render.
+#
+# ffmpeg is for feedback voice notes: WhatsApp sends Ogg/Opus, which Safari does
+# not reliably play, and the admins use Macs as well as Windows. Recordings are
+# stored as they arrived and converted to MP3 on the way out, so nothing is
+# re-encoded twice and the original is always the one kept.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \
@@ -15,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         shared-mime-info \
         fonts-noto-core \
         fonts-indic \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -627,9 +627,48 @@ async def read_audit(
     } for r in rows]}
 
 
+async def _to_mp3(data: bytes) -> bytes | None:
+    """Convert a voice note to MP3 so every browser can play it.
+
+    WhatsApp sends Ogg/Opus. Chrome, Firefox and Edge play it; Safari does not
+    reliably, and these recordings get reviewed on Macs as well as Windows.
+
+    Converted on the way OUT rather than at ingest, so the recording we keep is
+    always exactly what the learner sent — re-encoding once for playback is
+    reversible, storing only a lossy copy is not.
+
+    Returns None if ffmpeg is unavailable or fails, and the caller then serves
+    the original: worse in Safari, but never a broken response.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-i", "pipe:0",            # read the upload from stdin
+            "-vn", "-ac", "1", "-ar", "24000", "-b:a", "48k",
+            "-f", "mp3", "pipe:1",     # speech, mono — small and clear enough
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(data), timeout=30)
+        if proc.returncode != 0 or not out:
+            print(f"WARN mp3 convert failed rc={proc.returncode}: {err[:200]!r}")
+            return None
+        return out
+    except FileNotFoundError:
+        print("WARN ffmpeg not installed — serving the original recording")
+        return None
+    except Exception as e:
+        print(f"WARN mp3 convert error: {type(e).__name__}: {e}")
+        return None
+
+
 @router.get("/feedback/audio/{audio_id}")
 async def feedback_audio(
     audio_id: str,
+    # ?original=true serves the untouched upload — useful for downloading the
+    # exact file the learner sent rather than a re-encode of it.
+    original: bool = False,
     _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -643,14 +682,21 @@ async def feedback_audio(
     row = await db.get(FeedbackAudio, audio_id)
     if row is None or not row.audio:
         raise HTTPException(status_code=404, detail="No recording")
+
+    body, mime, ext = row.audio, (row.mime or "audio/ogg"), "ogg"
+    if not original:
+        converted = await _to_mp3(row.audio)
+        if converted:
+            body, mime, ext = converted, "audio/mpeg", "mp3"
+
     return Response(
-        content=row.audio,
-        media_type=row.mime or "audio/ogg",
+        content=body,
+        media_type=mime,
         headers={
             # inline so the browser plays it rather than downloading it, and
             # no-store because it is personal data that should not linger in a
             # shared cache.
-            "Content-Disposition": f'inline; filename="feedback-{audio_id[:8]}.ogg"',
+            "Content-Disposition": f'inline; filename="feedback-{audio_id[:8]}.{ext}"',
             "Cache-Control": "no-store",
         },
     )
