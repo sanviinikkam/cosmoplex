@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Boolean,
+    LargeBinary,
     Column,
     DateTime,
     Float,
@@ -416,6 +417,30 @@ class WhatsAppMessage(Base):
     msg_type = Column(String(20), nullable=True)             # text|button|list|video|image|audio|template
     content = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class FeedbackAudio(Base):
+    """A learner's spoken feedback, kept so it can be listened to.
+
+    Stored in the database rather than Cloudinary on purpose:
+      - Cloudinary delivery URLs are PUBLIC. A voice recording identifies the
+        person speaking, so a guessable public URL is the wrong home for it;
+        here it is served only through an authenticated admin endpoint.
+      - the Cloudinary account is near its quota, and this keeps recordings out
+        of it entirely.
+    A voice note is tens of kilobytes, and only FEEDBACK replies are kept — not
+    every voice message — so this stays small.
+    """
+    __tablename__ = "feedback_audio"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    phone = Column(String(20), index=True, nullable=False)
+    checkpoint = Column(String(20), nullable=False)     # mid | end
+    mime = Column(String(80), nullable=True)            # as WhatsApp sent it
+    size_bytes = Column(Integer, nullable=True)
+    audio = Column(LargeBinary, nullable=False)
+    transcript = Column(Text, nullable=True)            # what Whisper heard
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AdminAudit(Base):

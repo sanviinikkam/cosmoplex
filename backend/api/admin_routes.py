@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,7 @@ from db.database import get_db
 from api.whatsapp_drip import SIGNUP_STAGES
 from db.models import (
     AdminAudit,
+    FeedbackAudio,
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
     QuizQuestion, AssignmentPrompt, IntroVideo, MarketingAsset,
     LearnerProfile, WhatsAppSession, WhatsAppMessage, Certificate,
@@ -550,6 +552,8 @@ async def list_feedback(
             phone = r.phone or ""
             items.append({
                 "id": r.phone,
+                # Present only when they answered by voice.
+                "audioId": entry.get("audio_id"),
                 "name": r.name or "—",
                 "phone": ("•••• " + phone[-4:]) if len(phone) >= 4 else phone,
                 "language": r.language,
@@ -621,6 +625,35 @@ async def read_audit(
         "targetType": r.target_type, "targetId": r.target_id,
         "summary": r.summary, "detail": r.detail, "ip": r.ip,
     } for r in rows]}
+
+
+@router.get("/feedback/audio/{audio_id}")
+async def feedback_audio(
+    audio_id: str,
+    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a learner's spoken feedback.
+
+    Behind the admin guard rather than on a public CDN: this is a recording of
+    someone's voice, which identifies them far more directly than the text does.
+    The same three roles that can read the feedback can hear it — it is the same
+    answer in another form.
+    """
+    row = await db.get(FeedbackAudio, audio_id)
+    if row is None or not row.audio:
+        raise HTTPException(status_code=404, detail="No recording")
+    return Response(
+        content=row.audio,
+        media_type=row.mime or "audio/ogg",
+        headers={
+            # inline so the browser plays it rather than downloading it, and
+            # no-store because it is personal data that should not linger in a
+            # shared cache.
+            "Content-Disposition": f'inline; filename="feedback-{audio_id[:8]}.ogg"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/settings")

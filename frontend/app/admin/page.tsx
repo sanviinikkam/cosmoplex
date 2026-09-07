@@ -1211,6 +1211,42 @@ function ContentOverview() {
 }
 
 
+
+// Plays a learner's spoken feedback. Loads on demand rather than up front: a
+// panel of twenty rows should not pull twenty recordings nobody asked to hear.
+function VoiceNote({ audioId }: { audioId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Object URLs are not garbage collected on their own.
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+
+  if (url) {
+    return (
+      <audio controls autoPlay src={url} className="mt-2 w-full max-w-sm h-9">
+        Your browser cannot play this recording.
+      </audio>
+    );
+  }
+  return (
+    <div className="mt-2">
+      <button
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true); setErr("");
+          try { setUrl(await adminApi.feedbackAudioUrl(audioId)); }
+          catch (e) { setErr(e instanceof Error ? e.message : "Could not load"); }
+          finally { setBusy(false); }
+        }}
+        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50 disabled:opacity-50">
+        {busy ? <Spinner className="w-3 h-3" /> : "🎤"} {busy ? "Loading…" : "Play voice note"}
+      </button>
+      {err && <span className="ml-2 text-xs text-red-600">{err}</span>}
+    </div>
+  );
+}
+
 // What learners said about the course, in their own words. Asked at two points
 // (after the 4th lesson, and when they run out), so the checkpoint is shown —
 // "four lessons in" and "reached the end" are different kinds of opinion.
@@ -1291,9 +1327,17 @@ function FeedbackPanel() {
                   {CHECKPOINT_LABEL[r.checkpoint] ?? r.checkpoint}
                 </span>
                 {r.lesson && <span className="text-[11px] text-zinc-400">on {r.lesson}</span>}
+                {r.audioId && (
+                  <span className="text-[11px] rounded bg-indigo-50 text-indigo-700 px-1.5 py-0.5">
+                    voice
+                  </span>
+                )}
                 <span className="ml-auto text-[11px] text-zinc-400">{timeAgo(r.at)}</span>
               </div>
+              {/* The text under a voice note is Whisper's transcription, not
+                  something the learner typed — the recording is the original. */}
               <p className="text-sm text-zinc-700 whitespace-pre-wrap">{r.text}</p>
+              {r.audioId && <VoiceNote audioId={r.audioId} />}
             </div>
           ))}
         </div>

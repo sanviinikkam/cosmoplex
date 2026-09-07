@@ -37,7 +37,7 @@ from core.spend_guard import allow_ai_call
 from core.settings_store import get_flag
 from db.database import async_session_factory
 from db.models import (
-    WhatsAppSession, Course, CourseModule, Section, Video,
+    WhatsAppSession, Course, CourseModule, Section, Video, FeedbackAudio,
     VideoLanguageVariant, QuizQuestion, AssignmentPrompt, IntroVideo,
 )
 from agents.base import LearnerState
@@ -326,11 +326,18 @@ VOICE_FAIL = {
 }
 
 
-async def transcribe_audio(media_id: str) -> str | None:
-    """Download a WhatsApp voice note and transcribe it to text via Groq Whisper."""
+async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str | None]:
+    """Download a WhatsApp voice note and transcribe it via Groq Whisper.
+
+    Returns (text, raw_bytes, mime). The bytes come back because a WhatsApp media
+    URL expires and needs the app token, so the recording cannot be re-fetched
+    later — if feedback audio is to be kept at all, it has to be kept from this
+    one download. Transcribing and discarding meant the learner's actual voice
+    was gone the moment we read it.
+    """
     if not settings.groq_api_key:
         print("⚠ voice: GROQ_API_KEY not set — can't transcribe")
-        return None
+        return None, None, None
     ver = settings.graph_api_version
     headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
     try:
@@ -338,18 +345,20 @@ async def transcribe_audio(media_id: str) -> str | None:
             meta = await h.get(f"{GRAPH}/{ver}/{media_id}", headers=headers)
             if meta.status_code >= 400:
                 print(f"⚠ voice: media lookup failed {meta.status_code}: {meta.text[:200]}")
-                return None
-            url = meta.json().get("url")
+                return None, None, None
+            info = meta.json()
+            url = info.get("url")
+            mime = (info.get("mime_type") or "audio/ogg").split(";")[0]
             if not url:
-                return None
+                return None, None, None
             audio = await h.get(url, headers=headers)
             if audio.status_code >= 400:
                 print(f"⚠ voice: media download failed {audio.status_code}")
-                return None
+                return None, None, None
             data = audio.content
     except httpx.HTTPError as e:
         print(f"⚠ voice: download error: {e}")
-        return None
+        return None, None, None
     try:
         from groq import AsyncGroq
         client = AsyncGroq(api_key=settings.groq_api_key)
@@ -359,9 +368,55 @@ async def transcribe_audio(media_id: str) -> str | None:
         )
         text = (resp.text or "").strip()
         print(f"✓ voice transcribed ({len(data)} bytes) -> {text[:80]!r}")
-        return text or None
+        # Bytes are returned even when the text is empty: a recording we could
+        # not transcribe is still worth keeping if it is feedback.
+        return (text or None), data, mime
     except Exception as e:
         print(f"⚠ voice: transcription error: {e}")
+        # Transcription failed but the download did not — keep the recording so a
+        # human can still listen to what the learner said.
+        return None, data, mime
+
+
+async def _store_feedback_audio(frm: str, data: bytes, mime: str | None,
+                                transcript: str | None) -> str | None:
+    """Keep a voice note IF it is answering a feedback prompt, else drop it.
+
+    Checked here rather than after routing because the bytes only exist on this
+    code path — by the time the message handler decides it is feedback, the
+    download is out of scope and a WhatsApp media URL cannot be fetched twice.
+
+    Returns the row id to attach to the feedback entry, or None if this voice
+    note is just an ordinary message.
+    """
+    if not data:
+        return None
+    # Keep a lid on it: a WhatsApp voice note is tens of KB, so anything this
+    # large is not a voice note and does not belong in a database row.
+    if len(data) > 8 * 1024 * 1024:
+        print(f"⚠ voice: {len(data)} bytes is too large to keep as feedback audio")
+        return None
+    try:
+        async with async_session_factory() as db:
+            session = await db.get(WhatsAppSession, frm)
+            if session is None:
+                return None
+            pending = _feedback_pending(session)
+            # Same gate the text capture uses, so audio is kept exactly when the
+            # reply would be recorded as feedback — never more.
+            if not pending or session.stage not in ("between_lessons", "done", "clarify"):
+                return None
+            row = FeedbackAudio(phone=frm, checkpoint=pending,
+                                mime=(mime or "audio/ogg")[:80],
+                                size_bytes=len(data), audio=data,
+                                transcript=(transcript or None))
+            db.add(row)
+            await db.commit()
+            print(f"✓ feedback audio kept for {frm} ({len(data)} bytes, {pending})")
+            return row.id
+    except Exception as e:
+        # Losing the recording must never cost us the written feedback.
+        print(f"⚠ voice: could not store feedback audio: {type(e).__name__}: {e}")
         return None
 
 
@@ -375,12 +430,22 @@ async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
         transcript showing the bot asking them to type with no message above it.
     """
     budget_ok = allow_ai_call()
-    text = await transcribe_audio(media_id) if budget_ok else None
+    text, data, mime = (await transcribe_audio(media_id)
+                        if budget_ok else (None, None, None))
+
+    # Keep the recording only when it answers a feedback prompt. Every voice note
+    # would be a lot of audio for no reason; a spoken answer to "how is it going"
+    # is the one case where hearing the learner is worth more than reading them.
+    audio_id = None
+    if data:
+        audio_id = await _store_feedback_audio(frm, data, mime, text)
+
     if text:
         # Log the voice note itself, marked as voice, then hand the transcription
         # to the normal handler with logging suppressed so it is not stored twice.
         await _log_wa_message(frm, "user", "audio", f"[voice] {text}")
-        await _handle_message(frm, None, text, name, already_logged=True)
+        await _handle_message(frm, None, text, name, already_logged=True,
+                              audio_id=audio_id)
         return
     # Couldn't transcribe → record the attempt, then nudge them to type.
     reason = "transcription failed" if budget_ok else "AI budget reached"
@@ -1463,11 +1528,14 @@ async def _maybe_ask_feedback(db, session, frm: str, lang: str, nm: str,
         name=nm, n=FEEDBACK_AFTER_LESSONS))
 
 
-async def _record_feedback(db, session, checkpoint: str, text: str) -> None:
+async def _record_feedback(db, session, checkpoint: str, text: str,
+                           audio_id: str | None = None) -> None:
     log = _fb_log(session)
     entry = dict(log.get(checkpoint) or {})   # never edit a tracked dict in place
     entry["text"] = (text or "").strip()[:4000]
     entry["at"] = datetime.utcnow().isoformat()
+    if audio_id:
+        entry["audio_id"] = str(audio_id)
     log[checkpoint] = entry
     session.feedback_log = log
     await db.commit()
@@ -1975,7 +2043,7 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
 
 async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                           name: str | None, referral: dict | None = None,
-                          already_logged: bool = False) -> None:
+                          already_logged: bool = False, audio_id: str | None = None) -> None:
     # Log the inbound message to the transcript (text, or the tapped button id).
     # Skipped when the caller already logged it — a voice note is stored as its
     # own 'audio' row before the transcription reaches this handler.
@@ -2041,7 +2109,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 _clear_feedback_pending(session)
                 await db.commit()
             elif (text or "").strip():
-                await _record_feedback(db, session, _pending_fb, text)
+                await _record_feedback(db, session, _pending_fb, text, audio_id=audio_id)
                 print(f"✓ Feedback ({_pending_fb}) from {frm}: {(text or '')[:80]!r}")
                 # nm is derived further down, so compute the display name here
                 # the same way rather than reaching for a variable that does not

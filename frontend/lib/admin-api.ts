@@ -219,6 +219,8 @@ export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 export type FeedbackRow = {
   id: string; name: string; phone: string; language: string | null;
   checkpoint: string; text: string | null; at: string | null;
+  // Set when the learner answered by voice.
+  audioId: string | null;
   askedAt: string | null; skipped: boolean;
   lesson: string | null; stage: string;
 };
@@ -304,6 +306,23 @@ export const adminApi = {
     const q = p.toString();
     return adminFetch<FeedbackPage>(`/admin/feedback${q ? `?${q}` : ""}`);
   },
+  /** Fetch a voice note as a blob URL.
+   *
+   * The endpoint requires the admin bearer token, and an <audio src="..."> tag
+   * cannot carry one — the browser issues a plain unauthenticated GET. So the
+   * bytes are fetched here and handed to the player as an object URL. The caller
+   * must revokeObjectURL when done, or every play leaks a blob.
+   */
+  feedbackAudioUrl: async (audioId: string): Promise<string> => {
+    const token = getAdminToken();
+    const res = await fetch(`${API_BASE}/admin/feedback/audio/${audioId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) { clearAdminToken(); throw new Error("Session expired — please log in again."); }
+    if (!res.ok) throw new Error("Could not load the recording");
+    return URL.createObjectURL(await res.blob());
+  },
+
   audit: (targetType?: string) =>
     adminFetch<{ items: AuditRow[] }>(
       `/admin/audit${targetType ? `?target_type=${targetType}` : ""}`),
