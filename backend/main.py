@@ -312,7 +312,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "caught-up-vs-certified",
+        "build": "nudge-copy-fix",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
