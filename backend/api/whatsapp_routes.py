@@ -1249,10 +1249,15 @@ async def _assignment_for(db, video_id: str | None) -> dict:
 
 
 def _lesson_caption(lang: str, title: str) -> str:
-    """Localized 'watch then tap Start quiz' instruction with the lesson title."""
-    full = tr(lang, "lesson_caption")
-    instr = full.split("\n\n", 1)[1] if "\n\n" in full else full
-    return f"📚 {title}\n\n{instr}"
+    """The real lesson title, then the localized 'watch, then tap Start quiz'.
+
+    The template used to begin with one specific lesson's title, which this
+    function stripped off by splitting on the first blank line. That worked, but
+    it meant a translation edit that dropped the blank line would put "The 10 AI
+    Words Every Fresher Must Know" on top of every lesson. The template is now
+    only the instruction, so there is nothing to strip.
+    """
+    return f"📚 {title}\n\n{tr(lang, 'lesson_caption')}"
 
 
 async def _translate_title(text: str, lang: str) -> str:
