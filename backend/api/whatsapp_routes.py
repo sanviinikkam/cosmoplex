@@ -34,6 +34,7 @@ from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
 from core.rate_limit import check_rate_limit, should_notify
 from core.spend_guard import allow_ai_call
+from agents.router import route_message
 from core.settings_store import get_flag
 from db.database import async_session_factory
 from db.models import (
@@ -326,6 +327,38 @@ VOICE_FAIL = {
 }
 
 
+async def send_typing(message_id: str | None) -> None:
+    """Mark the learner's message read and show the typing dots.
+
+    Without this the chat looks dead while we transcribe a voice note, ask the
+    router, or wait on the Teacher — several seconds of nothing. Learners assume
+    it failed and tap something else, and then two replies arrive at once.
+
+    Meta clears the indicator as soon as our reply goes out, or after ~25s, so
+    there is nothing to turn off. Fire-and-forget: a failed indicator must never
+    stop the actual reply.
+    """
+    if not message_id or not settings.whatsapp_token:
+        return
+    ver = settings.graph_api_version
+    url = f"{GRAPH}/{ver}/{settings.whatsapp_phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as h:
+            r = await h.post(url, headers={
+                "Authorization": f"Bearer {settings.whatsapp_token}",
+                "Content-Type": "application/json"}, json=payload)
+            if r.status_code >= 400:
+                print(f"⚠ typing indicator {r.status_code}: {r.text[:160]}")
+    except Exception as e:
+        print(f"⚠ typing indicator failed: {type(e).__name__}: {e}")
+
+
 async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str | None]:
     """Download a WhatsApp voice note and transcribe it via Groq Whisper.
 
@@ -420,7 +453,8 @@ async def _store_feedback_audio(frm: str, data: bytes, mime: str | None,
         return None
 
 
-async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
+async def _handle_audio(frm: str, media_id: str, name: str | None,
+                        wa_message_id: str | None = None) -> None:
     """Transcribe a voice note, then run it through the normal text handler.
 
     The transcript store gets its own 'audio' row here, for two reasons:
@@ -429,6 +463,8 @@ async def _handle_audio(frm: str, media_id: str, name: str | None) -> None:
       • when transcription FAILED nothing was logged at all, leaving the admin
         transcript showing the bot asking them to type with no message above it.
     """
+    # Transcription takes a few seconds — show the dots before it starts.
+    await send_typing(wa_message_id)
     budget_ok = allow_ai_call()
     text, data, mime = (await transcribe_audio(media_id)
                         if budget_ok else (None, None, None))
@@ -907,14 +943,16 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     if msg.get("type") == "audio":
                         media_id = (msg.get("audio") or {}).get("id")
                         if media_id:
-                            background_tasks.add_task(_handle_audio, frm, media_id, name)
+                            background_tasks.add_task(_handle_audio, frm, media_id, name,
+                                                      msg.get("id"))
                         continue
                     reply_id, text = _extract(msg)
                     if reply_id or text:
                         # Meta attaches `referral` only to the first message after an
                         # ad click; it is dropped on later messages, so capture it here.
                         background_tasks.add_task(_handle_message, frm, reply_id, text,
-                                                  name, msg.get("referral"))
+                                                  name, msg.get("referral"),
+                                                  wa_message_id=msg.get("id"))
     except Exception as e:
         print(f"⚠ WhatsApp webhook error: {e}")
     return {"status": "ok"}
@@ -1844,6 +1882,9 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         await send_text(frm, tr(lang, "ai_busy"))
         return
     await send_text(frm, _whatsapp_markdown(reply, lang))
+    # An answer with no button was the dead end learners kept hitting: they asked
+    # something, got a reply, and had nothing to tap to carry on.
+    await _offer_next_step(db, session, frm, lang, (session.name or "").strip() or "friend")
 
 
 def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
@@ -1916,6 +1957,141 @@ def _detect_language(text: str | None) -> str | None:
 async def _current_video_id(db, session, lang: str) -> str | None:
     lesson = await _lesson_at(db, lang, session.lesson_index or 0)
     return lesson["video_id"] if lesson else None
+
+
+# Stages where free text is the EXPECTED answer to a graded prompt, so the
+# router stays out of the way: an assignment answer is prose that could say
+# anything, and reading intent into it would be reading intent into homework.
+def _obviously_the_answer(stage: str | None, text: str | None) -> bool:
+    """A one-word reply to a one-word question needs no interpretation.
+
+    "Bhuban" at the name prompt is the name. Sending it to a model to be told so
+    is a call bought for nothing, and roughly a quarter of free text arrives at
+    one of these three prompts.
+
+    Deliberately only single tokens: "my name Bhuban" is two words and DOES need
+    reading, which is the case that started all this. This is a length check, not
+    a keyword check — it never inspects what the word says.
+    """
+    if stage not in ("ask_name", "ask_profile", "ask_goal"):
+        return False
+    words = (text or "").strip().split()
+    return len(words) == 1 and len(words[0]) <= 30
+
+
+ROUTER_SKIP_STAGES = {"assignment"}
+
+
+async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
+    """Put the learner back on the step they were on, with its buttons.
+
+    This is what stops a free-typed question being a dead end: they ask about the
+    price, get an answer, and the next message hands back the same button they
+    were looking at before.
+
+    Deliberately NOT _resume_stage. That helper re-renders the step, and for
+    anything between lessons its fallback re-sends the LESSON VIDEO and rewinds
+    the stage to "lesson" — appropriate when the course language just changed and
+    the video must be re-issued, wrong when someone merely asked a question. It
+    would also push a 2.6 MB file through Cloudinary for every doubt.
+    """
+    st = session.stage
+    if st in ("quiz", "practice"):
+        items = _current_quiz(session)
+        if items:
+            qlang = session.quiz_language or lang
+            await _send_quiz_question(frm, qlang, session.quiz_index or 0, items)
+            return
+    if st == "assignment":
+        vid = await _current_video_id(db, session, lang)
+        assignment = await _assignment_for(db, vid)
+        await _send_assignment(frm, lang, assignment)
+        return
+    if st == "lesson":
+        # Mid-lesson: the video is already above them, so just the buttons.
+        await send_buttons(frm, tr(lang, "after_text").format(name=nm),
+                           [("quiz", tr(lang, "quiz_btn")),
+                            ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
+                            ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
+        return
+    if st in ("between_lessons", "clarify", "done", "quiz_failed", "onboarded", "howto"):
+        lessons = await _db_lessons(db, lang)
+        cur = session.lesson_index or 0
+        if cur + 1 < len(lessons):
+            nxt = lessons[cur + 1]
+            nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
+            await send_buttons(
+                frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
+                [("next_lesson", tr(lang, "start_next_btn")),
+                 ("practice_quiz", tr(lang, "practice_btn")),
+                 ("ask_doubt", tr(lang, "doubt_btn"))])
+        else:
+            await send_buttons(
+                frm, tr(lang, "done_choice").format(name=nm),
+                [("practice_quiz", tr(lang, "practice_btn")),
+                 ("get_referral", INVITE_BTN.get(lang, INVITE_BTN["en"])),
+                 ("ask_doubt", tr(lang, "doubt_btn"))])
+        return
+    # Still signing up — re-ask whatever we are waiting on rather than skipping it.
+    if st == "ask_name":
+        await send_text(frm, ob(lang, "name_q"))
+    elif st == "ask_profile":
+        await _send_profile_question(frm, lang)
+    elif st == "ask_goal":
+        await _send_goal_question(frm, lang)
+
+
+async def _apply_intent(db, session, frm: str, nm: str, intent: dict) -> bool:
+    """Act on a routed intent. True if it was handled here.
+
+    Every branch ends by putting the learner back where they were, because the
+    thing that made free-typed questions feel like a dead end was not the answer
+    — it was having no button afterwards. _resume_stage re-renders their current
+    step, so a doubt at the lesson screen ends with "Start quiz" and one between
+    lessons ends with "Next lesson".
+
+    Nothing here is reachable that a button could not already reach. The router
+    chooses WHICH existing door to open, never what is behind it.
+    """
+    kind = intent.get("intent")
+    lang = session.language or "en"
+
+    if kind == "switch_language":
+        new_lang = intent.get("language")
+        if not new_lang or new_lang == lang:
+            return False                      # nothing to change — let it fall through
+        session.language = new_lang
+        await db.commit()
+        await send_text(frm, tr(new_lang, "picker_done"))
+        # A language change DOES need the step re-rendered — the lesson video
+        # itself differs per language — so this one keeps _resume_stage.
+        await _resume_stage(db, session, frm, new_lang)
+        return True
+
+    if kind == "refer":
+        await _send_referral_info(db, session, frm)
+        await _offer_next_step(db, session, frm, lang, nm)
+        return True
+
+    if kind == "next_lesson":
+        await _advance_lesson(db, session, frm, lang, nm)
+        return True
+
+    if kind in ("start_quiz", "practice"):
+        await _start_quiz(db, session, frm, lang, practice=(kind == "practice"))
+        return True
+
+    # give_name / give_status / give_goal are answers to a question we asked.
+    # Only accepted AT that question — otherwise a learner mentioning their job
+    # mid-course would silently rewrite their profile.
+    if kind == "give_name" and session.stage == "ask_name" and intent.get("value"):
+        return False        # handled by the ask_name branch, which needs the value
+    if kind == "give_status" and session.stage == "ask_profile" and intent.get("value"):
+        return False
+    if kind == "give_goal" and session.stage == "ask_goal" and intent.get("value"):
+        return False
+
+    return False            # question / other / restart / stop -> existing paths
 
 
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
@@ -2107,13 +2283,15 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
 
 async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                           name: str | None, referral: dict | None = None,
-                          already_logged: bool = False, audio_id: str | None = None) -> None:
+                          already_logged: bool = False, audio_id: str | None = None, wa_message_id: str | None = None) -> None:
     # Log the inbound message to the transcript (text, or the tapped button id).
     # Skipped when the caller already logged it — a voice note is stored as its
     # own 'audio' row before the transcription reaches this handler.
     if not already_logged:
         await _log_wa_message(frm, "user", "button" if reply_id else "text",
                               text if text else f"[tap:{reply_id}]")
+    # Read receipt + typing dots, before any DB or AI work.
+    await send_typing(wa_message_id)
     async with async_session_factory() as db:
         session = await db.get(WhatsAppSession, frm)
         if session is None:
@@ -2186,6 +2364,34 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # thanked and then left with no way to continue.
                 await _send_between_choice(db, session, frm, _lg, _nm)
                 return
+
+        # ── What did they actually mean? ─────────────────────────────────────
+        # Free text only. Buttons are unambiguous and never routed — 64% of
+        # inbound messages are taps, so most traffic costs nothing here.
+        #
+        # Runs BEFORE the stage handlers so a language switch works from
+        # anywhere. Before this, "Language change kijiye main Hindi karna chahti
+        # hun" reached the Teacher, which answered that it only speaks English.
+        #
+        # The router NEVER decides pass/fail, certificates or anything graded —
+        # it picks which existing door to open, and only doors a button already
+        # opens.
+        routed = None
+        if (reply_id is None and (text or "").strip()
+                and session.stage not in ROUTER_SKIP_STAGES
+                and not _obviously_the_answer(session.stage, text)):
+            routed = await route_message(
+                text, stage=session.stage or "new",
+                language=session.language or "en",
+            )
+            if routed:
+                print(f"↳ routed {frm}: {routed} (stage={session.stage})")
+                # nm is derived further down; compute the display name here the
+                # same way rather than reaching for a variable that does not
+                # exist yet.
+                _nm = (session.name or name or "").strip() or "friend"
+                if await _apply_intent(db, session, frm, _nm, routed):
+                    return
 
         # "refer" / "invite" → the learner's own code + share link
         if reply_id is None and low in ("refer", "referral", "invite", "refer a friend", "my code"):
@@ -2344,7 +2550,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
 
         # Onboarding: capture the learner's name → then begin the funnel
         if session.stage == "ask_name":
+            # "my name Bhuban" used to be stored whole, and then greeted them as
+            # "my name Bhuban" for the rest of the course. The router pulls the
+            # name out of the sentence; the raw text is the fallback.
             candidate = (text or "").strip()
+            if routed and routed.get("intent") == "give_name" and routed.get("value"):
+                candidate = routed["value"].strip()
             if not candidate:
                 await db.commit()
                 await send_text(frm, ob(lang, "name_q"))
@@ -2365,7 +2576,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 status = STATUS_MAP[reply_id]
                 label = STATUS_PITCH[status]
             elif text and reply_id is None:
-                status = text.strip()[:50]
+                if routed and routed.get("intent") == "give_status" and routed.get("value"):
+                    status = routed["value"].strip()[:50]
+                else:
+                    status = text.strip()[:50]
                 label = status
             if not status:
                 await db.commit()
@@ -2385,6 +2599,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # ── Onboarding: goal answered → save everything, offer the free lesson ─
         if session.stage == "ask_goal":
             goal = GOAL_MAP.get(reply_id) if reply_id in GOAL_MAP else (text or "").strip()
+            if routed and routed.get("intent") == "give_goal" and routed.get("value"):
+                goal = routed["value"].strip()
             if not goal:
                 await db.commit()
                 await _send_goal_question(frm, lang)
