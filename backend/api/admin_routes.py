@@ -334,18 +334,43 @@ async def system_check(request: Request, _: str = Depends(require_roles(ADMIN_SU
         checks.append({"key": "database", "label": "Database (Neon)", "status": "error",
                        "detail": f"cannot connect ({type(e).__name__})"})
 
-    # 2. Anthropic (Claude) — free key-validation ping via the models endpoint
+    # 2. Anthropic (Claude) — a REAL one-token call, not a models-list ping.
+    # The models endpoint is free, and it answers 200 on a key with an empty
+    # balance: this check was green throughout an outage where every learner
+    # asking a question got the "peak capacity" fallback. The only probe that can
+    # see an empty wallet is one that tries to spend from it. One token, and only
+    # when an admin opens this page, so the cost is a rounding error.
     if not settings.anthropic_api_key:
         checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "warn", "detail": "API key not set"})
     else:
         try:
-            async with httpx.AsyncClient(timeout=10) as h:
-                r = await h.get("https://api.anthropic.com/v1/models",
-                                headers={"x-api-key": settings.anthropic_api_key,
-                                         "anthropic-version": "2023-06-01"})
-            ok = r.status_code < 400
-            checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "ok" if ok else "error",
-                           "detail": "key valid, API reachable" if ok else f"key rejected (HTTP {r.status_code})"})
+            async with httpx.AsyncClient(timeout=15) as h:
+                r = await h.post("https://api.anthropic.com/v1/messages",
+                                 headers={"x-api-key": settings.anthropic_api_key,
+                                          "anthropic-version": "2023-06-01",
+                                          "content-type": "application/json"},
+                                 json={"model": "claude-haiku-4-5", "max_tokens": 1,
+                                       "messages": [{"role": "user", "content": "hi"}]})
+            if r.status_code < 400:
+                checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "ok",
+                               "detail": "key valid, credit available, API reachable"})
+            else:
+                msg = ""
+                try:
+                    msg = (r.json().get("error") or {}).get("message", "")
+                except Exception:
+                    msg = r.text[:160]
+                low = msg.lower()
+                if "credit" in low or "balance" in low or "billing" in low:
+                    detail = f"⚠ OUT OF CREDIT — {msg[:160]}"
+                elif r.status_code in (401, 403):
+                    detail = f"key rejected (HTTP {r.status_code}) — {msg[:120]}"
+                elif r.status_code == 429:
+                    detail = f"rate limited (HTTP 429) — {msg[:120]}"
+                else:
+                    detail = f"HTTP {r.status_code} — {msg[:160]}"
+                checks.append({"key": "anthropic", "label": "Claude (Anthropic)",
+                               "status": "error", "detail": detail})
         except Exception as e:
             checks.append({"key": "anthropic", "label": "Claude (Anthropic)", "status": "error",
                            "detail": f"unreachable ({type(e).__name__})"})
@@ -438,8 +463,11 @@ async def system_check(request: Request, _: str = Depends(require_roles(ADMIN_SU
         from core.ai_health import recent_errors
         errs = recent_errors()
         if not errs:
+            # Deliberately worded as an absence of reports, not an all-clear: this
+            # is an in-memory, one-hour, per-process memory, so a deploy or an
+            # hour's silence clears it. The Claude check above is the authority.
             checks.append({"key": "ai_errors", "label": "AI call failures", "status": "ok",
-                           "detail": "no AI errors in the last hour"})
+                           "detail": "no AI failures reported in the last hour (resets on deploy)"})
         else:
             billing = any(v["billingLikely"] for v in errs.values())
             parts = [f"{p}: {v['error'][:70]} ({v['minutesAgo']}m ago)" for p, v in errs.items()]

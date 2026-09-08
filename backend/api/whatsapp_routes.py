@@ -360,6 +360,7 @@ async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str
     except httpx.HTTPError as e:
         print(f"⚠ voice: download error: {e}")
         return None, None, None
+    from core.ai_health import record_ai_error, record_ai_ok
     try:
         from groq import AsyncGroq
         client = AsyncGroq(api_key=settings.groq_api_key)
@@ -367,12 +368,14 @@ async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str
             file=("voice.ogg", data),
             model="whisper-large-v3",
         )
+        record_ai_ok("groq")
         text = (resp.text or "").strip()
         print(f"✓ voice transcribed ({len(data)} bytes) -> {text[:80]!r}")
         # Bytes are returned even when the text is empty: a recording we could
         # not transcribe is still worth keeping if it is feedback.
         return (text or None), data, mime
     except Exception as e:
+        record_ai_error("groq", e)
         print(f"⚠ voice: transcription error: {e}")
         # Transcription failed but the download did not — keep the recording so a
         # human can still listen to what the learner said.

@@ -19,6 +19,9 @@ from api.websocket import handle_learn_websocket
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Path("certificates").mkdir(exist_ok=True)
+    # Before anything can make an AI call, so no call goes unrecorded.
+    from core.ai_health import instrument_providers
+    instrument_providers()
     try:
         await create_tables()
         print("✓ Database tables ready")
