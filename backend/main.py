@@ -319,7 +319,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "router-actions",
+        "build": "typing-on-slow-steps",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -359,6 +359,29 @@ async def send_typing(message_id: str | None) -> None:
         print(f"⚠ typing indicator failed: {type(e).__name__}: {e}")
 
 
+# The id of the message each learner most recently sent. WhatsApp ties a typing
+# indicator to a specific inbound message, and the indicator is dismissed the
+# moment we reply — so a turn that sends several messages needs to raise it
+# again before each slow step, not once at the top.
+#
+# Per-process and unbounded-by-design-but-small: one short string per active
+# learner, same tradeoff as the rate limiter, fine on a single Render instance.
+_LAST_INBOUND: dict[str, str] = {}
+
+
+def remember_inbound(frm: str, message_id: str | None) -> None:
+    if frm and message_id:
+        _LAST_INBOUND[frm] = message_id
+        # Keep it from growing forever on a long-running process.
+        if len(_LAST_INBOUND) > 5000:
+            _LAST_INBOUND.clear()
+
+
+async def show_typing(frm: str) -> None:
+    """Raise the dots again for whatever this learner last sent."""
+    await send_typing(_LAST_INBOUND.get(frm))
+
+
 async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str | None]:
     """Download a WhatsApp voice note and transcribe it via Groq Whisper.
 
@@ -930,6 +953,7 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     frm = msg.get("from")
                     if not frm:
                         continue
+                    remember_inbound(frm, msg.get("id"))
                     # Per-phone rate limit — bounds flood/cost abuse before any AI
                     # or DB work is even queued. Generous limits, real users never hit it.
                     limit_reason = check_rate_limit(frm)
@@ -1367,6 +1391,10 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
         await send_text(to, tr(lang, "no_more"))
         return
     title = await _localized_title(db, lesson["video_id"], lesson["title"], lang)
+    # Sending the video is the longest wait in the whole flow — a few seconds of
+    # nothing, right after a tap. The indicator raised when the message arrived
+    # was already dismissed by whatever we sent before this, so raise it again.
+    await show_typing(to)
     await send_video(to, lesson["cloud_id"], _lesson_caption(lang, title))
     # A video takes a moment to transcode/render on the phone; a text sent right
     # after would appear ABOVE it. Pause so the video lands first, then the
@@ -1864,6 +1892,7 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         not_yet_covered=ctx["not_yet_covered"],
         course_facts=facts,
     )
+    await show_typing(frm)          # the model takes a few seconds to answer
     try:
         reply = await run_teacher(state, text or "")
     except Exception as e:
