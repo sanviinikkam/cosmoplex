@@ -1157,8 +1157,14 @@ async def list_referrals(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKE
 
 
 @router.get("/whatsapp/{phone}")
-async def whatsapp_detail(phone: str, _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
-    """Per-user detail for a WhatsApp learner: where they are, how far, quiz state."""
+async def whatsapp_detail(phone: str,
+                          _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
+                          db: AsyncSession = Depends(get_db)):
+    """Per-user detail for a WhatsApp learner: where they are, how far, quiz state.
+
+    Open to the content admin as well: the phone is masked here for every role,
+    so what this exposes is how a learner moved through the course — which is
+    the thing the person writing the course needs to see."""
     s = await db.get(WhatsAppSession, phone)
     if not s:
         raise HTTPException(status_code=404, detail="WhatsApp user not found")
@@ -1193,9 +1199,16 @@ async def whatsapp_detail(phone: str, _: str = Depends(require_roles(ADMIN_SUPER
 
 @router.get("/whatsapp/{phone}/messages")
 async def whatsapp_messages(phone: str, limit: int = 500,
-                            _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_MARKETING)), db: AsyncSession = Depends(get_db)):
+                            _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
+                            db: AsyncSession = Depends(get_db)):
     """Full WhatsApp transcript for one phone, oldest→newest. Returns the most
-    recent `limit` messages (capped), then chronologically ordered for display."""
+    recent `limit` messages (capped), then chronologically ordered for display.
+
+    The content admin can read this: seeing where learners got confused, what
+    they typed instead of tapping, and which lesson they stalled on is course
+    feedback, and it is the same reasoning that opened /feedback to them. The
+    phone is masked in the response for every role, so this stays a record of a
+    conversation rather than a contact list."""
     limit = max(1, min(limit, 2000))
     total = (await db.execute(
         select(func.count()).select_from(WhatsAppMessage).where(WhatsAppMessage.phone == phone))).scalar() or 0

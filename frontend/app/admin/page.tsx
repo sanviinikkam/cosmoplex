@@ -518,7 +518,7 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(wa.recent ?? []).map((r, i) => (
-                      <tr key={i} onClick={() => { if (canOpenLearner()) setSel({ kind: "wa", id: r.id }); }}
+                      <tr key={i} onClick={() => { if (canOpenLearner("wa")) setSel({ kind: "wa", id: r.id }); }}
                         className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                         <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
@@ -545,7 +545,7 @@ function SystemStatus() {
                   </thead>
                   <tbody>
                     {(web.recent ?? []).map((r, i) => (
-                      <tr key={i} onClick={() => { if (canOpenLearner()) setSel({ kind: "web", id: r.id }); }}
+                      <tr key={i} onClick={() => { if (canOpenLearner("web")) setSel({ kind: "web", id: r.id }); }}
                         className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                         <td className="px-3 py-2">
                           <span className="font-medium">{r.name ?? "—"}</span>
@@ -704,7 +704,7 @@ function TeamLoginsPanel() {
     content: "Content admin", marketing: "Marketing admin",
   };
   const HELP: Record<string, string> = {
-    content: "Courses, videos, quizzes, assignments, plus read-only analytics. No phone numbers or chat transcripts.",
+    content: "Courses, videos, quizzes, assignments, read-only analytics, and WhatsApp learner transcripts. Phone numbers stay masked.",
     marketing: "Campaigns, marketing assets, referrals, and full learner access including transcripts.",
   };
 
@@ -942,14 +942,19 @@ function SettingsPanel() {
 }
 
 
-/** Can this admin open a learner's detail (phone + full chat transcript)?
+/** Can this admin open a learner's detail and chat transcript?
  *
- * Content admin gets read-only analytics but not transcripts, so their rows are
- * inert. This mirrors the server, which returns 403 for those endpoints — the
- * check here only avoids showing an error the person can do nothing about. */
-function canOpenLearner(): boolean {
+ * Content admin can, for WhatsApp learners: the transcript shows where people
+ * got confused and what they typed instead of tapping, which is course feedback.
+ * The phone is masked server-side for every role. The web-learner endpoint was
+ * not opened to them, so those rows stay inert.
+ *
+ * This mirrors the server, which returns 403 either way — the check here only
+ * avoids showing an error the person can do nothing about. */
+function canOpenLearner(kind: "wa" | "web"): boolean {
   const r = getAdminRole();
-  return r === "super" || r === "marketing";
+  if (r === "super" || r === "marketing") return true;
+  return r === "content" && kind === "wa";
 }
 
 
@@ -1650,7 +1655,7 @@ function UserDirectory() {
               </thead>
               <tbody>
                 {(rows as WebLearnerRow[]).map((r, i) => (
-                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner()) setSel({ kind: "web", id: r.id }); }}
+                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner("web")) setSel({ kind: "web", id: r.id }); }}
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2">
                       <span className="font-medium">{r.name ?? "—"}</span>
@@ -1704,7 +1709,7 @@ function UserDirectory() {
               </thead>
               <tbody>
                 {(rows as WaSessionRow[]).map((r, i) => (
-                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner()) setSel({ kind: "wa", id: r.id }); }}
+                  <tr key={r.id ?? i} onClick={() => { if (canOpenLearner("wa")) setSel({ kind: "wa", id: r.id }); }}
                     className="border-t border-zinc-100 cursor-pointer hover:bg-zinc-50">
                     <td className="px-3 py-2"><span className="font-medium">{r.name}</span> <span className="text-zinc-400 text-xs">{r.phone}</span></td>
                     <td className="px-3 py-2"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{r.stage}</span></td>
