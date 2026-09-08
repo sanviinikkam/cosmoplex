@@ -1981,12 +1981,12 @@ def _extract_ref_code(text: str | None) -> str | None:
     return t if re.fullmatch(r"[A-HJ-NP-Z2-9]{8}", t) else None
 
 REFERRAL_MSG = {
-    "en": "🎁 Invite your friends to learn AI with you!\nYour code: *{code}*\nSo far: *{total}* joined.\n\n👇 Just forward the next message to your friends.",
-    "hi": "🎁 अपने दोस्तों को भी AI सीखने के लिए बुलाएँ!\nआपका कोड: *{code}*\nअब तक: *{total}* जुड़े।\n\n👇 नीचे वाला मैसेज बस अपने दोस्तों को फ़ॉरवर्ड कर दें।",
-    "mr": "🎁 तुमच्या मित्रांना पण AI शिकायला बोलवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: *{total}* जोडले.\n\n👇 खालचा मेसेज फक्त तुमच्या मित्रांना फॉरवर्ड करा.",
-    "te": "🎁 మీ స్నేహితులను కూడా AI నేర్చుకోవడానికి ఆహ్వానించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: *{total}* చేరారు.\n\n👇 కింది మెసేజ్‌ని మీ స్నేహితులకు ఫార్వర్డ్ చేయండి.",
-    "ta": "🎁 உங்கள் நண்பர்களையும் AI கற்க அழையுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: *{total}* இணைந்தனர்.\n\n👇 கீழே உள்ள மெசேஜை உங்கள் நண்பர்களுக்கு ஃபார்வர்ட் செய்யுங்கள்.",
-    "kn": "🎁 ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ AI ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: *{total}* ಸೇರಿದ್ದಾರೆ.\n\n👇 ಕೆಳಗಿನ ಸಂದೇಶವನ್ನು ನಿಮ್ಮ ಸ್ನೇಹಿತರಿಗೆ ಫಾರ್ವರ್ಡ್ ಮಾಡಿ.",
+    "en": "🎁 Invite your friends to learn AI — just forward the message below 👇",
+    "hi": "🎁 अपने दोस्तों को भी AI सीखने के लिए बुलाएँ — नीचे वाला मैसेज बस फ़ॉरवर्ड कर दें 👇",
+    "mr": "🎁 तुमच्या मित्रांना पण AI शिकायला बोलवा — खालचा मेसेज फक्त फॉरवर्ड करा 👇",
+    "te": "🎁 మీ స్నేహితులను కూడా AI నేర్చుకోవడానికి ఆహ్వానించండి — కింది మెసేజ్‌ని ఫార్వర్డ్ చేయండి 👇",
+    "ta": "🎁 உங்கள் நண்பர்களையும் AI கற்க அழையுங்கள் — கீழே உள்ள மெசேஜை ஃபார்வர்ட் செய்யுங்கள் 👇",
+    "kn": "🎁 ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ AI ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ — ಕೆಳಗಿನ ಸಂದೇಶವನ್ನು ಫಾರ್ವರ್ಡ್ ಮಾಡಿ 👇",
 }
 
 # Sent to the REFERRER when their code lands a signup. Imported lazily by
@@ -2034,15 +2034,12 @@ REFERRAL_FORWARD = {
 
 
 async def _send_referral_info(db, session, frm: str) -> None:
-    from core.referrals import get_or_create_wa_code, referral_stats
+    from core.referrals import get_or_create_wa_code
     lang = session.language or "en"
+    # Still needed — it is embedded in the link below, which is what credits the
+    # referrer. It is just no longer shown to the learner on its own.
     code = await get_or_create_wa_code(db, session)
-    stats = await referral_stats(db, "whatsapp", session.phone)
-    # No reward/earned any more: nothing is being paid out, so the copy counts
-    # friends who joined instead of rupees. stats["paid"]/["earned"] still exist
-    # for the admin payout view.
-    msg = REFERRAL_MSG.get(lang, REFERRAL_MSG["en"]).format(
-        code=code, total=stats["total"])
+    msg = REFERRAL_MSG.get(lang, REFERRAL_MSG["en"])
     # Only the wa.me link for now — it opens WhatsApp with JOIN pre-filled and
     # actually credits the referrer. (The web ?ref= link returns once web signup
     # attribution is built.)
