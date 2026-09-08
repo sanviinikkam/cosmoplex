@@ -1866,7 +1866,16 @@ async def delete_marketing_asset(day: int, language: str,
 # Lets an admin drop a .docx/.txt (or paste text) instead of hand-entering each
 # question in 6 languages. Claude pulls out the questions and translates every
 # one into all 6 languages, then they're appended to the lesson's bank.
-BULK_MODEL = "claude-sonnet-4-6"   # quality matters across languages; admin-only, infrequent
+# Extraction — turning a messy uploaded document into structured MCQs with the
+# right answer marked — is judgement, and stays on Sonnet.
+BULK_MODEL = "claude-sonnet-4-6"
+
+# Translation is not. Rendering a known question and four known options into five
+# languages is mechanical, and Haiku is about a fifth of the price. The project
+# already draws this line: lesson-title translation has always used Haiku. Quiz
+# and assignment translation was the outlier, and it is the bulk of the spend —
+# one import of 40 questions cost $4.03, which is most of what that key had.
+TRANSLATE_MODEL = "claude-haiku-4-5"
 BULK_LANGS = ["en", "hi", "mr", "te", "ta", "kn"]
 
 QUIZ_SYS = """You extract multiple-choice quiz questions from a document and translate them.
@@ -1914,14 +1923,15 @@ def _extract_text(filename: str, data: bytes) -> str:
     return data.decode("utf-8", errors="ignore").strip()  # txt / csv / md / other
 
 
-async def _claude_json(system: str, user: str, max_tokens: int = 8000) -> dict:
+async def _claude_json(system: str, user: str, max_tokens: int = 8000,
+                       model: str | None = None) -> dict:
     if not settings.anthropic_api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on the server.")
     from anthropic import AsyncAnthropic
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         resp = await client.messages.create(
-            model=BULK_MODEL, max_tokens=max_tokens,
+            model=model or BULK_MODEL, max_tokens=max_tokens,
             system=system, messages=[{"role": "user", "content": user}],
         )
         raw = (resp.content[0].text or "").strip()
@@ -2080,18 +2090,61 @@ def _parse_mcq(text: str) -> list[dict]:
     return out
 
 
-async def _translate_quiz(english: list[dict]) -> list[dict]:
+async def _known_quiz_translations(db, english: list[dict]) -> dict:
+    """Translations we have already paid for, keyed by the exact English text.
+
+    An import re-run, a corrected document, or two lessons sharing a question all
+    used to be charged in full every time — the translation step is the expensive
+    half, and it was redone for text already sitting in the database.
+
+    Keyed on the question AND its options together: the same wording with
+    different options is a different question, and reusing across them would put
+    the wrong answers in five languages.
+    """
+    rows = (await db.execute(select(QuizQuestion))).scalars().all()
+    known: dict = {}
+    for r in rows:
+        q = r.question if isinstance(r.question, dict) else {}
+        o = r.options if isinstance(r.options, dict) else {}
+        en_q, en_o = (q.get("en") or "").strip(), o.get("en") or []
+        if not en_q or not en_o:
+            continue
+        # Only worth reusing if it is actually complete.
+        if not all(q.get(l) and o.get(l) for l in ("hi", "mr", "te", "ta", "kn")):
+            continue
+        known[(en_q, tuple(str(x).strip() for x in en_o))] = (q, o)
+    return known
+
+
+async def _translate_quiz(english: list[dict], db=None) -> list[dict]:
     """Translate parsed English MCQs into all languages (AI does ONLY translation).
     English + correct answer are authoritative; a failed batch just leaves those
     items English-only."""
-    batches = [english[i:i + 6] for i in range(0, len(english), 6)]
+    # Anything already translated is pulled from the database instead of the API.
+    known = await _known_quiz_translations(db, english) if db is not None else {}
+    reused: dict = {}
+    todo: list[dict] = []
+    for it in english:
+        key = (str(it["q"]).strip(), tuple(str(o).strip() for o in it["options"]))
+        if key in known:
+            reused[id(it)] = known[key]
+        else:
+            todo.append(it)
+    if reused:
+        print(f"✓ bulk import: {len(reused)} question(s) already translated — not re-sent to the API")
+
+    # 12 per call rather than 6. The system prompt is resent on every call, so
+    # halving the number of calls halves that overhead; 12 questions x 5
+    # languages still lands well inside max_tokens.
+    batches = [todo[i:i + 12] for i in range(0, len(todo), 12)]
     results = await asyncio.gather(
         *[_claude_json(TRANSLATE_SYS,
-                       json.dumps([{"q": it["q"], "options": it["options"]} for it in b], ensure_ascii=False))
+                       json.dumps([{"q": it["q"], "options": it["options"]} for it in b], ensure_ascii=False),
+                       model=TRANSLATE_MODEL)
           for b in batches],
         return_exceptions=True,
     )
-    final: list[dict] = []
+    final_by_id: dict = {}
     for b, r in zip(batches, results):
         trs = (r.get("translations") if isinstance(r, dict) else None) or []
         for i, en in enumerate(b):
@@ -2105,8 +2158,19 @@ async def _translate_quiz(english: list[dict]) -> list[dict]:
                 if lq and isinstance(lo, list) and len(lo) == n and all(str(x).strip() for x in lo):
                     question[lang] = lq
                     options[lang] = [str(x).strip() for x in lo]
-            final.append({"question": question, "options": options, "correct_index": en["correct_index"]})
-    return final
+            final_by_id[id(en)] = {"question": question, "options": options,
+                                   "correct_index": en["correct_index"]}
+
+    # Rebuild in the caller's order, slotting the reused ones back in.
+    out: list[dict] = []
+    for it in english:
+        if id(it) in reused:
+            q, o = reused[id(it)]
+            out.append({"question": dict(q), "options": dict(o),
+                        "correct_index": it["correct_index"]})
+        elif id(it) in final_by_id:
+            out.append(final_by_id[id(it)])
+    return out
 
 
 TRANSLATE_ASSIGN_SYS = """You translate open-ended assignment prompts from English into 5 Indian languages.
@@ -2220,7 +2284,8 @@ async def _translate_assignments(english: list[dict]) -> list[dict]:
     given (e.g. built from a doc's Pass/Fail table); otherwise a sensible default."""
     batches = [english[i:i + 8] for i in range(0, len(english), 8)]
     results = await asyncio.gather(
-        *[_claude_json(TRANSLATE_ASSIGN_SYS, json.dumps([{"q": it["q"]} for it in b], ensure_ascii=False))
+        *[_claude_json(TRANSLATE_ASSIGN_SYS, json.dumps([{"q": it["q"]} for it in b], ensure_ascii=False),
+                     model=TRANSLATE_MODEL)
           for b in batches],
         return_exceptions=True,
     )
@@ -2261,7 +2326,12 @@ async def _fill_quiz_gaps(items: list[dict]) -> list[dict]:
         if n < 2 or all(q.get(l) for l in BULK_LANGS[1:]):
             return it
         try:
-            tr = await _claude_json(_GAP_QUIZ_SYS, json.dumps({"q": q["en"], "options": o["en"]}, ensure_ascii=False))
+            # One call per question, and it fires for every question a batch
+            # missed — on a bad batch that is the whole batch again, one at a
+            # time. Retried once here rather than looped, since a second failure
+            # for the same text is unlikely to be fixed by a third attempt.
+            tr = await _claude_json(_GAP_QUIZ_SYS, json.dumps({"q": q["en"], "options": o["en"]}, ensure_ascii=False),
+                                    model=TRANSLATE_MODEL)
         except HTTPException:
             return it
         for lang in BULK_LANGS[1:]:
@@ -2282,7 +2352,7 @@ async def _fill_assign_gaps(items: list[dict]) -> list[dict]:
         if all(q.get(l) for l in BULK_LANGS[1:]):
             return it
         try:
-            tr = await _claude_json(_GAP_ASSIGN_SYS, q["en"])
+            tr = await _claude_json(_GAP_ASSIGN_SYS, q["en"], model=TRANSLATE_MODEL)
         except HTTPException:
             return it
         for lang in BULK_LANGS[1:]:
@@ -2304,7 +2374,8 @@ async def bulk_quizzes(video_id: str, file: UploadFile | None = File(None), text
     parsed = _parse_mcq(content)
     if parsed:
         # Deterministic extraction (exact count/options/answer) + AI translation only.
-        items = _clean_quiz(await _translate_quiz(parsed))
+        # db lets it reuse translations already in the table instead of paying again.
+        items = _clean_quiz(await _translate_quiz(parsed, db))
     else:
         # Unstructured doc → let the AI find the questions too.
         items = _clean_quiz(await _extract_items(QUIZ_SYS, content, "questions"))
