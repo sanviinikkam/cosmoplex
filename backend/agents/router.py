@@ -32,6 +32,7 @@ from core.config import settings
 # The complete set. Anything else the model says is thrown away.
 INTENTS = (
     "question",        # a genuine doubt about the course content -> Teacher
+    "ask_doubt",       # says they HAVE a doubt but has not asked it yet
     "refer",           # wants to invite/share with a friend
     "switch_language", # wants the course in a different language (+ "language")
     "give_name",       # answering the name question, possibly in a sentence (+ "value")
@@ -54,6 +55,9 @@ Reply with ONE JSON object and nothing else:
 
 The ONLY valid intents:
 - question        — they are asking something about AI, the lessons, the price, the certificate, how the course works
+- ask_doubt       — they say they HAVE a doubt or want to ask something, but have not actually asked
+                    it yet ("i have a doubt", "mujhe ek doubt hai", "can I ask something?"). If the
+                    question itself is there, it is "question", not ask_doubt.
 - refer           — they want to invite, share, forward or tell a friend about the course
 - switch_language — they want the course in a DIFFERENT language than it is now. Also set "language".
 - give_name       — they are telling you their name. Put ONLY the name in "value" ("my name Bhuban" -> "Bhuban").
@@ -101,6 +105,10 @@ Worked examples, all from real messages this got wrong before:
 "my name Bhuban" (stage ask_name) -> {"intent":"give_name","value":"Bhuban"}
 "mein apna friend ko bhejna chahta hu" -> {"intent":"refer"}
 "kya iske liye paise lagenge" -> {"intent":"question"}
+"i have a doubt" -> {"intent":"ask_doubt"}
+   The same words as the button. They are announcing a question, not asking one — invite it,
+   do not answer it.
+"i have a doubt about the quiz" -> {"intent":"ask_doubt"}
 "Ai se youtube blogger banana chahata hu" (stage ask_goal) -> {"intent":"give_goal","value":"Become a YouTube blogger using AI"}
 "hindi" (course is ALREADY hi) -> {"intent":"other"}"""
 

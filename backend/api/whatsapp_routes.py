@@ -2051,6 +2051,23 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
         await _resume_stage(db, session, frm, new_lang)
         return True
 
+    # They typed the words on the "I have a doubt" button. Before this the words
+    # went to the Teacher, which replied "sure, what is your doubt?" and then had
+    # _offer_next_step stack the full "Start quiz" block underneath — inviting a
+    # question and telling them to move on, in the same breath. Tapping the button
+    # never did that, so typing it should not either.
+    if kind == "ask_doubt":
+        if session.stage in ("between_lessons", "clarify", "done", "quiz_failed"):
+            session.stage = "clarify"
+            await db.commit()
+            await send_buttons(frm, tr(lang, "clarify_prompt").format(name=nm),
+                               [("next_lesson", tr(lang, "start_next_btn"))])
+        else:
+            # Mid-lesson or mid-quiz: invite the question without moving them, and
+            # without buttons that argue with the invitation.
+            await send_text(frm, tr(lang, "clarify_prompt").format(name=nm))
+        return True
+
     if kind == "refer":
         await _send_referral_info(db, session, frm)
         await _offer_next_step(db, session, frm, lang, nm)
