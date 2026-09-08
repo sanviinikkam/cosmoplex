@@ -1798,7 +1798,23 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         not_yet_covered=ctx["not_yet_covered"],
         course_facts=facts,
     )
-    reply = await run_teacher(state, text or "")
+    try:
+        reply = await run_teacher(state, text or "")
+    except Exception as e:
+        # The Teacher was the ONE AI call with no failure path — grading, the
+        # pitch and title translation all handle their own. So when the Anthropic
+        # key ran out of credit, "I have a doubt" answered with silence: the
+        # learner tapped it, typed a question, and nothing ever came back.
+        # Any failure now gets the same "try again in a moment" the spend guard
+        # already sends, in their language.
+        print(f"⚠ teacher failed for {frm}: {type(e).__name__}: {e}")
+        await send_text(frm, tr(lang, "ai_busy"))
+        return
+    if not (reply or "").strip():
+        # An empty completion is a failure too, just a quieter one.
+        print(f"⚠ teacher returned nothing for {frm}")
+        await send_text(frm, tr(lang, "ai_busy"))
+        return
     await send_text(frm, _whatsapp_markdown(reply, lang))
 
 
