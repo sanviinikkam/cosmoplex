@@ -69,8 +69,15 @@ The ONLY valid intents:
 Rules that matter:
 - NEGATION IS THE POINT. "I don't understand English", "मुझे अंग्रेजी नहीं आती", "Mala English
   borataata nahe" are NOT a request for English. A language is only switch_language when they are
-  asking to RECEIVE the course in it. If they are saying they cannot follow a language, the language
-  they want is usually the one they are writing in.
+  asking to RECEIVE the course in it.
+- NEVER GUESS WHICH LANGUAGE THEY WANT. Only set "language" when they NAME the language they want
+  the course IN. If they only say which one they do NOT want, or that they cannot follow one, use
+  switch_language and OMIT "language" — the learner is then shown the language menu and picks for
+  themselves. Guessing is worse than asking: a learner who said "I don't understand English" was put
+  into Hindi, which they also did not want, and then had to argue their way out of it.
+- A QUESTION ABOUT the language is not a request to change it. "why did you choose hindi", "who set
+  this to hindi", "is this available in Tamil" are "question". Only an actual request to switch is
+  switch_language.
 - If they name a language but the course is ALREADY in it, that is "other", not switch_language.
 - CONTEXT is given below. At a question stage, a bare sentence is usually the answer to it —
   "I want a job in IT" at the goal question is give_goal, not question.
@@ -80,9 +87,17 @@ Rules that matter:
 - Never invent an intent outside the list. Never add other fields.
 
 Worked examples, all from real messages this got wrong before:
-"Mala.English.borataata.nahe.mekakalu" (course is en) -> {"intent":"switch_language","language":"mr"}
-   Marathi for "I can't speak English". They are asking to get OUT of English, not into it.
+"Mala.English.borataata.nahe.mekakalu" (course is en) -> {"intent":"switch_language"}
+   Marathi for "I can't speak English". They want out of English — but they never said what they
+   want instead, so no "language": show them the menu.
+"no the thing is I don't understand english" (course is en) -> {"intent":"switch_language"}
+   They rejected English without naming a replacement. No "language". Do NOT reach for Hindi.
+"i don't want hindi" (course is hi) -> {"intent":"switch_language"}
+   Again: what they do not want, not what they want. No "language".
+"why did you choose hindi" (course is hi) -> {"intent":"question"}
+   Asking ABOUT the language, not asking to change it.
 "Language change kijiye main Hindi karna chahti hun" (course is en) -> {"intent":"switch_language","language":"hi"}
+   They named it. This one is safe to act on.
 "my name Bhuban" (stage ask_name) -> {"intent":"give_name","value":"Bhuban"}
 "mein apna friend ko bhejna chahta hu" -> {"intent":"refer"}
 "kya iske liye paise lagenge" -> {"intent":"question"}

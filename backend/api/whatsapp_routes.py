@@ -2438,10 +2438,18 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 return
 
         # Typed a language name ("english", "i want tamil") → switch + resume.
+        #
+        # Substring matching, and it only survives as the fallback for when the
+        # router is unavailable — an empty API key, an outage. It must never run
+        # when the router DID answer: "why did you choose hindi" is a question,
+        # the router said so, and this then matched the word "hindi" inside it
+        # and switched the course to a language it was already in.
+        #
         # Skipped where free text is expected as an answer.
-        if reply_id is None and session.stage not in ("assignment", "ask_profile", "ask_goal", "ask_name"):
+        if (reply_id is None and routed is None
+                and session.stage not in ("assignment", "ask_profile", "ask_goal", "ask_name")):
             detected = _detect_language(text)
-            if detected:
+            if detected and detected != session.language:
                 session.language = detected
                 # A learner who has not signed up yet is ANSWERING the language
                 # picker, not switching language mid-course. Typing "English"
@@ -2841,9 +2849,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         if session.stage in ("between_lessons", "clarify"):
             session.stage = "clarify"
             await db.commit()
+            # _teacher_answer ends with _offer_next_step, which re-sends this
+            # step's buttons. Sending another set here put two near-identical
+            # button messages under every answer.
             await _teacher_answer(db, session, frm, lang, text)
-            await send_buttons(frm, tr(lang, "clarify_more"),
-                               [("next_lesson", tr(lang, "start_next_btn"))])
             return
 
         # On the video lesson screen. This used to re-deliver the whole lesson on
@@ -2860,10 +2869,6 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             # Otherwise treat it as a question about the lesson, answer it, and
             # re-offer the buttons so the way forward is still on screen.
             await _teacher_answer(db, session, frm, lang, text)
-            await send_buttons(frm, tr(lang, "after_text").format(name=nm),
-                               [("quiz", tr(lang, "quiz_btn")),
-                                ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
-                                ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
             return
 
         # Finished the current lesson but more lessons exist (e.g. older sessions,
