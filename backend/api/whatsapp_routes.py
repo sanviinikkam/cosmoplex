@@ -1020,27 +1020,27 @@ async def _send_goal_question(to: str, lang: str) -> None:
 HOWTO_STEPS = {
     "en": [
         "✅ *Sign up completed!*\n\nHere's how this works 👇\n\n📹 *Short video lessons* — about 2 minutes each, in your language. Watch anytime, anywhere.\n\n📝 *A quick quiz after every lesson* — just tap the right option. Clear it to unlock the next lesson.",
-        "🎁 *Bonus:* invite your friends to learn along with you! Reply *refer* anytime to get your personal invite link.\n\n🎓 *Finish all lessons → earn your certificate.* That's the whole journey. Ready to start?",
+        "🎓 *Finish all lessons → earn your certificate.* That's the whole journey. Ready to start?",
     ],
     "hi": [
         "✅ *साइन अप पूरा हुआ!*\n\nये ऐसे काम करता है 👇\n\n📹 *छोटे video lessons* — हर एक करीब 2 मिनट का, आपकी भाषा में। कभी भी, कहीं भी देखें।\n\n📝 *हर lesson के बाद एक quick quiz* — बस सही option पर tap करें। पास करके अगला lesson unlock करें।",
-        "🎁 *बोनस:* अपने दोस्तों को भी साथ सीखने के लिए बुलाएँ! अपना invite link पाने के लिए कभी भी *refer* लिखें।\n\n🎓 *सारे lessons पूरे करें → अपना certificate पाएँ।* बस इतना ही सफर है। शुरू करें?",
+        "🎓 *सारे lessons पूरे करें → अपना certificate पाएँ।* बस इतना ही सफर है। शुरू करें?",
     ],
     "mr": [
         "✅ *साइन अप पूर्ण झालं!*\n\nहे असं चालतं 👇\n\n📹 *छोटे video lessons* — प्रत्येक साधारण 2 मिनिटांचा, तुमच्या भाषेत. कधीही, कुठेही बघा.\n\n📝 *प्रत्येक lesson नंतर एक quick quiz* — फक्त योग्य option वर tap करा. पास करून पुढचा lesson unlock करा.",
-        "🎁 *बोनस:* तुमच्या मित्रांना पण सोबत शिकायला बोलवा! तुमचा invite link मिळवण्यासाठी कधीही *refer* लिहा.\n\n🎓 *सर्व lessons पूर्ण करा → तुमचं certificate मिळवा.* एवढाच प्रवास आहे. सुरू करूया?",
+        "🎓 *सर्व lessons पूर्ण करा → तुमचं certificate मिळवा.* एवढाच प्रवास आहे. सुरू करूया?",
     ],
     "te": [
         "✅ *సైన్ అప్ పూర్తయింది!*\n\nఇది ఇలా పనిచేస్తుంది 👇\n\n📹 *చిన్న video lessons* — ఒక్కొక్కటి సుమారు 2 నిమిషాలు, మీ భాషలో. ఎప్పుడైనా, ఎక్కడైనా చూడండి.\n\n📝 *ప్రతి lesson తర్వాత ఒక quick quiz* — సరైన option పై tap చేయండి. పాస్ అయితే తదుపరి lesson unlock అవుతుంది.",
-        "🎁 *బోనస్:* మీ స్నేహితులను కూడా కలిసి నేర్చుకోవడానికి ఆహ్వానించండి! మీ invite link పొందడానికి ఎప్పుడైనా *refer* అని పంపండి.\n\n🎓 *అన్ని lessons పూర్తి చేయండి → మీ certificate పొందండి.* ఇదే మొత్తం ప్రయాణం. మొదలుపెడదామా?",
+        "🎓 *అన్ని lessons పూర్తి చేయండి → మీ certificate పొందండి.* ఇదే మొత్తం ప్రయాణం. మొదలుపెడదామా?",
     ],
     "ta": [
         "✅ *பதிவு முடிந்தது!*\n\nஇது இப்படி வேலை செய்யும் 👇\n\n📹 *குறுகிய video lessons* — ஒவ்வொன்றும் சுமார் 2 நிமிடம், உங்கள் மொழியில். எப்போது வேண்டுமானாலும் பாருங்கள்.\n\n📝 *ஒவ்வொரு lesson-க்கும் பிறகு ஒரு quick quiz* — சரியான option-ஐ tap செய்யுங்கள். pass செய்தால் அடுத்த lesson unlock ஆகும்.",
-        "🎁 *போனஸ்:* உங்கள் நண்பர்களையும் உடன் கற்க அழையுங்கள்! உங்கள் invite link பெற எப்போது வேண்டுமானாலும் *refer* எனச் சொல்லுங்கள்.\n\n🎓 *எல்லா lessons-ஐயும் முடியுங்கள் → உங்கள் certificate பெறுங்கள்.* இதுதான் முழு பயணம். ஆரம்பிக்கலாமா?",
+        "🎓 *எல்லா lessons-ஐயும் முடியுங்கள் → உங்கள் certificate பெறுங்கள்.* இதுதான் முழு பயணம். ஆரம்பிக்கலாமா?",
     ],
     "kn": [
         "✅ *ಸೈನ್ ಅಪ್ ಪೂರ್ಣಗೊಂಡಿದೆ!*\n\nಇದು ಹೀಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ 👇\n\n📹 *ಚಿಕ್ಕ video lessons* — ಪ್ರತಿಯೊಂದೂ ಸುಮಾರು 2 ನಿಮಿಷ, ನಿಮ್ಮ ಭಾಷೆಯಲ್ಲಿ. ಯಾವಾಗ ಬೇಕಾದರೂ ನೋಡಿ.\n\n📝 *ಪ್ರತಿ lesson ನಂತರ ಒಂದು quick quiz* — ಸರಿಯಾದ option ಮೇಲೆ tap ಮಾಡಿ. ಪಾಸ್ ಆದರೆ ಮುಂದಿನ lesson unlock ಆಗುತ್ತದೆ.",
-        "🎁 *ಬೋನಸ್:* ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ ಜೊತೆಗೆ ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ! ನಿಮ್ಮ invite link ಪಡೆಯಲು ಯಾವಾಗ ಬೇಕಾದರೂ *refer* ಎಂದು ಕಳುಹಿಸಿ.\n\n🎓 *ಎಲ್ಲಾ lessons ಮುಗಿಸಿ → ನಿಮ್ಮ certificate ಪಡೆಯಿರಿ.* ಇಷ್ಟೇ ಪೂರ್ತಿ ಪ್ರಯಾಣ. ಶುರುಮಾಡೋಣ್ವಾ?",
+        "🎓 *ಎಲ್ಲಾ lessons ಮುಗಿಸಿ → ನಿಮ್ಮ certificate ಪಡೆಯಿರಿ.* ಇಷ್ಟೇ ಪೂರ್ತಿ ಪ್ರಯಾಣ. ಶುರುಮಾಡೋಣ್ವಾ?",
     ],
 }
 HOWTO_NEXT = {"en": "Next ▶️", "hi": "आगे ▶️", "mr": "पुढे ▶️", "te": "తదుపరి ▶️", "ta": "அடுத்து ▶️", "kn": "ಮುಂದೆ ▶️"}
@@ -1650,28 +1650,29 @@ async def _maybe_announce_module_done(db, session, lessons: list[dict], cur: int
         list=NEWLINE.join(lines), title=nxt_title))
 
 
-# Lessons completed before the referral goes out unprompted. One lesson in: they
-# have seen what it is and can honestly recommend it, and it is early enough that
-# most learners are still here — 296 of 322 never get past 1.1.
-#
-# Deliberately NOT the same lesson as the feedback prompt: two asks landing on
-# the same screen is one too many.
-REFERRAL_AFTER_LESSONS = 1
+# The invite goes out every OTHER completed lesson — after 1, 3, 5 and so on.
+# Odd-numbered, so it never lands on the same screen as the feedback prompt at
+# lesson 2; two asks at once is one too many.
+REFERRAL_EVERY_N_LESSONS = 2
 
 
-async def _maybe_send_referral(db, session, frm: str) -> None:
-    """Send the invite pair once, without being asked.
+async def _maybe_send_referral(db, session, frm: str, completed: int) -> None:
+    """Send the invite pair unprompted, on every other completed lesson.
 
     The old approach appended "reply *refer*" to every post-lesson message, which
-    asks the learner to remember a keyword and type it — so it was seen
-    constantly and acted on almost never. This just sends the thing, once, and
-    the tail is gone.
+    asks the learner to remember a keyword and type it — seen constantly, acted
+    on almost never. This just sends the thing. "refer" still works for anyone
+    who types it; they no longer need to.
 
-    "refer" still works for anyone who types it; this only removes the need to.
+    Guarded on the LESSON it was last sent for, not a simple "already sent" flag:
+    the post-lesson menu is shown again after a practice quiz and after answering
+    the feedback prompt, and without this it would resend each time.
     """
-    if getattr(session, "referral_sent_at", None):
-        return
-    session.referral_sent_at = datetime.utcnow()
+    if completed % REFERRAL_EVERY_N_LESSONS != 1:
+        return                       # only after 1, 3, 5, ...
+    if session.last_referral_lesson == completed:
+        return                       # already sent for this lesson
+    session.last_referral_lesson = completed
     await db.commit()
     await _send_referral_info(db, session, frm)
 
@@ -1701,8 +1702,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         # them and the next lesson: they can answer, or just tap and carry on.
         if (cur + 1) == FEEDBACK_AFTER_LESSONS:
             await _maybe_ask_feedback(db, session, frm, lang, nm, FB_MID)
-        if (cur + 1) == REFERRAL_AFTER_LESSONS:
-            await _maybe_send_referral(db, session, frm)
+        await _maybe_send_referral(db, session, frm, cur + 1)
     else:
         session.stage = "done"
         await db.commit()

@@ -82,7 +82,12 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_module_announced VARCHAR(64)"))
             await conn.execute(text(
-                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS referral_sent_at TIMESTAMP"))
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_referral_lesson INTEGER"))
+            # referral_sent_at shipped an hour ago as a once-only flag and never
+            # held a row (verified) before the invite became repeating. Dropped
+            # rather than left for someone to read as the source of truth.
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions DROP COLUMN IF EXISTS referral_sent_at"))
             # The mid-course feedback checkpoint used to be keyed "lesson4".
             # Rename in place so learners already asked are not asked a second
             # time, and an answer already given is not orphaned. Idempotent: the
@@ -314,7 +319,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "forwardable-referral",
+        "build": "referral-alternating",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

@@ -404,9 +404,11 @@ class WhatsAppSession(Base):
     # is otherwise re-sent every time the post-lesson menu is shown again — after
     # a practice quiz, or after answering the feedback prompt.
     last_module_announced = Column(String(64), nullable=True)
-    # When the invite pair was sent unprompted, so it goes out once and not
-    # after every lesson.
-    referral_sent_at = Column(DateTime, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
+    # Which completed-lesson number the invite was last sent for. A number, not a
+    # boolean: the invite repeats every other lesson, and the post-lesson menu is
+    # re-shown after practice quizzes and feedback replies, so "has it been sent"
+    # is not enough to stop it going twice for the same lesson.
+    last_referral_lesson = Column(Integer, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):
