@@ -2109,6 +2109,21 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
     """Re-render the learner's current step in the (possibly new) language."""
     st = session.stage
+    # Still signing up: there is no lesson to resume, so the fallback below must
+    # not invent one. It used to, and asking for a different language at the name
+    # prompt therefore skipped the whole of onboarding — no name, no profile, no
+    # goal, no walkthrough, straight into lesson 1. Re-ask the question they are
+    # actually on, now in the new language.
+    if st in ("new", "welcome"):
+        session.stage = "ask_name"
+        await db.commit()
+        await send_text(frm, ob(lang, "name_q"))
+        return
+    if st in (SIGNUP_STAGES | {"howto", "onboarded"}):
+        await db.commit()
+        await _offer_next_step(db, session, frm, lang,
+                               (session.name or "").strip() or "friend")
+        return
     if st in ("quiz", "practice"):
         await db.commit()
         await _send_quiz_question(frm, lang, session.quiz_index or 0, _current_quiz(session))
@@ -2446,18 +2461,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         if reply_id and reply_id.startswith("lang_"):
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
+                first_pick = not session.language
                 session.language = lang
-                # WhatsApp lets a learner scroll up and tap an OLD list. Someone who
-                # already finished signup must not be dragged back through it: that
-                # replays the name question, the brief and the intro video, and loses
-                # their place in the course. Only a learner still in signup restarts.
-                if session.stage in SIGNUP_STAGES:
-                    session.stage = "ask_name"
-                    await db.commit()
-                    await send_text(frm, ob(lang, "name_q"))
-                    return
                 await db.commit()
-                await send_text(frm, tr(lang, "picker_done"))
+                # "Great, we'll learn in Hindi" is a confirmation that a CHANGE
+                # was understood. On the very first pick it is noise stacked on
+                # top of the name question, which already opens with "Great!".
+                if not first_pick:
+                    await send_text(frm, tr(lang, "picker_done"))
+                # WhatsApp lets a learner scroll up and tap an OLD list, so this
+                # must never restart anything: _resume_stage re-renders whatever
+                # step they are on, in the new language. Someone mid-course keeps
+                # their place; someone at the goal question is asked the goal
+                # question again, not dragged back to the name one.
                 await _resume_stage(db, session, frm, lang)
                 return
 
