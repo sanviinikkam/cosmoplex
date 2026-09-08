@@ -403,7 +403,10 @@ class WhatsAppSession(Base):
     # Last module we announced as complete. Guards the milestone message, which
     # is otherwise re-sent every time the post-lesson menu is shown again — after
     # a practice quiz, or after answering the feedback prompt.
-    last_module_announced = Column(String(64), nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
+    last_module_announced = Column(String(64), nullable=True)
+    # When the invite pair was sent unprompted, so it goes out once and not
+    # after every lesson.
+    referral_sent_at = Column(DateTime, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 
 class WhatsAppMessage(Base):

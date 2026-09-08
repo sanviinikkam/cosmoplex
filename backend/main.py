@@ -81,6 +81,8 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS feedback_log JSONB"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_module_announced VARCHAR(64)"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS referral_sent_at TIMESTAMP"))
             # The mid-course feedback checkpoint used to be keyed "lesson4".
             # Rename in place so learners already asked are not asked a second
             # time, and an answer already given is not orphaned. Idempotent: the
@@ -312,7 +314,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "cheaper-import",
+        "build": "forwardable-referral",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,

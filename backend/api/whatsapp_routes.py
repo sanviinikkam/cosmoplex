@@ -1650,6 +1650,32 @@ async def _maybe_announce_module_done(db, session, lessons: list[dict], cur: int
         list=NEWLINE.join(lines), title=nxt_title))
 
 
+# Lessons completed before the referral goes out unprompted. One lesson in: they
+# have seen what it is and can honestly recommend it, and it is early enough that
+# most learners are still here — 296 of 322 never get past 1.1.
+#
+# Deliberately NOT the same lesson as the feedback prompt: two asks landing on
+# the same screen is one too many.
+REFERRAL_AFTER_LESSONS = 1
+
+
+async def _maybe_send_referral(db, session, frm: str) -> None:
+    """Send the invite pair once, without being asked.
+
+    The old approach appended "reply *refer*" to every post-lesson message, which
+    asks the learner to remember a keyword and type it — so it was seen
+    constantly and acted on almost never. This just sends the thing, once, and
+    the tail is gone.
+
+    "refer" still works for anyone who types it; this only removes the need to.
+    """
+    if getattr(session, "referral_sent_at", None):
+        return
+    session.referral_sent_at = datetime.utcnow()
+    await db.commit()
+    await _send_referral_info(db, session, frm)
+
+
 async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> None:
     """The post-lesson menu: continue to the next lesson, practice another quiz
     (a fresh non-repeating set), or ask a doubt."""
@@ -1665,7 +1691,7 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         session.stage = "between_lessons"
         await db.commit()
         await send_buttons(
-            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title) + REFER_HINT.get(lang, REFER_HINT["en"]),
+            frm, tr(lang, "next_choice").format(name=nm, title=nxt_title),
             [("next_lesson", tr(lang, "start_next_btn")),
              ("practice_quiz", tr(lang, "practice_btn")),
              ("ask_doubt", tr(lang, "doubt_btn"))],
@@ -1675,6 +1701,8 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
         # them and the next lesson: they can answer, or just tap and carry on.
         if (cur + 1) == FEEDBACK_AFTER_LESSONS:
             await _maybe_ask_feedback(db, session, frm, lang, nm, FB_MID)
+        if (cur + 1) == REFERRAL_AFTER_LESSONS:
+            await _maybe_send_referral(db, session, frm)
     else:
         session.stage = "done"
         await db.commit()
@@ -1953,12 +1981,12 @@ def _extract_ref_code(text: str | None) -> str | None:
     return t if re.fullmatch(r"[A-HJ-NP-Z2-9]{8}", t) else None
 
 REFERRAL_MSG = {
-    "en": "🎁 Invite your friends to learn AI with you!\nYour code: *{code}*\nSo far: *{total}* joined.\nShare 👇",
-    "hi": "🎁 अपने दोस्तों को भी AI सीखने के लिए बुलाएँ!\nआपका कोड: *{code}*\nअब तक: *{total}* जुड़े।\nशेयर करें 👇",
-    "mr": "🎁 तुमच्या मित्रांना पण AI शिकायला बोलवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: *{total}* जोडले.\nशेअर करा 👇",
-    "te": "🎁 మీ స్నేహితులను కూడా AI నేర్చుకోవడానికి ఆహ్వానించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: *{total}* చేరారు.\nషేర్ చేయండి 👇",
-    "ta": "🎁 உங்கள் நண்பர்களையும் AI கற்க அழையுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: *{total}* இணைந்தனர்.\nபகிருங்கள் 👇",
-    "kn": "🎁 ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ AI ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: *{total}* ಸೇರಿದ್ದಾರೆ.\nಹಂಚಿಕೊಳ್ಳಿ 👇",
+    "en": "🎁 Invite your friends to learn AI with you!\nYour code: *{code}*\nSo far: *{total}* joined.\n\n👇 Just forward the next message to your friends.",
+    "hi": "🎁 अपने दोस्तों को भी AI सीखने के लिए बुलाएँ!\nआपका कोड: *{code}*\nअब तक: *{total}* जुड़े।\n\n👇 नीचे वाला मैसेज बस अपने दोस्तों को फ़ॉरवर्ड कर दें।",
+    "mr": "🎁 तुमच्या मित्रांना पण AI शिकायला बोलवा!\nतुमचा कोड: *{code}*\nआतापर्यंत: *{total}* जोडले.\n\n👇 खालचा मेसेज फक्त तुमच्या मित्रांना फॉरवर्ड करा.",
+    "te": "🎁 మీ స్నేహితులను కూడా AI నేర్చుకోవడానికి ఆహ్వానించండి!\nమీ కోడ్: *{code}*\nఇప్పటివరకు: *{total}* చేరారు.\n\n👇 కింది మెసేజ్‌ని మీ స్నేహితులకు ఫార్వర్డ్ చేయండి.",
+    "ta": "🎁 உங்கள் நண்பர்களையும் AI கற்க அழையுங்கள்!\nஉங்கள் குறியீடு: *{code}*\nஇதுவரை: *{total}* இணைந்தனர்.\n\n👇 கீழே உள்ள மெசேஜை உங்கள் நண்பர்களுக்கு ஃபார்வர்ட் செய்யுங்கள்.",
+    "kn": "🎁 ನಿಮ್ಮ ಸ್ನೇಹಿತರನ್ನೂ AI ಕಲಿಯಲು ಆಹ್ವಾನಿಸಿ!\nನಿಮ್ಮ ಕೋಡ್: *{code}*\nಇಲ್ಲಿಯವರೆಗೆ: *{total}* ಸೇರಿದ್ದಾರೆ.\n\n👇 ಕೆಳಗಿನ ಸಂದೇಶವನ್ನು ನಿಮ್ಮ ಸ್ನೇಹಿತರಿಗೆ ಫಾರ್ವರ್ಡ್ ಮಾಡಿ.",
 }
 
 # Sent to the REFERRER when their code lands a signup. Imported lazily by
@@ -1992,6 +2020,19 @@ INVITE_BTN = {
     "kn": "ಸ್ನೇಹಿತರನ್ನು ಕರೆಯಿರಿ",
 }
 
+# The message a learner FORWARDS. Written to be read by the friend, who has no
+# context at all — so no "your code", no reference to the message above it, and
+# the link inline rather than as a separate bare URL.
+REFERRAL_FORWARD = {
+    "en": "I'm learning AI on WhatsApp — short 2-minute video lessons, in your own language, completely free. 🎓\n\nIt's actually good. Start here 👇\n{link}",
+    "hi": "मैं WhatsApp पर AI सीख रहा/रही हूँ — 2 मिनट के छोटे वीडियो, अपनी भाषा में, बिल्कुल फ्री। 🎓\n\nसच में अच्छा है। यहाँ से शुरू करें 👇\n{link}",
+    "mr": "मी WhatsApp वर AI शिकतोय/शिकतेय — 2 मिनिटांचे छोटे व्हिडिओ, आपल्या भाषेत, अगदी फ्री. 🎓\n\nखरंच छान आहे. इथून सुरू करा 👇\n{link}",
+    "te": "నేను WhatsApp లో AI నేర్చుకుంటున్నాను — 2 నిమిషాల చిన్న వీడియోలు, మన భాషలో, పూర్తిగా ఉచితం. 🎓\n\nనిజంగా బాగుంది. ఇక్కడ మొదలుపెట్టండి 👇\n{link}",
+    "ta": "நான் WhatsApp-ல AI கத்துக்கிட்டு இருக்கேன் — 2 நிமிட சின்ன வீடியோ, நம்ம மொழியில, முழுசா இலவசம். 🎓\n\nரொம்ப நல்லா இருக்கு. இங்க ஆரம்பிங்க 👇\n{link}",
+    "kn": "ನಾನು WhatsApp ನಲ್ಲಿ AI ಕಲಿಯುತ್ತಿದ್ದೇನೆ — 2 ನಿಮಿಷದ ಚಿಕ್ಕ ವೀಡಿಯೊಗಳು, ನಮ್ಮ ಭಾಷೆಯಲ್ಲಿ, ಸಂಪೂರ್ಣ ಉಚಿತ. 🎓\n\nನಿಜಕ್ಕೂ ಚೆನ್ನಾಗಿದೆ. ಇಲ್ಲಿಂದ ಶುರು ಮಾಡಿ 👇\n{link}",
+}
+
+
 async def _send_referral_info(db, session, frm: str) -> None:
     from core.referrals import get_or_create_wa_code, referral_stats
     lang = session.language or "en"
@@ -2005,10 +2046,15 @@ async def _send_referral_info(db, session, frm: str) -> None:
     # Only the wa.me link for now — it opens WhatsApp with JOIN pre-filled and
     # actually credits the referrer. (The web ?ref= link returns once web signup
     # attribution is built.)
-    num = settings.whatsapp_business_number
-    if num:
-        msg += f"\nhttps://wa.me/{num}?text=JOIN%20{code}"
     await send_text(frm, msg)
+
+    # Sent as its OWN message so it can be forwarded untouched. Folded into the
+    # message above, forwarding it would also send the learner's own code and
+    # join count to their friend, which reads as a mistake.
+    num = settings.whatsapp_business_number
+    link = f"https://wa.me/{num}?text=JOIN%20{code}" if num else ""
+    if link:
+        await send_text(frm, REFERRAL_FORWARD.get(lang, REFERRAL_FORWARD["en"]).format(link=link))
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
