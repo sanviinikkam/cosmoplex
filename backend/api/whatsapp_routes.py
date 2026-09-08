@@ -1983,7 +1983,16 @@ async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
                             ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
                             ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
         return
-    if st in ("between_lessons", "clarify", "done", "quiz_failed", "onboarded", "howto"):
+    # Before the course starts the "next lesson" buttons are meaningless — they
+    # have not started a first one. Re-offer the step they are actually on.
+    if st == "onboarded":
+        await send_buttons(frm, ob(lang, "signup_prompt").format(name=nm),
+                           [("signup", ob(lang, "signup_btn"))])
+        return
+    if st == "howto":
+        await _send_howto_step(frm, lang, 0)
+        return
+    if st in ("between_lessons", "clarify", "done", "quiz_failed"):
         lessons = await _db_lessons(db, lang)
         cur = session.lesson_index or 0
         if cur + 1 < len(lessons):
@@ -2010,7 +2019,8 @@ async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
         await _send_goal_question(frm, lang)
 
 
-async def _apply_intent(db, session, frm: str, nm: str, intent: dict) -> bool:
+async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
+                        text: str | None = None) -> bool:
     """Act on a routed intent. True if it was handled here.
 
     Every branch ends by putting the learner back where they were, because the
@@ -2079,7 +2089,21 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict) -> bool:
                             ("ask_doubt", tr(lang, "restart_no"))])
         return True
 
-    return False            # question / other -> existing paths
+    # A question asked BEFORE the course starts. Every other stage has a handler
+    # that ends at the Teacher, but the signup ones treat free text as the ANSWER
+    # to what they just asked — so "kya ye free hai?" typed at the name prompt was
+    # stored as the learner's name and they were greeted by it for the rest of the
+    # course, and the same sentence at the goal prompt became their goal. These
+    # are also the people most likely to ask about price and certificates, because
+    # they have not committed to anything yet.
+    #
+    # _teacher_answer ends with _offer_next_step, which re-asks whatever signup
+    # question is outstanding, so they are answered and then put back.
+    if kind == "question" and session.stage in (SIGNUP_STAGES | {"howto", "onboarded"}):
+        await _teacher_answer(db, session, frm, lang, text)
+        return True
+
+    return False            # other -> existing paths
 
 
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
@@ -2376,7 +2400,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # same way rather than reaching for a variable that does not
                 # exist yet.
                 _nm = (session.name or name or "").strip() or "friend"
-                if await _apply_intent(db, session, frm, _nm, routed):
+                if await _apply_intent(db, session, frm, _nm, routed, text):
                     return
 
         # "refer" / "invite" → the learner's own code + share link
@@ -2551,6 +2575,12 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             candidate = (text or "").strip()
             if routed and routed.get("intent") == "give_name" and routed.get("value"):
                 candidate = routed["value"].strip()
+            elif routed:
+                # The router read this and it is not a name. Storing it anyway is how
+                # a question became someone's name. Re-ask instead — retyping is
+                # recoverable, being addressed as "kya ye free hai?" for the rest of the course
+                # is not.
+                candidate = ""
             if not candidate:
                 await db.commit()
                 await send_text(frm, ob(lang, "name_q"))
@@ -2573,6 +2603,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             elif text and reply_id is None:
                 if routed and routed.get("intent") == "give_status" and routed.get("value"):
                     status = routed["value"].strip()[:50]
+                elif routed:
+                    status = None       # the router says this is not their status
                 else:
                     status = text.strip()[:50]
                 label = status
@@ -2596,6 +2628,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             goal = GOAL_MAP.get(reply_id) if reply_id in GOAL_MAP else (text or "").strip()
             if routed and routed.get("intent") == "give_goal" and routed.get("value"):
                 goal = routed["value"].strip()
+            elif routed and reply_id is None:
+                goal = ""               # the router says this is not their goal
             if not goal:
                 await db.commit()
                 await _send_goal_question(frm, lang)
