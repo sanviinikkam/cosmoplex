@@ -2058,8 +2058,12 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict) -> bool:
 
     if kind == "switch_language":
         new_lang = intent.get("language")
-        if not new_lang or new_lang == lang:
-            return False                      # nothing to change — let it fall through
+        if not new_lang:
+            # They want a different language but did not say which. Ask.
+            await _send_language_picker(frm)
+            return True
+        if new_lang == lang:
+            return False                      # already in it — let it fall through
         session.language = new_lang
         await db.commit()
         await send_text(frm, tr(new_lang, "picker_done"))
@@ -2091,7 +2095,22 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict) -> bool:
     if kind == "give_goal" and session.stage == "ask_goal" and intent.get("value"):
         return False
 
-    return False            # question / other / restart / stop -> existing paths
+    if kind == "stop":
+        session.opt_out = True
+        await db.commit()
+        await send_text(frm, tr(lang, "unsub_ok"))
+        return True
+
+    if kind == "restart":
+        # NOT acted on directly. Restarting wipes their progress, and that is
+        # too much to do on an inference — so it asks first. Everything else
+        # here is reversible or additive; this one is not.
+        await send_buttons(frm, tr(lang, "restart_confirm").format(name=nm),
+                           [("do_restart", tr(lang, "restart_yes")),
+                            ("ask_doubt", tr(lang, "restart_no"))])
+        return True
+
+    return False            # question / other -> existing paths
 
 
 async def _resume_stage(db, session, frm: str, lang: str) -> None:
@@ -2399,7 +2418,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             return
 
         # Explicit reset → back to the language picker, fresh state
-        if reply_id is None and low in ("restart", "reset", "start over", "restart course"):
+        if reply_id == "do_restart" or (
+                reply_id is None and low in ("restart", "reset", "start over", "restart course")):
             session.language = None
             session.stage = "new"
             session.opt_out = False        # explicit restart = re-subscribe

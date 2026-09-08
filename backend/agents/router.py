@@ -120,10 +120,10 @@ def _coerce(raw: str) -> dict | None:
     lang = str(data.get("language") or "").strip().lower()
     if lang in LANGS:
         out["language"] = lang
-    # A language switch with no valid language is not actionable — drop the whole
-    # intent rather than let the caller guess which language was meant.
-    if intent == "switch_language" and "language" not in out:
-        return None
+    # A language switch with no language named is KEPT. The caller shows the
+    # picker, which only asks — it changes nothing — so it is safe to do on an
+    # inference. Dropping it sent "I want to change the language" to the Teacher
+    # instead of showing the menu they were asking for.
     value = data.get("value")
     if isinstance(value, str):
         # Trimmed hard: it is a name, a job or a goal, and it is about to be
