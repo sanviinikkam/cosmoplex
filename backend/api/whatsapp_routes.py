@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 import random
 import re
 import unicodedata
@@ -214,10 +215,77 @@ async def send_document(to: str, link: str, filename: str, caption: str = "") ->
     return True
 
 
+async def send_typing(message_id: str | None) -> None:
+    """Mark the learner's message read and show the typing dots.
+
+    Without this the chat looks dead while we transcribe a voice note, ask the
+    router, or wait on the Teacher — several seconds of nothing. Learners assume
+    it failed and tap something else, and then two replies arrive at once.
+
+    Meta clears the indicator as soon as our reply goes out, or after ~25s, so
+    there is nothing to turn off. Fire-and-forget: a failed indicator must never
+    stop the actual reply.
+    """
+    if not message_id or not settings.whatsapp_token:
+        return
+    ver = settings.graph_api_version
+    url = f"{GRAPH}/{ver}/{settings.whatsapp_phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as h:
+            r = await h.post(url, headers={
+                "Authorization": f"Bearer {settings.whatsapp_token}",
+                "Content-Type": "application/json"}, json=payload)
+            if r.status_code >= 400:
+                print(f"⚠ typing indicator {r.status_code}: {r.text[:160]}")
+    except Exception as e:
+        print(f"⚠ typing indicator failed: {type(e).__name__}: {e}")
+
+
+# The message each learner last sent, with when it arrived. WhatsApp ties a
+# typing indicator to one inbound message and dismisses it the moment we reply,
+# so a turn that sends several messages has to raise it again before each one.
+#
+# The timestamp matters: a drip nudge hours later would otherwise try to raise
+# dots against a stale message id, which is both meaningless and an API error.
+_LAST_INBOUND: dict[str, tuple[str, float]] = {}
+_TYPING_WINDOW_SEC = 120        # only within a live turn
+
+
+def remember_inbound(frm: str, message_id: str | None) -> None:
+    if frm and message_id:
+        if len(_LAST_INBOUND) > 5000:      # never grows without bound
+            _LAST_INBOUND.clear()
+        _LAST_INBOUND[frm] = (message_id, time.monotonic())
+
+
+async def show_typing(to: str | None) -> None:
+    """Raise the dots for this learner, if they are mid-turn."""
+    if not to:
+        return
+    entry = _LAST_INBOUND.get(to)
+    if not entry:
+        return
+    message_id, at = entry
+    if time.monotonic() - at > _TYPING_WINDOW_SEC:
+        return                              # not a live turn — a nudge, probably
+    await send_typing(message_id)
+
+
 async def _post(payload: dict) -> httpx.Response | None:
     if not _configured():
         print("⚠ WhatsApp not configured — skipping send")
         return None
+    # Dots before EVERY message, not just the first of a turn. To the learner they
+    # read as "more is coming" — the signal that the bot has not finished — which
+    # is what stops them tapping ahead and getting two replies at once. Done here,
+    # at the single chokepoint, so a send added later cannot forget it.
+    await show_typing(payload.get("to"))
     try:
         async with httpx.AsyncClient(timeout=60) as h:
             resp = await h.post(
@@ -325,61 +393,6 @@ VOICE_FAIL = {
     "ta": "🎙️ மன்னிக்கவும், அந்த குரல் குறிப்பு எனக்கு சரியாகப் புரியவில்லை — தயவுசெய்து தட்டச்சு செய்ய முடியுமா?",
     "kn": "🎙️ ಕ್ಷಮಿಸಿ, ಆ ಧ್ವನಿ ಟಿಪ್ಪಣಿ ನನಗೆ ಸರಿಯಾಗಿ ಅರ್ಥವಾಗಲಿಲ್ಲ — ದಯವಿಟ್ಟು ಟೈಪ್ ಮಾಡಬಹುದೇ?",
 }
-
-
-async def send_typing(message_id: str | None) -> None:
-    """Mark the learner's message read and show the typing dots.
-
-    Without this the chat looks dead while we transcribe a voice note, ask the
-    router, or wait on the Teacher — several seconds of nothing. Learners assume
-    it failed and tap something else, and then two replies arrive at once.
-
-    Meta clears the indicator as soon as our reply goes out, or after ~25s, so
-    there is nothing to turn off. Fire-and-forget: a failed indicator must never
-    stop the actual reply.
-    """
-    if not message_id or not settings.whatsapp_token:
-        return
-    ver = settings.graph_api_version
-    url = f"{GRAPH}/{ver}/{settings.whatsapp_phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "status": "read",
-        "message_id": message_id,
-        "typing_indicator": {"type": "text"},
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as h:
-            r = await h.post(url, headers={
-                "Authorization": f"Bearer {settings.whatsapp_token}",
-                "Content-Type": "application/json"}, json=payload)
-            if r.status_code >= 400:
-                print(f"⚠ typing indicator {r.status_code}: {r.text[:160]}")
-    except Exception as e:
-        print(f"⚠ typing indicator failed: {type(e).__name__}: {e}")
-
-
-# The id of the message each learner most recently sent. WhatsApp ties a typing
-# indicator to a specific inbound message, and the indicator is dismissed the
-# moment we reply — so a turn that sends several messages needs to raise it
-# again before each slow step, not once at the top.
-#
-# Per-process and unbounded-by-design-but-small: one short string per active
-# learner, same tradeoff as the rate limiter, fine on a single Render instance.
-_LAST_INBOUND: dict[str, str] = {}
-
-
-def remember_inbound(frm: str, message_id: str | None) -> None:
-    if frm and message_id:
-        _LAST_INBOUND[frm] = message_id
-        # Keep it from growing forever on a long-running process.
-        if len(_LAST_INBOUND) > 5000:
-            _LAST_INBOUND.clear()
-
-
-async def show_typing(frm: str) -> None:
-    """Raise the dots again for whatever this learner last sent."""
-    await send_typing(_LAST_INBOUND.get(frm))
 
 
 async def transcribe_audio(media_id: str) -> tuple[str | None, bytes | None, str | None]:
