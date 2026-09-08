@@ -319,7 +319,7 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "referral-simple",
+        "build": "shorter-name-q",
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
