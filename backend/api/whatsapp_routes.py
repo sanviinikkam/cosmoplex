@@ -2051,6 +2051,31 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
         await _resume_stage(db, session, frm, new_lang)
         return True
 
+    # Correcting the name we call them by. There was no route to this at all:
+    # the model kept answering "change_name", which is not in the vocabulary, so
+    # _coerce discarded the whole reply and the message fell through to whatever
+    # the stage did next — during the walkthrough, that meant re-sending the same
+    # step, so the request read as being ignored.
+    #
+    # Wrong names are common enough to need this: the name is taken from a typed
+    # sentence, and before the router read that sentence, learners ended up
+    # stored as "my name Bhuban" and greeted that way for the whole course.
+    #
+    # give_name outside the name question means the same thing — someone saying
+    # "my name is Rahul" mid-course is correcting us, not answering anything.
+    if kind == "change_name" or (kind == "give_name" and session.stage != "ask_name"):
+        new_name = (intent.get("value") or "").strip()
+        if not new_name:
+            session.pending_rename = True   # their next message IS the name
+            await db.commit()
+            await send_text(frm, tr(lang, "rename_ask"))
+            return True
+        session.name = new_name[:40]
+        await db.commit()
+        await send_text(frm, tr(lang, "rename_done").format(name=session.name))
+        await _offer_next_step(db, session, frm, lang, session.name)
+        return True
+
     # They typed the words on the "I have a doubt" button. Before this the words
     # went to the Teacher, which replied "sure, what is your doubt?" and then had
     # _offer_next_step stack the full "Start quiz" block underneath — inviting a
@@ -2406,6 +2431,23 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # thanked and then left with no way to continue.
                 await _send_between_choice(db, session, frm, _lg, _nm)
                 return
+
+        # We just asked what to call them, so this message is the answer. Read
+        # before the router: the reply is usually a bare name, which the router
+        # would return "other" for — it has no way to know what we just asked.
+        if session.pending_rename:
+            session.pending_rename = False
+            if reply_id is not None:
+                await db.commit()       # tapped something instead — drop the ask
+            elif (text or "").strip():
+                session.name = text.strip()[:40]
+                await db.commit()
+                _lg2 = session.language or "en"
+                await send_text(frm, tr(_lg2, "rename_done").format(name=session.name))
+                await _offer_next_step(db, session, frm, _lg2, session.name)
+                return
+            else:
+                await db.commit()
 
         # ── What did they actually mean? ─────────────────────────────────────
         # Free text only. Buttons are unambiguous and never routed — 64% of

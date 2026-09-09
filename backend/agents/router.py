@@ -36,6 +36,7 @@ INTENTS = (
     "refer",           # wants to invite/share with a friend
     "switch_language", # wants the course in a different language (+ "language")
     "give_name",       # answering the name question, possibly in a sentence (+ "value")
+    "change_name",     # wants the name we call them by changed (+ "value" if they said it)
     "give_status",     # answering the "what are you doing now" question (+ "value")
     "give_goal",       # answering the goal question (+ "value")
     "next_lesson",     # typed rather than tapped: wants the next lesson
@@ -61,6 +62,8 @@ The ONLY valid intents:
 - refer           — they want to invite, share, forward or tell a friend about the course
 - switch_language — they want the course in a DIFFERENT language than it is now. Also set "language".
 - give_name       — they are telling you their name. Put ONLY the name in "value" ("my name Bhuban" -> "Bhuban").
+- change_name     — they want the name we call them by CHANGED ("i want to change my name", "mera naam
+                    galat hai"). If they said the new name, put it in "value"; if they did not, omit it.
 - give_status     — they are describing what they currently do (studying, working, job hunting). Put it in "value".
 - give_goal       — they are describing what they want to achieve. Put it in "value".
 - next_lesson     — they want to move on to the next lesson
@@ -103,6 +106,9 @@ Worked examples, all from real messages this got wrong before:
 "Language change kijiye main Hindi karna chahti hun" (course is en) -> {"intent":"switch_language","language":"hi"}
    They named it. This one is safe to act on.
 "my name Bhuban" (stage ask_name) -> {"intent":"give_name","value":"Bhuban"}
+"i want to change my name" (stage howto) -> {"intent":"change_name"}
+   They want it changed but have not said to what. No "value" — they get asked.
+"change my name to Rahul" -> {"intent":"change_name","value":"Rahul"}
 "mein apna friend ko bhejna chahta hu" -> {"intent":"refer"}
 "kya iske liye paise lagenge" -> {"intent":"question"}
 "i have a doubt" -> {"intent":"ask_doubt"}

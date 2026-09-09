@@ -408,6 +408,11 @@ class WhatsAppSession(Base):
     # boolean: the invite repeats every other lesson, and the post-lesson menu is
     # re-shown after practice quizzes and feedback replies, so "has it been sent"
     # is not enough to stop it going twice for the same lesson.
+    # We asked "what should I call you instead?" and the next message is the
+    # answer. The stage cannot carry this — setting it to ask_name would rerun
+    # onboarding once the name arrived — and without it the reply ("Rahul", on
+    # its own) is just an unclassifiable word and the rename never lands.
+    pending_rename = Column(Boolean, default=False)
     last_referral_lesson = Column(Integer, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 

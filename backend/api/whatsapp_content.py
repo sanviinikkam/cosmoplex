@@ -155,6 +155,8 @@ On fail (score < {ASSIGN_PASS}): identify the specific term(s) that are off and 
 CONTENT = {
     "en": {
         "picker_done": "Great! We'll learn in English. 🎉",
+        "rename_ask": "Sure — what should I call you instead? Just send your new name. 😊",
+        "rename_done": "Done! I'll call you *{name}* from now on. 👍",
         "lesson_caption": "Watch the video, then tap “Start quiz”.",
         "after_text": "Ready when you are, {name} 👇",
         "quiz_btn": "📝 Start quiz",
@@ -202,6 +204,8 @@ CONTENT = {
     },
     "hi": {
         "picker_done": "बढ़िया! अब हम हिंदी में सीखेंगे। 🎉",
+        "rename_ask": "ज़रूर — आपको किस नाम से बुलाऊँ? बस अपना नया नाम भेज दीजिए। 😊",
+        "rename_done": "हो गया! अब से मैं आपको *{name}* कहूँगा। 👍",
         "lesson_caption": "वीडियो देखें, फिर “क्विज़ शुरू करें” दबाएँ।",
         "after_text": "{name}, तैयार हों तो शुरू करें 👇",
         "quiz_btn": "📝 क्विज़ शुरू करें",
@@ -249,6 +253,8 @@ CONTENT = {
     },
     "mr": {
         "picker_done": "छान! आता आपण मराठीत शिकूया. 🎉",
+        "rename_ask": "नक्कीच — तुम्हाला कोणत्या नावाने हाक मारू? फक्त तुमचं नवीन नाव पाठवा. 😊",
+        "rename_done": "झालं! आतापासून मी तुम्हाला *{name}* म्हणेन. 👍",
         "lesson_caption": "व्हिडिओ पाहा, मग “क्विझ सुरू करा” दाबा.",
         "after_text": "{name}, तयार असाल तर सुरू करा 👇",
         "quiz_btn": "📝 क्विझ सुरू करा",
@@ -296,6 +302,8 @@ CONTENT = {
     },
     "te": {
         "picker_done": "అద్భుతం! ఇక తెలుగులో నేర్చుకుందాం. 🎉",
+        "rename_ask": "తప్పకుండా — మిమ్మల్ని ఏ పేరుతో పిలవాలి? మీ కొత్త పేరు పంపండి చాలు. 😊",
+        "rename_done": "అయిపోయింది! ఇప్పటి నుంచి మిమ్మల్ని *{name}* అని పిలుస్తాను. 👍",
         "lesson_caption": "వీడియో చూసి, తర్వాత “క్విజ్ మొదలుపెట్టు” నొక్కండి.",
         "after_text": "{name}, సిద్ధమైతే మొదలుపెడదాం 👇",
         "quiz_btn": "📝 క్విజ్ మొదలుపెట్టు",
@@ -343,6 +351,8 @@ CONTENT = {
     },
     "ta": {
         "picker_done": "அருமை! இனி தமிழில் கற்போம். 🎉",
+        "rename_ask": "கண்டிப்பாக — உங்களை என்ன பெயரில் அழைக்கட்டும்? உங்கள் புதிய பெயரை அனுப்புங்கள். 😊",
+        "rename_done": "முடிந்தது! இனி உங்களை *{name}* என்று அழைப்பேன். 👍",
         "lesson_caption": "வீடியோவைப் பாருங்கள், பிறகு “வினாடி வினா தொடங்கு” அழுத்துங்கள்.",
         "after_text": "{name}, தயாராக இருந்தால் தொடங்குவோம் 👇",
         "quiz_btn": "📝 வினாடி வினா",
@@ -390,6 +400,8 @@ CONTENT = {
     },
     "kn": {
         "picker_done": "ಅದ್ಭುತ! ಇನ್ನು ಕನ್ನಡದಲ್ಲಿ ಕಲಿಯೋಣ. 🎉",
+        "rename_ask": "ಖಂಡಿತ — ನಿಮ್ಮನ್ನು ಯಾವ ಹೆಸರಿನಿಂದ ಕರೆಯಲಿ? ನಿಮ್ಮ ಹೊಸ ಹೆಸರನ್ನು ಕಳಿಸಿ. 😊",
+        "rename_done": "ಆಯಿತು! ಇನ್ನು ಮುಂದೆ ನಿಮ್ಮನ್ನು *{name}* ಎಂದು ಕರೆಯುತ್ತೇನೆ. 👍",
         "lesson_caption": "ವೀಡಿಯೊ ನೋಡಿ, ನಂತರ “ಕ್ವಿಜ್ ಆರಂಭಿಸಿ” ಒತ್ತಿ.",
         "after_text": "{name}, ಸಿದ್ಧವಾದಾಗ ಆರಂಭಿಸೋಣ 👇",
         "quiz_btn": "📝 ಕ್ವಿಜ್ ಆರಂಭಿಸಿ",
