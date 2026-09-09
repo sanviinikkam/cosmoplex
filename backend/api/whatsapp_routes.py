@@ -1467,6 +1467,15 @@ FEEDBACK_AFTER_LESSONS = 2          # completed lessons that trigger the mid ask
 # would mean every learner already asked gets asked again the next time the
 # number moves — and it has moved once already.
 FB_MID, FB_END = "mid", "end"
+# Feedback nobody asked for. Keyed separately from the two checkpoints, and
+# numbered rather than overwritten: someone who tells us twice has said two
+# things, and the second should not erase the first.
+FB_VOLUNTEERED = "volunteered"
+
+
+def _next_volunteer_key(log: dict) -> str:
+    n = sum(1 for k in log if k.startswith(FB_VOLUNTEERED))
+    return FB_VOLUNTEERED if n == 0 else f"{FB_VOLUNTEERED}_{n + 1}"
 FEEDBACK_COPY = {FB_MID: "feedback_ask_mid", FB_END: "feedback_ask"}
 
 
@@ -2093,6 +2102,34 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
             await send_text(frm, tr(lang, "clarify_prompt").format(name=nm))
         return True
 
+    # They told us something about the course without being asked. Before this it
+    # reached the Teacher, which improvised a reply — in one real exchange it
+    # asked "what is the feedback about?" and then answered the follow-up as if it
+    # were a question. Nothing was ever recorded. Volunteered feedback is the most
+    # valuable kind, because they cared enough to start the conversation.
+    if kind == "feedback":
+        said = (intent.get("value") or "").strip()
+        log = _fb_log(session)
+        key = _next_volunteer_key(log)
+        now = datetime.utcnow().isoformat()
+        if said:
+            # The opinion was already in the message — record it, do not make them
+            # repeat themselves into a prompt.
+            log[key] = {"asked_at": now, "text": said[:4000], "at": now, "skipped": False}
+            session.feedback_log = log
+            await db.commit()
+            print(f"✓ Feedback ({key}, unprompted) from {frm}: {said[:80]!r}")
+            await send_text(frm, tr(lang, "feedback_thanks").format(name=nm))
+            await _offer_next_step(db, session, frm, lang, nm)
+        else:
+            log[key] = {"asked_at": now, "text": None, "at": None, "skipped": False}
+            session.feedback_log = log
+            await db.commit()
+            # No buttons: they are about to type, and a button here would compete
+            # with the invitation to do so.
+            await send_text(frm, tr(lang, "feedback_open").format(name=nm))
+        return True
+
     if kind == "refer":
         await _send_referral_info(db, session, frm)
         await _offer_next_step(db, session, frm, lang, nm)
@@ -2413,7 +2450,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # pending is treated as the feedback. That is the right call — someone
         # just asked a question, and the reply belongs to it.
         _pending_fb = _feedback_pending(session)
-        if _pending_fb and session.stage in ("between_lessons", "done", "clarify"):
+        if _pending_fb and (_pending_fb.startswith(FB_VOLUNTEERED)
+                            or session.stage in ("between_lessons", "done", "clarify")):
             if reply_id is not None:
                 _clear_feedback_pending(session)
                 await db.commit()
@@ -2429,7 +2467,14 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # Put the menu back. Answering the prompt used up the only
                 # message that had buttons, so without this the learner is
                 # thanked and then left with no way to continue.
-                await _send_between_choice(db, session, frm, _lg, _nm)
+                #
+                # Volunteered feedback can arrive mid-lesson or mid-quiz, where
+                # the between-lessons menu would be the wrong screen entirely —
+                # _offer_next_step re-renders whatever step they are actually on.
+                if _pending_fb.startswith(FB_VOLUNTEERED):
+                    await _offer_next_step(db, session, frm, _lg, _nm)
+                else:
+                    await _send_between_choice(db, session, frm, _lg, _nm)
                 return
 
         # We just asked what to call them, so this message is the answer. Read

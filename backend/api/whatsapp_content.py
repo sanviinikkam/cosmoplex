@@ -195,6 +195,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, you're {n} lessons in — how's it going so far?\n\n• What do you think of the course?\n• Do you think it will actually help you?\n• Will you keep going?\n• What would you like to see next?\n\n🎤 *You can send a voice note instead of typing* — whichever is easier.",
         "module_done": "🎉 *Module {n} complete, {name}!*\n\nYou've finished:\n{list}\n\n📚 Next up — *Module {nx}: {title}*",
         "feedback_thanks": "🙏 Thank you, {name}! That goes straight to the team making these lessons.",
+        "feedback_open": "🙏 {name}, go ahead — tell us what's on your mind about the course.\n\n🎤 *You can send a voice note instead of typing* — whichever is easier.",
         "cert_ready": "🎓 Incredible, {name} — you've completed the *entire AI Literacy course*! Here's your certificate 👇",
         "cert_caption": "Cosmoplex AI Literacy Certificate 🎓",
         "unsub_ok": "✅ Done — you're unsubscribed. No more reminders from us.\n\nYou can still message me anytime to keep learning, and type *restart* whenever you'd like to begin again. 👋",
@@ -250,6 +251,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, आपने {n} पाठ पूरे कर लिए — अब तक कैसा लग रहा है?\n\n• कोर्स आपको कैसा लगा?\n• क्या आपको लगता है यह वाकई आपके काम आएगा?\n• क्या आप आगे जारी रखेंगे?\n• आगे आप क्या देखना चाहेंगे?\n\n🎤 *टाइप करने की जगह voice note भी भेज सकते हैं* — जो आसान लगे।",
         "module_done": "🎉 *मॉड्यूल {n} पूरा हुआ, {name}!*\n\nआपने पूरे किए:\n{list}\n\n📚 आगे — *मॉड्यूल {nx}: {title}*",
         "feedback_thanks": "🙏 धन्यवाद, {name}! आपकी बात सीधे इन पाठों को बनाने वाली टीम तक जाएगी।",
+        "feedback_open": "🙏 {name}, ज़रूर बताइए — कोर्स को लेकर आपके मन में जो है, लिख दीजिए।\n\n🎤 *आप टाइप करने की जगह voice note भी भेज सकते हैं* — जो आसान लगे।",
     },
     "mr": {
         "picker_done": "छान! आता आपण मराठीत शिकूया. 🎉",
@@ -299,6 +301,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, तुम्ही {n} पाठ पूर्ण केले — आतापर्यंत कसं वाटतंय?\n\n• कोर्स तुम्हाला कसा वाटला?\n• याचा खरंच फायदा होईल असं वाटतं का?\n• तुम्ही पुढे सुरू ठेवाल का?\n• पुढे तुम्हाला काय बघायला आवडेल?\n\n🎤 *टाइप करण्याऐवजी voice note पण पाठवू शकता* — जे सोपं वाटेल ते.",
         "module_done": "🎉 *मॉड्यूल {n} पूर्ण झालं, {name}!*\n\nतुम्ही पूर्ण केले:\n{list}\n\n📚 पुढे — *मॉड्यूल {nx}: {title}*",
         "feedback_thanks": "🙏 धन्यवाद, {name}! तुमचं मत थेट हे पाठ बनवणाऱ्या टीमपर्यंत पोहोचेल.",
+        "feedback_open": "🙏 {name}, नक्की सांगा — कोर्सबद्दल तुमच्या मनात जे आहे ते लिहा.\n\n🎤 *टाइप करण्याऐवजी तुम्ही voice note पण पाठवू शकता* — जे सोपं वाटेल ते.",
     },
     "te": {
         "picker_done": "అద్భుతం! ఇక తెలుగులో నేర్చుకుందాం. 🎉",
@@ -348,6 +351,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, మీరు {n} పాఠాలు పూర్తి చేశారు — ఇప్పటివరకు ఎలా ఉంది?\n\n• కోర్సు మీకు ఎలా అనిపించింది?\n• ఇది నిజంగా మీకు ఉపయోగపడుతుందా?\n• మీరు కొనసాగిస్తారా?\n• తర్వాత ఏమి చూడాలనుకుంటున్నారు?\n\n🎤 *టైప్ చేయడానికి బదులు voice note పంపవచ్చు* — ఏది సులభమో అది.",
         "module_done": "🎉 *మాడ్యూల్ {n} పూర్తయింది, {name}!*\n\nమీరు పూర్తి చేసినవి:\n{list}\n\n📚 తర్వాత — *మాడ్యూల్ {nx}: {title}*",
         "feedback_thanks": "🙏 ధన్యవాదాలు, {name}! మీ మాట నేరుగా ఈ పాఠాలు తయారుచేసే బృందానికి చేరుతుంది.",
+        "feedback_open": "🙏 {name}, చెప్పండి — కోర్సు గురించి మీ మనసులో ఉన్నది రాయండి.\n\n🎤 *టైప్ చేయడానికి బదులు voice note కూడా పంపవచ్చు* — ఏది సులభమో అది.",
     },
     "ta": {
         "picker_done": "அருமை! இனி தமிழில் கற்போம். 🎉",
@@ -397,6 +401,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, நீங்கள் {n} பாடங்கள் முடித்துவிட்டீர்கள் — இதுவரை எப்படி இருக்கிறது?\n\n• பாடநெறி உங்களுக்கு எப்படி இருந்தது?\n• இது உண்மையில் உங்களுக்கு உதவுமா?\n• நீங்கள் தொடர்வீர்களா?\n• அடுத்து என்ன பார்க்க விரும்புகிறீர்கள்?\n\n🎤 *தட்டச்சுக்கு பதிலாக voice note அனுப்பலாம்* — எது எளிதோ அது.",
         "module_done": "🎉 *தொகுதி {n} முடிந்தது, {name}!*\n\nநீங்கள் முடித்தவை:\n{list}\n\n📚 அடுத்து — *தொகுதி {nx}: {title}*",
         "feedback_thanks": "🙏 நன்றி, {name}! உங்கள் கருத்து இந்தப் பாடங்களை உருவாக்கும் குழுவை நேரடியாகச் சென்றடையும்.",
+        "feedback_open": "🙏 {name}, சொல்லுங்கள் — பாடநெறி பற்றி உங்கள் மனதில் உள்ளதை எழுதுங்கள்.\n\n🎤 *டைப் செய்வதற்குப் பதிலாக voice note அனுப்பலாம்* — எது எளிதோ அது.",
     },
     "kn": {
         "picker_done": "ಅದ್ಭುತ! ಇನ್ನು ಕನ್ನಡದಲ್ಲಿ ಕಲಿಯೋಣ. 🎉",
@@ -446,6 +451,7 @@ CONTENT = {
         "feedback_ask_mid": "🙏 {name}, ನೀವು {n} ಪಾಠಗಳನ್ನು ಮುಗಿಸಿದ್ದೀರಿ — ಇಲ್ಲಿಯವರೆಗೆ ಹೇಗನಿಸುತ್ತಿದೆ?\n\n• ಕೋರ್ಸ್ ನಿಮಗೆ ಹೇಗನಿಸಿತು?\n• ಇದು ನಿಜವಾಗಿಯೂ ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆಯೇ?\n• ನೀವು ಮುಂದುವರಿಸುತ್ತೀರಾ?\n• ಮುಂದೆ ಏನು ನೋಡಲು ಬಯಸುತ್ತೀರಿ?\n\n🎤 *ಟೈಪ್ ಮಾಡುವ ಬದಲು voice note ಕಳುಹಿಸಬಹುದು* — ಯಾವುದು ಸುಲಭವೋ ಅದು.",
         "module_done": "🎉 *ಮಾಡ್ಯೂಲ್ {n} ಪೂರ್ಣಗೊಂಡಿದೆ, {name}!*\n\nನೀವು ಪೂರ್ಣಗೊಳಿಸಿದವು:\n{list}\n\n📚 ಮುಂದೆ — *ಮಾಡ್ಯೂಲ್ {nx}: {title}*",
         "feedback_thanks": "🙏 ಧನ್ಯವಾದಗಳು, {name}! ನಿಮ್ಮ ಮಾತು ನೇರವಾಗಿ ಈ ಪಾಠಗಳನ್ನು ಮಾಡುವ ತಂಡಕ್ಕೆ ತಲುಪುತ್ತದೆ.",
+        "feedback_open": "🙏 {name}, ಹೇಳಿ — ಕೋರ್ಸ್ ಬಗ್ಗೆ ನಿಮ್ಮ ಮನಸ್ಸಿನಲ್ಲಿ ಇರುವುದನ್ನು ಬರೆಯಿರಿ.\n\n🎤 *ಟೈಪ್ ಮಾಡುವ ಬದಲು voice note ಕೂಡ ಕಳಿಸಬಹುದು* — ಯಾವುದು ಸುಲಭವೋ ಅದು.",
     },
 }
 

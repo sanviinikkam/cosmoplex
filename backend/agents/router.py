@@ -34,6 +34,7 @@ INTENTS = (
     "question",        # a genuine doubt about the course content -> Teacher
     "ask_doubt",       # says they HAVE a doubt but has not asked it yet
     "refer",           # wants to invite/share with a friend
+    "feedback",        # an opinion about the course, or an offer to give one (+ "value")
     "switch_language", # wants the course in a different language (+ "language")
     "give_name",       # answering the name question, possibly in a sentence (+ "value")
     "change_name",     # wants the name we call them by changed (+ "value" if they said it)
@@ -60,6 +61,12 @@ The ONLY valid intents:
                     it yet ("i have a doubt", "mujhe ek doubt hai", "can I ask something?"). If the
                     question itself is there, it is "question", not ask_doubt.
 - refer           — they want to invite, share, forward or tell a friend about the course
+- feedback        — they are giving an OPINION about the course, or offering to ("i want to give
+                    feedback", "the videos are too fast", "loved this lesson", "please add more
+                    examples"). If the opinion itself is in the message, put it in "value"; if they
+                    only offered, omit it. A QUESTION about the course is still "question" —
+                    "how many lessons are there" is a question, "there are too few lessons" is
+                    feedback.
 - switch_language — they want the course in a DIFFERENT language than it is now. Also set "language".
 - give_name       — they are telling you their name. Put ONLY the name in "value" ("my name Bhuban" -> "Bhuban").
 - change_name     — they want the name we call them by CHANGED ("i want to change my name", "mera naam
@@ -110,6 +117,8 @@ Worked examples, all from real messages this got wrong before:
    They want it changed but have not said to what. No "value" — they get asked.
 "change my name to Rahul" -> {"intent":"change_name","value":"Rahul"}
 "mein apna friend ko bhejna chahta hu" -> {"intent":"refer"}
+"i want to give feedback" -> {"intent":"feedback"}
+"the videos are going too fast for me" -> {"intent":"feedback","value":"The videos go too fast"}
 "kya iske liye paise lagenge" -> {"intent":"question"}
 "i have a doubt" -> {"intent":"ask_doubt"}
    The same words as the button. They are announcing a question, not asking one — invite it,

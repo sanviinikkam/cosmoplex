@@ -1274,8 +1274,10 @@ function VoiceNote({ audioId }: { audioId: string }) {
 }
 
 // What learners said about the course, in their own words. Asked at two points
-// (after the 4th lesson, and when they run out), so the checkpoint is shown —
-// "four lessons in" and "reached the end" are different kinds of opinion.
+// (part-way through, and when they run out) and also volunteered unprompted, so
+// the checkpoint is shown — "two lessons in", "reached the end" and "they
+// brought it up themselves" are different kinds of opinion, and the last is
+// usually the strongest.
 function FeedbackPanel() {
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [asked, setAsked] = useState(0);
@@ -1305,6 +1307,10 @@ function FeedbackPanel() {
   const CHECKPOINT_LABEL: Record<string, string> = {
     mid: "Part-way through", lesson4: "Part-way through", end: "Reached the end",
   };
+  // Volunteered entries are numbered (volunteered, volunteered_2, ...), so match
+  // the family rather than listing every possible key.
+  const checkpointLabel = (k: string) =>
+    k.startsWith("volunteered") ? "They brought it up" : CHECKPOINT_LABEL[k] ?? k;
 
   return (
     <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
@@ -1316,6 +1322,7 @@ function FeedbackPanel() {
             <option value="">All checkpoints</option>
             <option value="mid">Part-way through</option>
             <option value="end">Reached the end</option>
+            <option value="volunteered">They brought it up</option>
           </select>
           <select value={language} onChange={(e) => setLanguage(e.target.value)}
             className="text-xs border border-zinc-300 rounded px-2 py-1">
@@ -1350,7 +1357,7 @@ function FeedbackPanel() {
                 <span className="text-xs text-zinc-400">{r.phone}</span>
                 {r.language && <span className="text-[11px] rounded bg-zinc-100 px-1.5 py-0.5">{r.language}</span>}
                 <span className="text-[11px] rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5">
-                  {CHECKPOINT_LABEL[r.checkpoint] ?? r.checkpoint}
+                  {checkpointLabel(r.checkpoint)}
                 </span>
                 {r.lesson && <span className="text-[11px] text-zinc-400">on {r.lesson}</span>}
                 {r.audioId && (
