@@ -579,9 +579,10 @@ async def list_feedback(
             # Volunteered feedback is numbered (volunteered, volunteered_2, ...)
             # because a learner can bring something up more than once, so the
             # filter matches the family rather than one exact key.
-            if checkpoint and not (key == checkpoint
-                                   or (checkpoint == "volunteered"
-                                       and key.startswith("volunteered"))):
+            # Volunteered feedback and problem reports are numbered
+            # (volunteered_2, problem_3, ...) because a learner can bring
+            # something up more than once, so the filter matches the family.
+            if checkpoint and not (key == checkpoint or key.split("_")[0] == checkpoint):
                 continue
             if language and (r.language or "") != language:
                 continue

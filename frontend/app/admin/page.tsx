@@ -1309,8 +1309,11 @@ function FeedbackPanel() {
   };
   // Volunteered entries are numbered (volunteered, volunteered_2, ...), so match
   // the family rather than listing every possible key.
+  const FAMILY_LABEL: Record<string, string> = {
+    volunteered: "They brought it up", problem: "⚠ Problem reported",
+  };
   const checkpointLabel = (k: string) =>
-    k.startsWith("volunteered") ? "They brought it up" : CHECKPOINT_LABEL[k] ?? k;
+    FAMILY_LABEL[k.split("_")[0]] ?? CHECKPOINT_LABEL[k] ?? k;
 
   return (
     <section className="bg-white rounded-2xl border border-zinc-200 p-5 mb-6">
@@ -1323,6 +1326,7 @@ function FeedbackPanel() {
             <option value="mid">Part-way through</option>
             <option value="end">Reached the end</option>
             <option value="volunteered">They brought it up</option>
+            <option value="problem">⚠ Problem reported</option>
           </select>
           <select value={language} onChange={(e) => setLanguage(e.target.value)}
             className="text-xs border border-zinc-300 rounded px-2 py-1">

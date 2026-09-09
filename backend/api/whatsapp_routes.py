@@ -1471,11 +1471,17 @@ FB_MID, FB_END = "mid", "end"
 # numbered rather than overwritten: someone who tells us twice has said two
 # things, and the second should not erase the first.
 FB_VOLUNTEERED = "volunteered"
+# A fault report. Same storage and same capture path as volunteered feedback —
+# it is still the learner telling us something unprompted — but kept under its
+# own key so the admin can separate "the course could be better" from "the course
+# is broken", which need different people to act on them.
+FB_PROBLEM = "problem"
+FB_UNPROMPTED = (FB_VOLUNTEERED, FB_PROBLEM)
 
 
-def _next_volunteer_key(log: dict) -> str:
-    n = sum(1 for k in log if k.startswith(FB_VOLUNTEERED))
-    return FB_VOLUNTEERED if n == 0 else f"{FB_VOLUNTEERED}_{n + 1}"
+def _next_unprompted_key(log: dict, prefix: str = FB_VOLUNTEERED) -> str:
+    n = sum(1 for k in log if k.split("_")[0] == prefix)
+    return prefix if n == 0 else f"{prefix}_{n + 1}"
 FEEDBACK_COPY = {FB_MID: "feedback_ask_mid", FB_END: "feedback_ask"}
 
 
@@ -2110,7 +2116,7 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
     if kind == "feedback":
         said = (intent.get("value") or "").strip()
         log = _fb_log(session)
-        key = _next_volunteer_key(log)
+        key = _next_unprompted_key(log)
         now = datetime.utcnow().isoformat()
         if said:
             # The opinion was already in the message — record it, do not make them
@@ -2128,6 +2134,87 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
             # No buttons: they are about to type, and a button here would compete
             # with the invitation to do so.
             await send_text(frm, tr(lang, "feedback_open").format(name=nm))
+        return True
+
+    # Only the QUIZ language. Before this, "quiz hindi me karna hai" was read as
+    # switch_language and changed the whole course including the videos — not a
+    # dead end but the wrong action, which is worse.
+    if kind == "quiz_language":
+        chosen = intent.get("language")
+        if not chosen:
+            await _send_quiz_language_picker(frm, lang)
+            return True
+        if chosen == (session.quiz_language or lang):
+            return False                  # already in it — let it fall through
+        session.quiz_language = chosen
+        await db.commit()
+        await send_text(frm, QLANG_SET.get(lang, QLANG_SET["en"]).format(
+            label=LANGS[chosen].split(" (")[0]))
+        await _rerender_quiz_step(db, session, frm, lang, chosen)
+        return True
+
+    # "Send the video again." _wants_video already did this, but by substring
+    # match and only on the lesson screen — asked between lessons, nothing
+    # happened. This is the last keyword matcher in the free-text path.
+    if kind == "repeat_video":
+        if session.stage in (SIGNUP_STAGES | {"howto", "onboarded"}):
+            return False                  # no lesson to repeat yet
+        await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+        return True
+
+    # Skipping the quiz is ONLY offered after failing it, and this must not widen
+    # that. The quiz is the one gate left in the course; letting a routed message
+    # open it mid-attempt would put an LLM in the pass/fail path, which is exactly
+    # what the router is not allowed to be.
+    if kind == "skip_quiz":
+        if session.stage != "quiz_failed":
+            return False
+        session.stage = "between_lessons"
+        _reset_quiz_state(session)
+        await db.commit()
+        await _send_between_choice(db, session, frm, lang, nm)
+        return True
+
+    # Typing "yes" at the sign-up prompt. The narrowest point of the funnel, and
+    # until now the only way through it was the button.
+    if kind == "signup":
+        if session.stage != "onboarded":
+            return False
+        session.stage = "howto"
+        await db.commit()
+        await _send_howto_step(frm, lang, 0)
+        return True
+
+    if kind == "skip_tutorial":
+        if session.stage != "howto":
+            return False
+        session.stage = "lesson"
+        await db.commit()
+        await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
+        return True
+
+    # Something is broken. Stored beside feedback because it is the same act —
+    # telling us unprompted — but under its own key: "the course could be better"
+    # and "the course does not work" need different people to read them.
+    if kind == "report_problem":
+        said = (intent.get("value") or "").strip()
+        log = _fb_log(session)
+        key = _next_unprompted_key(log, FB_PROBLEM)
+        now = datetime.utcnow().isoformat()
+        if said:
+            log[key] = {"asked_at": now, "text": said[:4000], "at": now,
+                        "skipped": False, "stage": session.stage}
+            session.feedback_log = log
+            await db.commit()
+            print(f"⚠ Problem reported ({key}) by {frm} at {session.stage}: {said[:80]!r}")
+            await send_text(frm, tr(lang, "problem_thanks").format(name=nm))
+            await _offer_next_step(db, session, frm, lang, nm)
+        else:
+            log[key] = {"asked_at": now, "text": None, "at": None,
+                        "skipped": False, "stage": session.stage}
+            session.feedback_log = log
+            await db.commit()
+            await send_text(frm, tr(lang, "problem_ask").format(name=nm))
         return True
 
     if kind == "refer":
@@ -2450,7 +2537,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # pending is treated as the feedback. That is the right call — someone
         # just asked a question, and the reply belongs to it.
         _pending_fb = _feedback_pending(session)
-        if _pending_fb and (_pending_fb.startswith(FB_VOLUNTEERED)
+        if _pending_fb and (_pending_fb.startswith(FB_UNPROMPTED)
                             or session.stage in ("between_lessons", "done", "clarify")):
             if reply_id is not None:
                 _clear_feedback_pending(session)
@@ -2463,7 +2550,9 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # exist yet.
                 _nm = (session.name or name or "").strip() or "friend"
                 _lg = session.language or "en"
-                await send_text(frm, tr(_lg, "feedback_thanks").format(name=_nm))
+                await send_text(frm, tr(
+                    _lg, "problem_thanks" if _pending_fb.startswith(FB_PROBLEM)
+                    else "feedback_thanks").format(name=_nm))
                 # Put the menu back. Answering the prompt used up the only
                 # message that had buttons, so without this the learner is
                 # thanked and then left with no way to continue.
@@ -2471,7 +2560,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # Volunteered feedback can arrive mid-lesson or mid-quiz, where
                 # the between-lessons menu would be the wrong screen entirely —
                 # _offer_next_step re-renders whatever step they are actually on.
-                if _pending_fb.startswith(FB_VOLUNTEERED):
+                if _pending_fb.startswith(FB_UNPROMPTED):
                     await _offer_next_step(db, session, frm, _lg, _nm)
                 else:
                     await _send_between_choice(db, session, frm, _lg, _nm)
@@ -3016,7 +3105,9 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # spends Cloudinary bandwidth on every repeat.
         if session.stage == "lesson":
             await db.commit()
-            if reply_id is None and _wants_video(text):
+            # Substring match, so it stays behind the router for the same reason
+            # _detect_language does: only when the router had nothing to say.
+            if reply_id is None and routed is None and _wants_video(text):
                 # They actually asked to see it again.
                 await _send_lesson(db, frm, lang, nm, session.lesson_index or 0)
                 return

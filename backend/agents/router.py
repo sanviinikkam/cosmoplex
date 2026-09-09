@@ -36,6 +36,7 @@ INTENTS = (
     "refer",           # wants to invite/share with a friend
     "feedback",        # an opinion about the course, or an offer to give one (+ "value")
     "switch_language", # wants the course in a different language (+ "language")
+    "quiz_language",   # wants only the QUIZ in a different language (+ "language")
     "give_name",       # answering the name question, possibly in a sentence (+ "value")
     "change_name",     # wants the name we call them by changed (+ "value" if they said it)
     "give_status",     # answering the "what are you doing now" question (+ "value")
@@ -43,6 +44,11 @@ INTENTS = (
     "next_lesson",     # typed rather than tapped: wants the next lesson
     "start_quiz",      # wants to take/retake the quiz
     "practice",        # wants a practice quiz
+    "skip_quiz",       # wants to move on without passing (only offered after a fail)
+    "repeat_video",    # wants to see the lesson video again
+    "signup",          # agreeing to sign up, at the sign-up prompt
+    "skip_tutorial",   # wants out of the how-it-works walkthrough
+    "report_problem",  # something is broken (+ "value")
     "restart",         # start the course over
     "stop",            # stop messaging them
     "other",           # anything else — acknowledge and put them back
@@ -73,6 +79,16 @@ The ONLY valid intents:
                     galat hai"). If they said the new name, put it in "value"; if they did not, omit it.
 - give_status     — they are describing what they currently do (studying, working, job hunting). Put it in "value".
 - give_goal       — they are describing what they want to achieve. Put it in "value".
+- quiz_language   — they want the QUIZ in a different language while the videos stay as they are
+                    ("quiz hindi me karna hai", "can I do the questions in Tamil"). Also set
+                    "language". If they mean the whole course, that is switch_language.
+- repeat_video    — they want to watch the lesson video again ("send the video again", "dobara bhejo")
+- signup          — they are agreeing to sign up / start ("yes", "haan", "sign me up", "let's start")
+- skip_tutorial   — they want to skip the how-it-works walkthrough ("skip this", "chhod do ye")
+- skip_quiz       — they want to move past the quiz without passing it ("skip the quiz", "chhodo")
+- report_problem  — something is BROKEN or not working ("video nahi chal raha", "the quiz is stuck",
+                    "buttons not showing"). Put the description in "value" if they gave one. An
+                    opinion about the course is "feedback"; a thing that does not work is this.
 - next_lesson     — they want to move on to the next lesson
 - start_quiz      — they want to start or retake the quiz
 - practice        — they want a practice quiz
@@ -125,7 +141,12 @@ Worked examples, all from real messages this got wrong before:
    do not answer it.
 "i have a doubt about the quiz" -> {"intent":"ask_doubt"}
 "Ai se youtube blogger banana chahata hu" (stage ask_goal) -> {"intent":"give_goal","value":"Become a YouTube blogger using AI"}
-"hindi" (course is ALREADY hi) -> {"intent":"other"}"""
+"hindi" (course is ALREADY hi) -> {"intent":"other"}
+"quiz hindi me karna hai" (course is en) -> {"intent":"quiz_language","language":"hi"}
+   Only the questions, not the videos. Do NOT use switch_language for this.
+"video dobara bhejo" -> {"intent":"repeat_video"}
+"video nahi chal raha hai" -> {"intent":"report_problem","value":"Video will not play"}
+   Broken, not an opinion — report_problem, not feedback."""
 
 
 def _client():
