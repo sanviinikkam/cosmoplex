@@ -32,7 +32,8 @@ from core.config import settings
 # Which stages mean 'has not finished signup' — one definition, shared.
 from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
-from core.rate_limit import check_rate_limit, check_repeat_loop, should_notify
+from core.rate_limit import (check_ping_pong, check_rate_limit, check_repeat_loop,
+                             note_outbound, should_notify)
 from core.spend_guard import allow_ai_call
 from agents.router import route_message
 from core.settings_store import get_flag
@@ -218,6 +219,10 @@ async def _post(payload: dict) -> httpx.Response | None:
     if not _configured():
         print("⚠ WhatsApp not configured — skipping send")
         return None
+    # When we last spoke to them. The ping-pong detector times the next inbound
+    # against this, so it has to be recorded wherever a message goes out — here,
+    # at the one place they all pass through.
+    note_outbound(payload.get("to"))
     try:
         async with httpx.AsyncClient(timeout=60) as h:
             resp = await h.post(
@@ -926,6 +931,13 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     # times would be read as a loop and silently ignored.
                     if reply_id is None and text and check_repeat_loop(frm, text):
                         print(f"⚠ repeat loop from {frm} — dropping: {text[:60]!r}")
+                        continue
+
+                    # And the version that changes its wording: instant, lengthy
+                    # replies several times running. No human in this deployment
+                    # has ever done it more than once in a row.
+                    if reply_id is None and text and check_ping_pong(frm, text):
+                        print(f"⚠ ping-pong loop from {frm} — locking out: {text[:60]!r}")
                         continue
 
                     # Voice notes: transcribe, then treat as a typed message.

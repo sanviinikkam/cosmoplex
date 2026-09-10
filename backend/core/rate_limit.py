@@ -29,9 +29,19 @@ NOTICE_COOLDOWN = 300   # only send the "slow down" notice at most once per 5 mi
 COOLDOWN_STEPS = [600, 1800, 3600]   # 10 min → 30 min → 60 min (then stays at 60)
 OFFENSE_DECAY = 21600                # forget prior offenses after 6h without one
 
+# Tripping the TYPING limit does not lock the phone. At 5/min that limit is
+# reachable by a real, impatient person — six short messages in under a minute is
+# a normal human — and locking them out of the whole course, buttons included,
+# for ten minutes is a worse outcome than the flood. So typing gets a short
+# typing-only pause: lessons and quizzes keep working throughout. The full
+# lockout is kept for the tap limit (20/min, which no human reaches) and for
+# confirmed automation, where it costs nothing because bots do not tap.
+TEXT_PAUSE = 300                     # 5 min of typing only
+
 _hits: dict[str, deque] = defaultdict(deque)          # (timestamp, kind)
 _last_notice: dict[str, float] = {}
 _cooldown_until: dict[str, float] = {}
+_text_pause_until: dict[str, float] = {}
 _offense_count: dict[str, int] = {}
 _last_offense: dict[str, float] = {}
 
@@ -51,6 +61,9 @@ def check_rate_limit(phone: str, kind: str = "text",
     # In an active lockout → drop without even recording (so it doesn't count).
     if now < _cooldown_until.get(phone, 0):
         return "cooldown"
+    # Typing paused, but taps still welcome — they can carry on with the course.
+    if kind == "text" and now < _text_pause_until.get(phone, 0):
+        return "cooldown"
 
     dq = _hits[phone]
     dq.append((now, kind))
@@ -66,15 +79,23 @@ def check_rate_limit(phone: str, kind: str = "text",
     if day_count > DAY_MAX:
         return "day"
     if window_count > ceiling:
-        # Tripped the burst limit → start (or escalate) a lockout.
-        if now - _last_offense.get(phone, 0) > OFFENSE_DECAY:
-            _offense_count[phone] = 0   # forgiven — behaved for a while
-        n = _offense_count.get(phone, 0)
-        _cooldown_until[phone] = now + COOLDOWN_STEPS[min(n, len(COOLDOWN_STEPS) - 1)]
-        _offense_count[phone] = n + 1
-        _last_offense[phone] = now
+        if kind == "text":
+            # Typing only. They keep every button.
+            _text_pause_until[phone] = now + TEXT_PAUSE
+            return "text_window"
+        _start_lockout(phone, now)
         return "window"
     return None
+
+
+def _start_lockout(phone: str, now: float) -> None:
+    """Block this phone entirely, for longer each time it happens."""
+    if now - _last_offense.get(phone, 0) > OFFENSE_DECAY:
+        _offense_count[phone] = 0       # forgiven — behaved for a while
+    n = _offense_count.get(phone, 0)
+    _cooldown_until[phone] = now + COOLDOWN_STEPS[min(n, len(COOLDOWN_STEPS) - 1)]
+    _offense_count[phone] = n + 1
+    _last_offense[phone] = now
 
 
 def should_notify(phone: str, now: float | None = None) -> bool:
@@ -132,3 +153,63 @@ def check_repeat_loop(phone: str, text: str | None,
     if len(_recent_texts) > 5000:        # never grows without bound
         _recent_texts.clear()
     return sum(1 for t, _ in dq if t == norm) >= LOOP_REPEATS
+
+
+# ── Ping-pong detector: automation whose wording changes ─────────────────────
+# The loop breaker above needs identical text. A bot that varies its auto-reply
+# slips past it, and past the per-minute limit too if it paces itself — 5 typed
+# messages a minute, forever, is 7200 router calls a day.
+#
+# What a varying bot cannot hide is WHEN it replies. Measured over 892 phones and
+# ~2350 typed messages in this deployment:
+#
+#     real learners        median 30.7s after our message, only 3.7% under 4s
+#     the bot that looped  median  1.5s,                     75.5% under 4s
+#
+# One fast reply proves nothing — humans do send them. A RUN of them does. With a
+# 12-character floor (so four-letter gibberish typed fast by a bored human does
+# not count) no real learner in the whole history has ever exceeded a run of 1,
+# while the bot reached 9. Tripping at 3 leaves a threefold margin.
+#
+# A phone caught here is locked out entirely rather than paused: this is not an
+# impatient learner, and a bot loses nothing it was going to use.
+PING_PONG_GAP = 4.0      # seconds after our message
+PING_PONG_RUN = 3        # consecutive fast substantial replies
+PING_PONG_MIN_LEN = 12   # characters — below this it is a person being silly
+
+_last_outbound: dict[str, float] = {}
+_fast_streak: dict[str, int] = {}
+
+
+def note_outbound(phone: str, now: float | None = None) -> None:
+    """Record that we just messaged this learner, so the next inbound can be
+    timed against it."""
+    if not phone:
+        return
+    if len(_last_outbound) > 5000:
+        _last_outbound.clear()
+        _fast_streak.clear()
+    _last_outbound[phone] = now if now is not None else time.time()
+
+
+def check_ping_pong(phone: str, text: str | None,
+                    now: float | None = None) -> bool:
+    """True once this phone has answered us instantly, at length, several times
+    in a row — meaning stop replying and lock it out."""
+    now = now if now is not None else time.time()
+    body = (text or "").strip()
+    if len(body) < PING_PONG_MIN_LEN:
+        return False                    # too short to judge; leave the streak be
+
+    last = _last_outbound.get(phone)
+    if last is None or (now - last) >= PING_PONG_GAP:
+        _fast_streak[phone] = 0         # they took time to read — human pace
+        return False
+
+    streak = _fast_streak.get(phone, 0) + 1
+    _fast_streak[phone] = streak
+    if streak >= PING_PONG_RUN:
+        _fast_streak[phone] = 0
+        _start_lockout(phone, now)
+        return True
+    return False
