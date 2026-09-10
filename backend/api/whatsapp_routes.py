@@ -32,7 +32,7 @@ from core.config import settings
 # Which stages mean 'has not finished signup' — one definition, shared.
 from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
-from core.rate_limit import check_rate_limit, should_notify
+from core.rate_limit import check_rate_limit, check_repeat_loop, should_notify
 from core.spend_guard import allow_ai_call
 from agents.router import route_message
 from core.settings_store import get_flag
@@ -899,23 +899,42 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     frm = msg.get("from")
                     if not frm:
                         continue
+                    # Read the message before limiting it: a tap and a typed
+                    # sentence cost wildly different amounts (a tap costs a DB
+                    # write, a sentence costs a router call and often a Teacher
+                    # call), so they are counted against separate budgets.
+                    reply_id, text = _extract(msg)
+                    is_audio = msg.get("type") == "audio"
+                    kind = "tap" if reply_id else "text"   # audio becomes text
+
                     # Per-phone rate limit — bounds flood/cost abuse before any AI
-                    # or DB work is even queued. Generous limits, real users never hit it.
-                    limit_reason = check_rate_limit(frm)
+                    # or DB work is even queued.
+                    limit_reason = check_rate_limit(frm, kind)
                     if limit_reason:
                         # Notify on the trip only — stay silent during the lockout so we
                         # don't burn (paid) replies on an abuser who keeps hammering.
                         if limit_reason != "cooldown" and should_notify(frm):
                             background_tasks.add_task(_send_rate_limit_notice, frm)
                         continue
+
+                    # The same sentence, three times, inside three minutes: the
+                    # other end is a bot answering our answer. Drop it in
+                    # silence — any reply, including a polite one, is the next
+                    # message in the loop.
+                    # reply_id is None guards this: a tap carries the button's
+                    # TITLE as text, so without it, tapping "Next lesson" three
+                    # times would be read as a loop and silently ignored.
+                    if reply_id is None and text and check_repeat_loop(frm, text):
+                        print(f"⚠ repeat loop from {frm} — dropping: {text[:60]!r}")
+                        continue
+
                     # Voice notes: transcribe, then treat as a typed message.
-                    if msg.get("type") == "audio":
+                    if is_audio:
                         media_id = (msg.get("audio") or {}).get("id")
                         if media_id:
                             background_tasks.add_task(_handle_audio, frm, media_id, name,
                                                       msg.get("id"))
                         continue
-                    reply_id, text = _extract(msg)
                     if reply_id or text:
                         # Meta attaches `referral` only to the first message after an
                         # ad click; it is dropped on later messages, so capture it here.
