@@ -87,10 +87,6 @@ LANGS = {
 # ── Quiz/assignment language switch ──────────────────────────────────────────
 # A separate language JUST for quizzes + assignments (the video/course/UI stays
 # in `session.language`). Reply-button labels must stay ≤ 20 chars.
-QLANG_BTN = {  # button under the lesson video
-    "en": "🌐 Quiz language", "hi": "🌐 क्विज़ भाषा", "mr": "🌐 क्विझ भाषा",
-    "te": "🌐 క్విజ్ భాష", "ta": "🌐 வினா மொழி", "kn": "🌐 ಕ್ವಿಜ್ ಭಾಷೆ",
-}
 QLANG_CHOOSE = {  # list-open button (≤20 chars)
     "en": "Choose language", "hi": "भाषा चुनें", "mr": "भाषा निवडा",
     "te": "భాష ఎంచుకోండి", "ta": "மொழியைத் தேர்வு", "kn": "ಭಾಷೆ ಆಯ್ಕೆಮಾಡಿ",
@@ -120,10 +116,6 @@ def _qlang(session) -> str:
 
 
 # ── Change the WHOLE course language (videos + quizzes + assignments + UI) ──────
-CLANG_BTN = {  # lesson-prompt button (≤20 chars)
-    "en": "🎬 Course language", "hi": "🎬 कोर्स भाषा", "mr": "🎬 कोर्स भाषा",
-    "te": "🎬 కోర్సు భాష", "ta": "🎬 பாட மொழி", "kn": "🎬 ಕೋರ್ಸ್ ಭಾಷೆ",
-}
 CLANG_WARN = {  # warning shown as the picker body
     "en": "⚠️ This changes your *whole course* to the new language — videos, quizzes AND assignments. Choose the language 👇",
     "hi": "⚠️ यह आपके *पूरे कोर्स* को नई भाषा में बदल देगा — videos, quizzes और assignments सब कुछ। भाषा चुनें 👇",
@@ -1372,10 +1364,13 @@ async def _send_lesson(db, to: str, lang: str, name: str = "friend", idx: int = 
     # after would appear ABOVE it. Pause so the video lands first, then the
     # "Start quiz" prompt.
     await asyncio.sleep(LESSON_BUTTON_DELAY_SEC)
+    # One button. The quiz- and course-language pickers used to sit here under
+    # every single video, on every lesson, for everyone — three buttons where
+    # two were about a decision almost nobody makes twice. The router reads
+    # "quiz hindi me karna hai" and "i want the course in tamil" now, so the
+    # capability is still there, just not occupying the screen forever.
     await send_buttons(to, tr(lang, "after_text").format(name=name),
-                       [("quiz", tr(lang, "quiz_btn")),
-                        ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
-                        ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
+                       [("quiz", tr(lang, "quiz_btn"))])
 
 
 def _reset_quiz_state(session) -> None:
@@ -2063,9 +2058,7 @@ async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
         # button to continue. "Start quiz" builds a fresh set and recovers them.
         # The video is already above them either way, so buttons alone.
         await send_buttons(frm, tr(lang, "after_text").format(name=nm),
-                           [("quiz", tr(lang, "quiz_btn")),
-                            ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
-                            ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
+                           [("quiz", tr(lang, "quiz_btn"))])
         return
     # Before the course starts the "next lesson" buttons are meaningless — they
     # have not started a first one. Re-offer the step they are actually on.
@@ -2397,12 +2390,10 @@ async def _rerender_quiz_step(db, session, frm: str, lang: str, qlang: str) -> N
             skippable = not _is_last_in_module(lessons, session.lesson_index or 0)
             await _send_assignment(frm, qlang, assignment, skippable=skippable)
     else:
-        # On the lesson video (pre-quiz) → re-offer Start-quiz + Quiz/Course language.
+        # On the lesson video (pre-quiz) → re-offer Start quiz.
         nm = (session.name or "").strip() or "friend"
         await send_buttons(frm, tr(lang, "after_text").format(name=nm),
-                           [("quiz", tr(lang, "quiz_btn")),
-                            ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
-                            ("course_lang", CLANG_BTN.get(lang, CLANG_BTN["en"]))])
+                           [("quiz", tr(lang, "quiz_btn"))])
 
 
 async def _start_quiz(db, session, frm: str, lang: str, practice: bool = False) -> None:
@@ -2813,6 +2804,9 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             return
 
         # "Quiz language" button → picker that switches ONLY quiz + assignment
+        # No button offers these any more; they are reached by asking ("quiz
+        # hindi me karna hai") or by scrolling up and tapping an old message,
+        # which WhatsApp allows forever. Both still work.
         if reply_id == "quiz_lang":
             await db.commit()
             await _send_quiz_language_picker(frm, lang)
