@@ -2055,8 +2055,13 @@ async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
         assignment = await _assignment_for(db, vid)
         await _send_assignment(frm, lang, assignment)
         return
-    if st == "lesson":
-        # Mid-lesson: the video is already above them, so just the buttons.
+    if st in ("lesson", "quiz", "practice"):
+        # Mid-lesson, or at a quiz whose question set has gone missing — the
+        # branch above returns whenever there ARE questions, so arriving here
+        # from "quiz" means there are none. One real learner is in that state
+        # right now; before this they got an answer and then silence, with no
+        # button to continue. "Start quiz" builds a fresh set and recovers them.
+        # The video is already above them either way, so buttons alone.
         await send_buttons(frm, tr(lang, "after_text").format(name=nm),
                            [("quiz", tr(lang, "quiz_btn")),
                             ("quiz_lang", QLANG_BTN.get(lang, QLANG_BTN["en"])),
@@ -2096,6 +2101,12 @@ async def _offer_next_step(db, session, frm: str, lang: str, nm: str) -> None:
         await _send_profile_question(frm, lang)
     elif st == "ask_goal":
         await _send_goal_question(frm, lang)
+    else:
+        # Anything left (new, welcome, a stage added later) has not chosen a
+        # language yet, so that is the step to put them back on. The point of
+        # this function is that it ALWAYS leaves something to tap; a silent
+        # branch is the dead end it exists to prevent.
+        await _send_language_picker(frm)
 
 
 async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
@@ -2146,6 +2157,9 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
         new_name = (intent.get("value") or "").strip()
         if not new_name:
             session.pending_rename = True   # their next message IS the name
+            # They changed the subject, so an open feedback prompt is no longer
+            # what they are answering.
+            _clear_feedback_pending(session)
             await db.commit()
             await send_text(frm, tr(lang, "rename_ask"))
             return True
@@ -2596,6 +2610,29 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # feedback on lesson 4. Only free text counts, and a transcribed voice
         # note arrives as free text, so it is captured identically.
         #
+        # We just asked what to call them, so this message is the answer. Read
+        # before the router: the reply is usually a bare name, which the router
+        # would return "other" for — it has no way to know what we just asked.
+        #
+        # And before the feedback capture below, because both claim "the next
+        # message" and the rename is always the more recent ask: a learner with
+        # a feedback prompt open who then asked to change their name had the
+        # name they typed filed as their opinion of the course, while the rename
+        # stayed pending and swallowed whatever they said next.
+        if session.pending_rename:
+            session.pending_rename = False
+            if reply_id is not None:
+                await db.commit()       # tapped something instead — drop the ask
+            elif (text or "").strip():
+                session.name = text.strip()[:40]
+                await db.commit()
+                _lg2 = session.language or "en"
+                await send_text(frm, tr(_lg2, "rename_done").format(name=session.name))
+                await _offer_next_step(db, session, frm, _lg2, session.name)
+                return
+            else:
+                await db.commit()
+
         # Runs after the unsubscribe/refer keywords below would... it does not:
         # those are checked further down, so "refer" typed while feedback is
         # pending is treated as the feedback. That is the right call — someone
@@ -2630,26 +2667,19 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                     await _send_between_choice(db, session, frm, _lg, _nm)
                 return
 
-        # We just asked what to call them, so this message is the answer. Read
-        # before the router: the reply is usually a bare name, which the router
-        # would return "other" for — it has no way to know what we just asked.
-        if session.pending_rename:
-            session.pending_rename = False
-            if reply_id is not None:
-                await db.commit()       # tapped something instead — drop the ask
-            elif (text or "").strip():
-                session.name = text.strip()[:40]
-                await db.commit()
-                _lg2 = session.language or "en"
-                await send_text(frm, tr(_lg2, "rename_done").format(name=session.name))
-                await _offer_next_step(db, session, frm, _lg2, session.name)
-                return
-            else:
-                await db.commit()
-
         # ── What did they actually mean? ─────────────────────────────────────
         # Free text only. Buttons are unambiguous and never routed — 64% of
         # inbound messages are taps, so most traffic costs nothing here.
+        #
+        # Nor is a first contact with no language chosen. 878 of the typed
+        # messages in this deployment are somebody's first, and 657 of those are
+        # one identical string — "Hello! Can I get more info on this?", the text
+        # Meta pre-fills into the ad's click-to-WhatsApp button — with 86 more
+        # being the Hindi variant. Reading them cost a paid call each and could
+        # not change what happens next: with no language agreed there is nothing
+        # to say except the language picker. Someone who types "tamil" is still
+        # caught, by the keyword fallback that runs whenever the router is
+        # silent.
         #
         # Runs BEFORE the stage handlers so a language switch works from
         # anywhere. Before this, "Language change kijiye main Hindi karna chahti
@@ -2661,6 +2691,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         routed = None
         if (reply_id is None and (text or "").strip()
                 and session.stage not in ROUTER_SKIP_STAGES
+                and not (session.stage == "new" and not session.language)
                 and not _obviously_the_answer(session.stage, text)):
             routed = await route_message(
                 text, stage=session.stage or "new",

@@ -171,11 +171,17 @@ def check_repeat_loop(phone: str, text: str | None,
 # not count) no real learner in the whole history has ever exceeded a run of 1,
 # while the bot reached 9. Tripping at 3 leaves a threefold margin.
 #
-# A phone caught here is locked out entirely rather than paused: this is not an
-# impatient learner, and a bot loses nothing it was going to use.
+# A phone caught here gets a LONG typing pause, not a full lockout. The number
+# that looped here belongs to a real, engaged learner — 20 lessons completed by
+# tapping, quizzes passed 3/3 — whose phone also runs a business auto-responder.
+# Locking the phone out would have taken the course away from the person to
+# punish the software sharing their number. A text-only pause is also sufficient:
+# the loop is fed entirely by our replies to text, so silencing text ends it,
+# while their buttons keep working.
 PING_PONG_GAP = 4.0      # seconds after our message
 PING_PONG_RUN = 3        # consecutive fast substantial replies
 PING_PONG_MIN_LEN = 12   # characters — below this it is a person being silly
+PING_PONG_PAUSE = 1800   # 30 min of typing; taps unaffected
 
 _last_outbound: dict[str, float] = {}
 _fast_streak: dict[str, int] = {}
@@ -210,6 +216,6 @@ def check_ping_pong(phone: str, text: str | None,
     _fast_streak[phone] = streak
     if streak >= PING_PONG_RUN:
         _fast_streak[phone] = 0
-        _start_lockout(phone, now)
+        _text_pause_until[phone] = now + PING_PONG_PAUSE
         return True
     return False
