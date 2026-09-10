@@ -1725,9 +1725,16 @@ async def _maybe_send_referral(db, session, frm: str, completed: int) -> None:
     await _send_referral_info(db, session, frm)
 
 
-async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> None:
+async def _send_between_choice(db, session, frm: str, lang: str, nm: str,
+                               auto: bool = False) -> None:
     """The post-lesson menu: continue to the next lesson, practice another quiz
-    (a fresh non-repeating set), or ask a doubt."""
+    (a fresh non-repeating set), or ask a doubt.
+
+    With `auto`, there is no menu — the next lesson is simply delivered. Passing
+    the quiz already said "I am ready to continue", so asking again was a tap
+    that only ever had one sensible answer. Practice and doubts have not gone
+    anywhere: both are a sentence away now that free text is read.
+    """
     lessons = await _db_lessons(db, lang)
     cur = session.lesson_index or 0
     # Announced before the next-lesson buttons: it is about what they just
@@ -1735,6 +1742,15 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str) -> Non
     # preamble to the next one.
     await _maybe_announce_module_done(db, session, lessons, cur, frm, lang, nm)
     if cur + 1 < len(lessons):
+        if auto:
+            # Anything belonging to the lesson they just FINISHED goes out first,
+            # so it lands above the next video instead of being buried under a
+            # 2.6 MB file the moment it arrives.
+            if (cur + 1) == FEEDBACK_AFTER_LESSONS:
+                await _maybe_ask_feedback(db, session, frm, lang, nm, FB_MID)
+            await _maybe_send_referral(db, session, frm, cur + 1)
+            await _advance_lesson(db, session, frm, lang, nm)
+            return
         nxt = lessons[cur + 1]
         nxt_title = await _localized_title(db, nxt["video_id"], nxt["title"], lang)
         session.stage = "between_lessons"
@@ -2628,9 +2644,15 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # those are checked further down, so "refer" typed while feedback is
         # pending is treated as the feedback. That is the right call — someone
         # just asked a question, and the reply belongs to it.
+        # No stage condition. It used to require between_lessons/done/clarify,
+        # which was safe while a menu held them there — but passing a quiz now
+        # delivers the next lesson immediately, so an answer to the lesson-2
+        # feedback prompt arrives at stage "lesson" and would have been dropped.
+        # What actually protects this is the rule below: any button tap closes
+        # the prompt, so a doubt typed three lessons later is never filed as
+        # feedback.
         _pending_fb = _feedback_pending(session)
-        if _pending_fb and (_pending_fb.startswith(FB_UNPROMPTED)
-                            or session.stage in ("between_lessons", "done", "clarify")):
+        if _pending_fb:
             if reply_id is not None:
                 _clear_feedback_pending(session)
                 await db.commit()
@@ -2649,13 +2671,13 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 # message that had buttons, so without this the learner is
                 # thanked and then left with no way to continue.
                 #
-                # Volunteered feedback can arrive mid-lesson or mid-quiz, where
-                # the between-lessons menu would be the wrong screen entirely —
-                # _offer_next_step re-renders whatever step they are actually on.
-                if _pending_fb.startswith(FB_UNPROMPTED):
-                    await _offer_next_step(db, session, frm, _lg, _nm)
-                else:
-                    await _send_between_choice(db, session, frm, _lg, _nm)
+                # _offer_next_step, never _send_between_choice: it re-renders
+                # whatever step they are ON. The checkpoint answer used to be
+                # safe to treat as "between lessons", but passing a quiz now
+                # delivers the next lesson immediately, so that answer arrives
+                # mid-lesson — and the between-lessons menu then announced a
+                # lesson they had not reached and fired a second referral for it.
+                await _offer_next_step(db, session, frm, _lg, _nm)
                 return
 
         # ── What did they actually mean? ─────────────────────────────────────
@@ -3069,7 +3091,8 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                     # flow is video -> quiz -> next lesson, so go straight to the
                     # between-lessons choices instead of the assignment step.
                     if not await get_flag(db, "assignments_enabled"):
-                        await _send_between_choice(db, session, frm, lang, nm)
+                        # Straight into the next lesson — they just passed.
+                        await _send_between_choice(db, session, frm, lang, nm, auto=True)
                         return
                     vid = await _current_video_id(db, session, lang)
                     assignment = await _assignment_for(db, vid)
