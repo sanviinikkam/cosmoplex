@@ -413,6 +413,10 @@ class WhatsAppSession(Base):
     # onboarding once the name arrived — and without it the reply ("Rahul", on
     # its own) is just an unclassifiable word and the rename never lands.
     pending_rename = Column(Boolean, default=False)
+    # Teacher answers used today, and the UTC day they belong to. On the session
+    # rather than in memory so a deploy does not hand everyone a fresh allowance.
+    teacher_calls_today = Column(Integer, default=0)
+    teacher_calls_date = Column(String(10), nullable=True)   # 'YYYY-MM-DD', UTC
     last_referral_lesson = Column(Integer, nullable=True)                        # learner texted "unsubscribe" — suppresses ALL proactive nudges/marketing
 
 

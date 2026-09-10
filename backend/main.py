@@ -43,6 +43,10 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS pending_rename BOOLEAN DEFAULT FALSE"))
             await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS teacher_calls_today INTEGER DEFAULT 0"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS teacher_calls_date VARCHAR(10)"))
+            await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMP"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_key VARCHAR(40)"))

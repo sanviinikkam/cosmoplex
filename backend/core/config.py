@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     # default for the current scale; raise it (env var) as usage legitimately grows.
     daily_ai_call_limit: int = 2000
 
+    # And a per-LEARNER daily cap on Teacher answers. The global one above bounds
+    # the bill; this bounds one person's share of it, so a single learner (or one
+    # more looping bot) cannot spend the whole day's budget before anyone else
+    # gets a question answered. Only the Teacher is capped — the intent router
+    # keeps running, so a capped learner can still change language, ask for the
+    # next lesson or refer a friend by typing.
+    teacher_daily_per_user: int = 20
+
     # Referral program
     referral_reward_rupees: int = 50
     referral_demo_mode: bool = True       # True = NO real money moves; payouts auto-marked as demo

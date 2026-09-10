@@ -1836,6 +1836,25 @@ async def _course_facts(db, lang: str) -> str:
     return chr(10).join(lines)
 
 
+def _teacher_quota_left(session) -> int:
+    """Teacher answers this learner has left today (UTC day)."""
+    cap = settings.teacher_daily_per_user
+    if session.teacher_calls_date != datetime.utcnow().strftime("%Y-%m-%d"):
+        return cap                      # a new day — the count is stale
+    return max(0, cap - (session.teacher_calls_today or 0))
+
+
+def _spend_teacher_call(session) -> None:
+    """Count one answered question against today. Called only after the model
+    actually replied: a call that failed on an empty balance or a timeout gave
+    the learner nothing, and charging them for it would be twice wrong."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if session.teacher_calls_date != today:
+        session.teacher_calls_date = today
+        session.teacher_calls_today = 0
+    session.teacher_calls_today = (session.teacher_calls_today or 0) + 1
+
+
 async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) -> None:
     """Answer a free-text question via the Teacher agent, scoped to exactly what
     this learner has actually completed (admin-uploaded module content docs)."""
@@ -1844,6 +1863,18 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         return
     if not allow_ai_call():
         await send_text(frm, tr(lang, "ai_busy"))
+        return
+
+    _nm = (session.name or "").strip() or "friend"
+    # Per-learner daily cap. The global spend guard above stops the whole service
+    # at once, which punishes everyone for one person's usage; this stops one
+    # learner instead. Only the Teacher is capped — the router still runs, so
+    # they can keep changing language, asking for the next lesson or referring a
+    # friend by typing, and the lesson/quiz flow is untouched.
+    if _teacher_quota_left(session) <= 0:
+        await send_text(frm, tr(lang, "ai_daily_limit").format(
+            name=_nm, n=settings.teacher_daily_per_user))
+        await _offer_next_step(db, session, frm, lang, _nm)
         return
 
     lessons = await _db_lessons(db, lang)
@@ -1884,10 +1915,12 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         print(f"⚠ teacher returned nothing for {frm}")
         await send_text(frm, tr(lang, "ai_busy"))
         return
+    _spend_teacher_call(session)
+    await db.commit()
     await send_text(frm, _whatsapp_markdown(reply, lang))
     # An answer with no button was the dead end learners kept hitting: they asked
     # something, got a reply, and had nothing to tap to carry on.
-    await _offer_next_step(db, session, frm, lang, (session.name or "").strip() or "friend")
+    await _offer_next_step(db, session, frm, lang, _nm)
 
 
 def _shuffle_options(item: dict, phone: str, qidx: int) -> dict:
