@@ -1326,7 +1326,11 @@ function FeedbackPanel() {
             <option value="mid">Part-way through</option>
             <option value="end">Reached the end</option>
             <option value="volunteered">They brought it up</option>
-            <option value="problem">⚠ Problem reported</option>
+            {/* Fault reports are super-only; the server filters them out for the
+                other roles regardless, this just avoids offering a dead filter. */}
+            {getAdminRole() === "super" && (
+              <option value="problem">⚠ Problem reported</option>
+            )}
           </select>
           <select value={language} onChange={(e) => setLanguage(e.target.value)}
             className="text-xs border border-zinc-300 rounded px-2 py-1">

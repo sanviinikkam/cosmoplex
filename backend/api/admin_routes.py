@@ -544,12 +544,17 @@ async def clear_team_password(
     return {"role": role, "configured": False}
 
 
+# Matches FB_PROBLEM in the WhatsApp flow. Entries are numbered (problem,
+# problem_2, ...), so comparisons are against the family, not the exact key.
+FB_PROBLEM_KEY = "problem"
+
+
 @router.get("/feedback")
 async def list_feedback(
     checkpoint: str | None = None,
     language: str | None = None,
     answered_only: bool = True,
-    _: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
+    role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
     db: AsyncSession = Depends(get_db),
 ):
     """Learner feedback, newest first.
@@ -558,7 +563,16 @@ async def list_feedback(
     learners said about the COURSE, and the content admin — who cannot open a
     transcript — is the person who most needs to read it. Masking keeps it an
     opinion attached to a learner rather than a contact list.
+
+    Problem reports are the exception: super only. They are fault reports, not
+    opinions — nobody writing lessons or running campaigns can act on "the video
+    will not play", and one learner hitting a broken step files the same report
+    over and over, which buries the feedback the other two roles came here for.
+    Filtered server-side, so hiding the option in the UI is not what enforces it.
     """
+    show_problems = role == ADMIN_SUPER
+    if checkpoint == FB_PROBLEM_KEY and not show_problems:
+        return {"items": [], "asked": 0, "answered": 0, "responseRate": 0}
     rows = (await db.execute(
         select(WhatsAppSession).where(WhatsAppSession.feedback_log.is_not(None)))).scalars().all()
 
@@ -569,6 +583,8 @@ async def list_feedback(
         for key, entry in log.items():
             if not isinstance(entry, dict):
                 continue
+            if key.split("_")[0] == FB_PROBLEM_KEY and not show_problems:
+                continue        # before the counters, so the rate is not skewed
             if entry.get("asked_at"):
                 asked += 1
             text_val = (entry.get("text") or "").strip()
