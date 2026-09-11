@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -358,7 +359,10 @@ async def health(db: int = 0):
     return {
         "status": "ok",
         "environment": settings.environment,
-        "build": "typing-everywhere",
+        # The real commit, from Render's own environment. This used to be a
+        # hand-typed label, which meant it kept naming a deploy from days
+        # earlier and made "is my push live?" unanswerable.
+        "build": (os.getenv("RENDER_GIT_COMMIT") or "local")[:12],
         "db": db_status,
         "whatsapp": {
             "onboarding": True,
