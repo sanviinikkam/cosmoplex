@@ -888,6 +888,30 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
+                # WHOSE number was this sent to?
+                #
+                # A WhatsApp Business Account can be shared with more than one
+                # Meta app, and every subscribed app receives the webhooks for
+                # every number on it. So messages addressed to a completely
+                # different product on the same WABA arrive here, and without
+                # this check we treated them as ours: we logged another team's
+                # conversations into this admin portal, spent router and Teacher
+                # calls on them, and replied from the Cosmoplex number telling
+                # their testers they had "reached the wrong chat".
+                #
+                # It was not subtle in hindsight — we received taps on Checkout,
+                # Cart and Menu buttons, none of which this bot has ever sent.
+                #
+                # Only skip when the payload actually names a different number:
+                # a missing metadata block must not silently drop real traffic.
+                inbound_id = str((value.get("metadata") or {}).get("phone_number_id") or "")
+                ours = str(settings.whatsapp_phone_number_id or "")
+                if ours and inbound_id and inbound_id != ours:
+                    n_msgs = len(value.get("messages") or [])
+                    if n_msgs:
+                        print(f"↷ ignoring {n_msgs} message(s) for phone_number_id "
+                              f"{inbound_id} — not ours ({ours})")
+                    continue
                 contacts = value.get("contacts", [])
                 name = contacts[0].get("profile", {}).get("name") if contacts else None
                 for msg in value.get("messages", []):
