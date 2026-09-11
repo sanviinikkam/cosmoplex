@@ -886,6 +886,11 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
     data = json.loads(raw_body)
     try:
         for entry in data.get("entry", []):
+            # The top-level entry id IS the WhatsApp Business Account id. Worth
+            # naming in the log below: when a message arrives for a number that
+            # is not ours, this says which WABA it came from, which is the thing
+            # you need in order to unsubscribe this app from it.
+            waba_id = str(entry.get("id") or "")
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 # WHOSE number was this sent to?
@@ -909,8 +914,10 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                 if ours and inbound_id and inbound_id != ours:
                     n_msgs = len(value.get("messages") or [])
                     if n_msgs:
-                        print(f"↷ ignoring {n_msgs} message(s) for phone_number_id "
-                              f"{inbound_id} — not ours ({ours})")
+                        display = (value.get("metadata") or {}).get("display_phone_number")
+                        print(f"↷ ignoring {n_msgs} message(s) for {display or '?'} "
+                              f"(phone_number_id {inbound_id}, WABA {waba_id or '?'}) "
+                              f"— not ours ({ours}). Unsubscribe this app from that WABA.")
                     continue
                 contacts = value.get("contacts", [])
                 name = contacts[0].get("profile", {}).get("name") if contacts else None
