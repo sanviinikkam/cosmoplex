@@ -413,6 +413,11 @@ class WhatsAppSession(Base):
     # onboarding once the name arrived — and without it the reply ("Rahul", on
     # its own) is just an unclassifiable word and the rename never lands.
     pending_rename = Column(Boolean, default=False)
+    # Told once that the course now has levels. Delivered on their next message
+    # rather than broadcast: only a quarter of learners are inside WhatsApp's
+    # 24-hour window at any moment, so a broadcast would simply fail for most of
+    # them, and templates for it do not exist yet.
+    levels_announced = Column(Boolean, default=False)
     # Teacher answers used today, and the UTC day they belong to. On the session
     # rather than in memory so a deploy does not hand everyone a fresh allowance.
     teacher_calls_today = Column(Integer, default=0)
@@ -431,6 +436,35 @@ class WhatsAppMessage(Base):
     msg_type = Column(String(20), nullable=True)             # text|button|list|video|image|audio|template
     content = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class WhatsAppCertificate(Base):
+    """One certificate, for one learner, at one level.
+
+    A separate table rather than more columns on the session, because levels are
+    plural: a learner holds Level 1 and later Level 2, and the old single-slot
+    design could only ever record the last one. The unique constraints matter —
+    `code` is what /verify resolves, and (phone, level) is what makes issuing
+    idempotent no matter how many times the gate is re-evaluated.
+
+    `name` is the name AS PRINTED. A learner who renames themselves afterwards
+    must not make their own certificate disagree with its verification page.
+    """
+    __tablename__ = "wa_certificates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    phone = Column(String(20), index=True, nullable=False)
+    level = Column(Integer, nullable=False)
+    code = Column(String(20), unique=True, nullable=False)
+    pdf = Column(String(120), nullable=True)      # filename under certificates/
+    name = Column(String(120), nullable=True)
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    # Frozen at issue: the modules and lesson count printed on the sheet, so a
+    # later course edit cannot change what an issued certificate claims.
+    modules = Column(JSONB, nullable=True)
+    lessons = Column(Integer, nullable=True)
+
+    __table_args__ = (UniqueConstraint("phone", "level", name="uq_wa_cert_phone_level"),)
 
 
 class FeedbackAudio(Base):

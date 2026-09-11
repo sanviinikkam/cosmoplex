@@ -43,6 +43,7 @@ from core.config import settings
 from db.database import get_db
 from api.whatsapp_drip import SIGNUP_STAGES
 from db.models import (
+    WhatsAppCertificate,
     AdminAudit,
     FeedbackAudio,
     Course, CourseModule, Section, Video, VideoLanguageVariant, VideoProgress,
@@ -286,8 +287,15 @@ async def dashboard(_: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, A
             "active7d": await count(WhatsAppSession, WhatsAppSession.last_active_at >= now - timedelta(days=7)),
             # "caught up", not "completed" — see the note in the campaigns funnel.
             "completed": await count(WhatsAppSession, WhatsAppSession.stage == "done"),
-            "certified": await count(WhatsAppSession,
-                                     WhatsAppSession.certificate_code.is_not(None)),
+            # Distinct learners holding at least one level certificate, plus the
+            # split. Counted from wa_certificates, not the session: a learner can
+            # hold Level 1 and Level 2, which the old single column could not say.
+            "certified": (await db.execute(select(func.count(func.distinct(
+                WhatsAppCertificate.phone))))).scalar() or 0,
+            "certifiedByLevel": {
+                str(lv): n for lv, n in (await db.execute(
+                    select(WhatsAppCertificate.level, func.count())
+                    .group_by(WhatsAppCertificate.level))).all()},
             "byStage": await group(WhatsAppSession.stage),
             "byLanguage": await group(WhatsAppSession.language),
             # Same microlesson label the user directory shows. This payload shares
@@ -939,6 +947,9 @@ async def campaign_report(
     if end is not None:
         base = base.where(arrived < end)
     rows = (await db.execute(base)).scalars().all()
+    # One query for the whole report rather than a lookup per row.
+    certified_phones = {p for (p,) in (await db.execute(
+        select(WhatsAppCertificate.phone).distinct())).all()}
     buckets: dict[str, dict] = {}
     for r in rows:
         key = r.campaign or "organic"
@@ -971,9 +982,9 @@ async def campaign_report(
         # it "completed" claimed something that had not happened.
         if r.stage == "done":
             b["completed"] += 1
-        # The real completion signal: a certificate is only ever issued once the
-        # whole course is finished, and only while course_complete is on.
-        if getattr(r, "certificate_code", None):
+        # A certificate is the real completion signal — now per level, so this
+        # counts learners who hold at least one.
+        if r.phone in certified_phones:
             b["certified"] += 1
         if getattr(r, "opt_out", False):
             b["opted_out"] += 1
@@ -1204,6 +1215,14 @@ async def whatsapp_detail(phone: str,
         nudges = sum((v or {}).get("n", 0) for v in s.nudge_log.values() if isinstance(v, dict))
     return {
         "type": "whatsapp",
+        "certificates": [
+            {"level": c.level, "code": c.code, "issuedAt":
+                c.issued_at.isoformat() if c.issued_at else None,
+             "modules": c.modules if isinstance(c.modules, list) else [],
+             "lessons": c.lessons}
+            for c in (await db.execute(
+                select(WhatsAppCertificate).where(WhatsAppCertificate.phone == phone)
+                .order_by(WhatsAppCertificate.level))).scalars().all()],
         "name": s.name or "—", "phone": ("•••• " + phone[-4:]) if len(phone) >= 4 else phone,
         "language": lang, "stage": s.stage,
         "currentStatus": s.current_status, "goal": s.goal,

@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 import random
 import re
 import unicodedata
@@ -32,6 +33,9 @@ from core.config import settings
 # Which stages mean 'has not finished signup' — one definition, shared.
 from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
+from core.levels import (LEARNER_MAX_MODULE_ORDER, LEVELS, last_module_of_level,
+                         level_for_module, modules_in_level)
+from db.models import WhatsAppCertificate
 from core.rate_limit import (check_ping_pong, check_rate_limit, check_repeat_loop,
                              note_outbound, should_notify)
 from core.spend_guard import allow_ai_call
@@ -1198,6 +1202,12 @@ async def _db_lessons(db, lang: str) -> list[dict]:
     for module in course.modules:            # relationships already order_by order_index
         if stop:
             break
+        # The certified path is shorter than the catalogue. Modules past the last
+        # certified one stay in the admin portal — uploadable, editable — but a
+        # learner never reaches them, so the course ends where Level 2 ends and
+        # they get the coming-soon message rather than uncertified content.
+        if (module.order_index or 0) > LEARNER_MAX_MODULE_ORDER:
+            break
         for section in module.sections:
             if stop:
                 break
@@ -1217,6 +1227,7 @@ async def _db_lessons(db, lang: str) -> list[dict]:
                                 "cloud_id": cloud_id,
                                 "label": f"{module.order_index + 1}.{section.order_index + 1}",
                                 "module_id": module.id,
+                                "module_order": module.order_index or 0,
                                 "module_title": module.title, "content_doc": module.content_doc})
     if not lessons:
         # DB not populated in this environment — fall back to the built-in lesson
@@ -1435,33 +1446,93 @@ def _is_last_in_module(lessons: list[dict], idx: int) -> bool:
     return lessons[idx].get("module_id") != lessons[idx + 1].get("module_id")
 
 
-async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> bool:
-    """Issue + send the completion certificate when a WhatsApp learner finishes
-    the whole course. Idempotent and deterministic:
-      • Gate: session.stage must be 'done' (reached only after passing every
-        lesson's quiz). No LLM decides eligibility — golden rule #2.
-      • Runs at most once per learner (guarded by session.certificate_pdf).
-    Returns True if it announced the certificate THIS call (so the caller can end
-    the turn instead of also routing the message to the Teacher agent). Degrades
-    gracefully: if WeasyPrint or BACKEND_URL is missing, the learner still gets a
-    congratulations message; only the PDF attachment is skipped."""
-    if session.stage != "done" or session.certificate_pdf:
-        return False
-    # Reaching the end of the UPLOADED lessons is not the same as finishing the
-    # course. While the course is still being published, "done" only means we ran
-    # out of content, so certifying here would hand out a completion certificate
-    # for a course nobody has completed. Gated here rather than at each call site
-    # so no future caller can bypass it.
-    if not await get_flag(db, "course_complete"):
-        return False
-    name = (session.name or nm or "").strip() or "Learner"
+# The module sizes, cached. This is consulted every time a learner finishes a
+# lesson, and it is a three-level join over the whole course — without the cache
+# that is a full course load per completed lesson, and per learner when
+# backfilling. Short TTL rather than permanent: an admin who uploads a video
+# changes these numbers, and a minute's staleness only ever delays a
+# certificate, never issues a wrong one.
+_MODULE_COUNTS: tuple[float, dict[int, int]] | None = None
+_MODULE_COUNTS_TTL = 60.0
 
-    # Generate the PDF (same design as the web certificate; name is escaped inside).
-    # We only mark the certificate "issued" — and only announce it — once the PDF
-    # actually renders. If generation fails we stay SILENT (no congrats text) and
-    # leave certificate_pdf unset, so the message falls through to normal chat and
-    # a future message can retry. This prevents a done-learner who keeps chatting
-    # from being spammed with the congrats line while generation is broken.
+
+async def _module_lesson_counts(db) -> dict[int, int]:
+    """How many videos each module has in the COURSE, regardless of language.
+
+    The yardstick for "did they finish this module". A learner's own lesson list
+    stops at the first video missing in their language, so counting only their
+    list would certify a module that is half translated.
+    """
+    global _MODULE_COUNTS
+    if _MODULE_COUNTS and (time.monotonic() - _MODULE_COUNTS[0]) < _MODULE_COUNTS_TTL:
+        return _MODULE_COUNTS[1]
+    res = await db.execute(
+        select(Course).order_by(Course.created_at).options(
+            selectinload(Course.modules)
+            .selectinload(CourseModule.sections)
+            .selectinload(Section.videos)
+        )
+    )
+    course = res.scalars().first()
+    if not course:
+        return {}
+    counts = {m.order_index or 0: sum(len(sec.videos) for sec in m.sections)
+              for m in course.modules}
+    _MODULE_COUNTS = (time.monotonic(), counts)
+    return counts
+
+
+async def _levels_completed(db, lessons: list[dict], done: int) -> list[int]:
+    """Levels fully finished, given the first `done` lessons are complete.
+
+    A level counts only when every module in it is finished, and a module only
+    when the learner has done as many of its lessons as the module actually has.
+    Both halves are plain arithmetic — no model is consulted about who is
+    certified, ever.
+    """
+    canonical = await _module_lesson_counts(db)
+    seen: dict[int, int] = {}
+    for l in lessons[:done]:
+        mo = l.get("module_order")
+        if mo is not None:
+            seen[mo] = seen.get(mo, 0) + 1
+    out = []
+    for lv in LEVELS:
+        mods = lv["modules"]
+        if all(canonical.get(m, 0) > 0 and seen.get(m, 0) >= canonical[m] for m in mods):
+            out.append(lv["level"])
+    return out
+
+
+async def _issue_certificate(db, session, frm: str, lang: str, nm: str,
+                             level: int, lessons: list[dict]) -> bool:
+    """Generate, record and deliver ONE level certificate. Returns True if it was
+    announced this call.
+
+    Idempotent on (phone, level): the row is the guard, so re-running the gate —
+    which happens on every lesson the learner finishes — can never issue twice.
+    Nothing is recorded until the PDF actually renders, so a broken renderer
+    leaves the learner uncertified and retryable rather than holding a code with
+    no document behind it.
+    """
+    existing = (await db.execute(
+        select(WhatsAppCertificate).where(WhatsAppCertificate.phone == frm,
+                                          WhatsAppCertificate.level == level))).scalars().first()
+    if existing:
+        return False
+
+    name = (session.name or nm or "").strip() or "Learner"
+    mods = modules_in_level(level)
+    # Module names as the course calls them, in order, plus how many lessons the
+    # level actually contained — both frozen onto the row so a later course edit
+    # cannot change what an issued certificate claims.
+    titles, count = [], 0
+    for m in mods:
+        in_mod = [l for l in lessons if l.get("module_order") == m]
+        if in_mod:
+            titles.append(in_mod[0].get("module_title") or f"Module {m + 1}")
+            count += len(in_mod)
+
     try:
         from weasyprint import HTML as WP_HTML
         from agents.certifier import _generate_certificate_html, generate_certificate_code
@@ -1469,51 +1540,51 @@ async def _deliver_certificate(db, session, frm: str, lang: str, nm: str) -> boo
         import uuid as _uuid
         cert_dir = Path("certificates")
         cert_dir.mkdir(exist_ok=True)
-        filename = f"cert_wa_{_uuid.uuid4().hex}.pdf"   # unguessable → not enumerable by phone
-        # Public verification id + the exact issue date, both frozen here so the
-        # printed certificate and the /verify page can never disagree.
-        code = session.certificate_code or generate_certificate_code()
-        issued_at = session.certificate_issued_at or datetime.utcnow()
-        # Freeze the printed name too, so regenerating this certificate later
-        # reproduces it byte-for-byte even if the learner changes their name.
-        cert_name = session.certificate_name or name
-        html_doc = _generate_certificate_html(cert_name, issued_at, code)
+        filename = f"cert_wa_l{level}_{_uuid.uuid4().hex}.pdf"   # unguessable
+        code = generate_certificate_code()
+        issued_at = datetime.utcnow()
+        html_doc = _generate_certificate_html(name, issued_at, code,
+                                              level=level, modules=titles, lessons=count)
         WP_HTML(string=html_doc).write_pdf(str(cert_dir / filename))
-        # Persist before delivery: the QR is already printed into the PDF, so the
-        # code must resolve even if the send fails and is retried later.
-        session.certificate_code = code
-        session.certificate_issued_at = issued_at
-        session.certificate_name = cert_name
-        await db.commit()
     except Exception as e:
-        print(f"⚠ WhatsApp certificate generation failed: {type(e).__name__}: {e}")
-        return False  # certificate_pdf stays unset → retries on the learner's next message
+        print(f"⚠ Level {level} certificate generation failed for {frm}: {type(e).__name__}: {e}")
+        return False
 
+    row = WhatsAppCertificate(phone=frm, level=level, code=code, name=name,
+                              issued_at=issued_at, modules=titles, lessons=count)
+    db.add(row)
+    await db.commit()
+    print(f"🎓 Level {level} certificate {code} issued to {frm}")
+
+    await send_text(frm, tr(lang, "cert_level_ready").format(name=name, level=level))
     base = (settings.backend_url or "").rstrip("/")
     if not base:
-        # Misconfiguration: we can't hand WhatsApp a fetchable link. Mark issued
-        # anyway so we don't re-announce forever; a log tells the operator to fix it.
-        print("⚠ Certificate generated but BACKEND_URL is unset — cannot deliver the "
-              "PDF over WhatsApp. Set BACKEND_URL to this backend's public URL.")
-        session.certificate_pdf = filename
-        await db.commit()
-        await send_text(frm, tr(lang, "cert_ready").format(name=name))
+        print("⚠ Certificate generated but BACKEND_URL is unset — cannot deliver the PDF.")
         return True
-
-    # Announce, then deliver. Only mark the certificate "issued" once WhatsApp
-    # ACCEPTS the document — so a send failure leaves it unissued and the learner's
-    # next message retries delivery instead of losing the certificate silently.
-    await send_text(frm, tr(lang, "cert_ready").format(name=name))
     delivered = await send_document(
         frm, f"{base}/certificates/{filename}",
-        "Cosmoplex_AI_Literacy_Certificate.pdf", tr(lang, "cert_caption"))
+        f"Cosmoplex_AI_Literacy_Level_{level}.pdf",
+        tr(lang, "cert_caption").format(level=level))
     if delivered:
-        session.certificate_pdf = filename
+        row.pdf = filename
         await db.commit()
     else:
-        print("⚠ Certificate document not accepted by WhatsApp — will retry on the "
-              "learner's next message.")
-    return True   # announced this turn → caller should end the turn (no Teacher greeting)
+        print("⚠ Certificate document not accepted by WhatsApp — the code still resolves.")
+    return True
+
+
+async def _maybe_issue_certificates(db, session, frm: str, lang: str, nm: str,
+                                    lessons: list[dict], done: int) -> bool:
+    """Issue every level the learner has now earned and does not already hold.
+
+    Called wherever a lesson is completed. Lowest level first, so someone who
+    qualifies for both at once receives them in the order they earned them.
+    """
+    announced = False
+    for level in await _levels_completed(db, lessons, done):
+        if await _issue_certificate(db, session, frm, lang, nm, level, lessons):
+            announced = True
+    return announced
 
 
 # Where we ask how it is going. "lesson4" catches people while they are still
@@ -1646,7 +1717,7 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     # a language can run out earlier than another.
     finished = await get_flag(db, "course_complete")
     await send_text(frm, tr(lang, "done" if finished else "no_more").format(name=nm))
-    await _deliver_certificate(db, session, frm, lang, nm)
+    await _maybe_issue_certificates(db, session, frm, lang, nm, lessons, len(lessons))
     # They have seen everything that exists in their language — the moment their
     # opinion is worth the most, and the only moment we are not interrupting a
     # lesson to ask for it.
@@ -1772,6 +1843,10 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str,
     # finished, so it reads as the closing beat of the module rather than a
     # preamble to the next one.
     await _maybe_announce_module_done(db, session, lessons, cur, frm, lang, nm)
+    # Checked on every completed lesson, not only at the end of the course: a
+    # Hindi learner finishing module 3 has earned Level 1 with seven lessons of
+    # module 4 still ahead of them, and an end-of-course check would never see it.
+    await _maybe_issue_certificates(db, session, frm, lang, nm, lessons, cur + 1)
     if cur + 1 < len(lessons):
         if auto:
             # Anything belonging to the lesson they just FINISHED goes out first,
@@ -1807,7 +1882,6 @@ async def _send_between_choice(db, session, frm: str, lang: str, nm: str,
              ("get_referral", INVITE_BTN.get(lang, INVITE_BTN["en"])),
              ("ask_doubt", tr(lang, "doubt_btn"))],
         )
-        await _deliver_certificate(db, session, frm, lang, nm)
 
 
 # Things about the course that no lesson will ever teach, but learners keep
@@ -1830,7 +1904,8 @@ COURSE_POLICY = """- The course is FREE for this learner. They pay nothing to ta
   "न अभी, न बाद में" or "हमेशा मुफ़्त", the Marathi "कधीच नाही", and any similar phrasing in Telugu,
   Tamil or Kannada. Saying it in Hindi is not a loophole — it is the same promise, and the company has
   not made it. If the learner presses, say you do not have information about future pricing.
-- Certificate: awarded when they finish the whole course. Not for a single lesson or module.
+- Certificate: one per LEVEL, listed above. Never for a single lesson, and never for a single module —
+  a level is several modules and all of their lessons.
 - Lessons are about 2 minutes each. Self-paced — they can watch any time, and pick up where they left off.
 - After each lesson there are 3 quiz questions; 2 correct passes. They can retake, or skip and move on.
 - Available in 6 languages: English, Hindi, Marathi, Telugu, Tamil, Kannada. They can switch at any time
@@ -1870,17 +1945,31 @@ async def _course_facts(db, lang: str) -> str:
             selectinload(Course.modules)))
         course = res.scalars().first()
         title = course.title if course else "AI101: AI Literacy Certification"
-        modules = [m.title for m in (course.modules if course else [])]
-        total = (await db.execute(select(func.count()).select_from(Video))).scalar() or 0
+        counts = await _module_lesson_counts(db)
+        # The CERTIFIED programme, not the whole catalogue. Modules past Level 2
+        # exist in the admin portal but no learner can reach them, so quoting the
+        # catalogue size would promise lessons nobody can take.
+        total = sum(n for m, n in counts.items() if m <= LEARNER_MAX_MODULE_ORDER)
         available = len(await _db_lessons(db, lang))
+        by_order = {m.order_index or 0: m.title for m in (course.modules if course else [])}
     except Exception as e:
         print(f"WARN course facts unavailable: {type(e).__name__}: {e}")
         return COURSE_POLICY
 
     lines = [f"- Course: {title}."]
-    if modules:
-        lines.append(f"- {len(modules)} modules: {', '.join(modules)}.")
-    lines.append(f"- The full programme is {total} short video lessons.")
+    # Levels, because the certificate is now per level and the Teacher is the
+    # thing learners ask about it. Built from the same map the issuing gate uses,
+    # so the two can never drift apart.
+    for lv in LEVELS:
+        names = [by_order.get(m, f"Module {m + 1}") for m in lv["modules"]]
+        n = sum(counts.get(m, 0) for m in lv["modules"])
+        lines.append(f"- Level {lv['level']} = {', '.join(names)} ({n} microlessons). "
+                     f"Finishing every lesson in those modules earns the Level {lv['level']} "
+                     f"certificate, sent on WhatsApp as a PDF with a verification code.")
+    lines.append("- Certificates are per LEVEL. There is no single end-of-course certificate; "
+                 "Level 1 is earned first, then Level 2. Levels beyond 2 do not exist yet — if "
+                 "asked, say more levels are coming and do not promise when.")
+    lines.append(f"- The certified programme is {total} short video lessons in total.")
     # Said plainly, because it is the honest answer and the gap is real: a Telugu
     # learner can reach one lesson today while the programme is fifty.
     lines.append(f"- {available} of them are ready in this learner's language right now; more are added "
@@ -2648,6 +2737,38 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # feedback on lesson 4. Only free text counts, and a transcribed voice
         # note arrives as free text, so it is captured identically.
         #
+        # ── The course now has levels; tell them once ────────────────────────
+        # On their next message, not as a broadcast: free-form WhatsApp only
+        # delivers inside the 24-hour window, and at any moment about a quarter
+        # of learners are inside it. Announcing on contact reaches all of them
+        # eventually, costs nothing, and needs no approved template.
+        #
+        # The certificate sweep rides along: anyone who already finished a level
+        # under the old rules is issued here, once, and after this the normal
+        # gate at the end of each lesson takes over.
+        if (not session.levels_announced
+                and session.stage not in SIGNUP_STAGES and not session.opt_out):
+            session.levels_announced = True
+            await db.commit()
+            _lg3 = session.language or "en"
+            _nm3 = (session.name or name or "").strip() or "friend"
+            _lessons3 = await _db_lessons(db, _lg3)
+            _counts3 = await _module_lesson_counts(db)
+            _l1 = modules_in_level(1)
+            _sizes = [_counts3.get(m, 0) for m in _l1]
+            _done3 = min((session.lesson_index or 0)
+                         + (1 if session.stage in ("between_lessons", "clarify", "done") else 0),
+                         len(_lessons3), sum(_sizes))
+            await send_text(frm, tr(_lg3, "levels_news").format(
+                name=_nm3, m1=_sizes[0] if len(_sizes) > 0 else 0,
+                m2=_sizes[1] if len(_sizes) > 1 else 0,
+                m3=_sizes[2] if len(_sizes) > 2 else 0,
+                total=sum(_sizes), done=_done3))
+            _earned = min((session.lesson_index or 0)
+                          + (1 if session.stage in ("between_lessons", "clarify", "done") else 0),
+                          len(_lessons3))
+            await _maybe_issue_certificates(db, session, frm, _lg3, _nm3, _lessons3, _earned)
+
         # We just asked what to call them, so this message is the answer. Read
         # before the router: the reply is usually a bare name, which the router
         # would return "other" for — it has no way to know what we just asked.
@@ -3265,9 +3386,10 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
             # Backfill / first-time issue: anyone sitting at 'done' who was never
             # issued a certificate gets it now (idempotent — fires once, ever). If it
             # delivered this turn, end here so we don't also greet via the Teacher.
-            if await _deliver_certificate(db, session, frm, lang, nm):
-                return
             lessons = await _db_lessons(db, lang)
+            if await _maybe_issue_certificates(db, session, frm, lang, nm,
+                                               lessons, len(lessons)):
+                return
             if (session.lesson_index or 0) + 1 < len(lessons):
                 await _advance_lesson(db, session, frm, lang, nm)
                 return

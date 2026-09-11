@@ -57,6 +57,9 @@ export type WaDetail = {
   lesson: { index: number; completed: number; total: number; percent: number; label: string | null; title: string | null };
   quiz: { index: number; correct: number }; nudgesSent: number;
   createdAt: string | null; lastActive: string | null;
+  // One per level earned — a learner can hold Level 1 and Level 2 at once.
+  certificates?: { level: number; code: string; issuedAt: string | null;
+                   modules: string[]; lessons: number | null }[];
 };
 export type WaMessage = { role: "user" | "bot"; type: string | null; content: string | null; at: string | null };
 export type WaTranscript = { phone: string; total: number; shown: number; messages: WaMessage[] };

@@ -268,6 +268,31 @@ function UserDetailModal({ sel, onClose }: { sel: { kind: "wa" | "web"; id: stri
               </div>
               {wa.goal && <Field label="Their goal" value={wa.goal} />}
 
+              {/* Certificates are per level now, so a learner can hold more than
+                  one — listed rather than shown as a yes/no. */}
+              {wa.certificates && wa.certificates.length > 0 && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1.5">
+                    Certificates
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {wa.certificates.map((c) => (
+                      <div key={c.code}
+                        className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+                        <span className="text-sm">🎓</span>
+                        <span className="text-xs font-medium text-zinc-800">Level {c.level}</span>
+                        <span className="font-mono text-[11px] text-zinc-500">{c.code}</span>
+                        {c.issuedAt && (
+                          <span className="text-[11px] text-zinc-400 ml-auto">
+                            {new Date(c.issuedAt + "Z").toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Full conversation transcript */}
               <div>
                 <div className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1.5">

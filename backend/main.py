@@ -47,6 +47,17 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS teacher_calls_date VARCHAR(10)"))
             await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS "
+                "levels_announced BOOLEAN DEFAULT FALSE"))
+            # Level certificates live in their own table (create_all makes it);
+            # these indexes are what /verify and the issuing guard rely on.
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_wa_cert_code "
+                "ON wa_certificates (code)"))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_wa_cert_phone_level "
+                "ON wa_certificates (phone, level)"))
+            await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMP"))
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_nudge_key VARCHAR(40)"))
@@ -267,13 +278,32 @@ async def verify_certificate(code: str):
     {valid: false} rather than 404 so the page can render a clear result."""
     from sqlalchemy import select as _sel
     from db.database import async_session_factory
-    from db.models import WhatsAppSession
+    from db.models import WhatsAppCertificate, WhatsAppSession
 
     code = (code or "").strip().upper()[:20]
     if not code:
         return {"valid": False}
     try:
         async with async_session_factory() as db:
+            # Level certificates first — every certificate issued from now on is
+            # one of these. The session columns below are the single pre-levels
+            # certificate, kept resolvable so an already-printed QR never breaks.
+            cert = (await db.execute(
+                _sel(WhatsAppCertificate).where(WhatsAppCertificate.code == code)
+            )).scalars().first()
+            if cert is not None:
+                mods = cert.modules if isinstance(cert.modules, list) else []
+                return {
+                    "valid": True,
+                    "code": cert.code,
+                    "name": (cert.name or "").strip() or "Learner",
+                    "course": f"AI Literacy Certification · Level {cert.level}",
+                    "level": cert.level,
+                    "modules": mods,
+                    "lessons": cert.lessons,
+                    "issuer": "Cosmoplex",
+                    "issued_at": cert.issued_at.isoformat() + "Z" if cert.issued_at else None,
+                }
             row = (await db.execute(
                 _sel(WhatsAppSession).where(WhatsAppSession.certificate_code == code)
             )).scalars().first()

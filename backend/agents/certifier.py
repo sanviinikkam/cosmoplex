@@ -144,13 +144,45 @@ _SEAL_SVG = """<svg width="19.5mm" height="25.8mm" viewBox="0 0 100 132" xmlns="
 </svg>"""
 
 
-def _generate_certificate_html(name: str, issued_at: datetime, code: str | None = None) -> str:
+def _generate_certificate_html(name: str, issued_at: datetime, code: str | None = None,
+                               level: int | None = None,
+                               modules: list[str] | None = None,
+                               lessons: int | None = None) -> str:
     """Render the certificate. `code` is the public verification id — when given,
-    the certificate carries it in print plus a QR to the verify page."""
+    the certificate carries it in print plus a QR to the verify page.
+
+    `level` and `modules` name what was actually earned. A certificate that says
+    "the AI Literacy Certification course" when the holder completed three
+    modules of it is not a small inaccuracy — it is the one document they will
+    show someone else, so it states the level and lists the modules by name.
+    """
     # Escape the learner-supplied name — it is interpolated into the certificate
     # HTML and rendered by WeasyPrint, so a raw name could inject markup/CSS (or
     # a resource-fetching tag). Names are display-only here; escaping is safe.
     name = html.escape((name or "").strip()) or "Learner"
+    heading = "AI Literacy Certification"
+    if level:
+        heading = f"AI Literacy Certification &middot; Level {level}"
+    # What they actually did, in their own course's words. Listed rather than
+    # summarised: "Level 1" means nothing to a stranger reading the certificate,
+    # and the module names do.
+    if modules:
+        covered = ", ".join(html.escape(m) for m in modules[:-1])
+        covered = f"{covered} and {html.escape(modules[-1])}" if covered else html.escape(modules[-1])
+        count = f" across {lessons} microlessons" if lessons else ""
+        # Deliberately no claim about quizzes. A learner who fails one twice may
+        # skip it and carry on, so "passed every quiz" would be false on some of
+        # the certificates carrying it — and this is the one document they will
+        # show someone else. What is true of every holder is that they completed
+        # the lessons, so that is what it says.
+        body_text = (f"for successfully completing <strong>Level {level}</strong> of the AI Literacy "
+                     f"Certification on the Cosmoplex platform &mdash; covering {covered}"
+                     f"{count}.")
+    else:
+        # The original wording promised "all assigned practical tasks", which
+        # stopped being true when assignments were switched off.
+        body_text = ("for successfully completing the <strong>AI Literacy Certification</strong> course "
+                     "on the Cosmoplex platform.")
     # Format without a zero-padded day, portably (%-d isn't supported on Windows).
     try:
         issued = issued_at.strftime("%B %d, %Y").replace(" 0", " ")
@@ -271,18 +303,14 @@ def _generate_certificate_html(name: str, issued_at: datetime, code: str | None 
 
         <div class="body">
           <div class="eyebrow">Certificate of Completion</div>
-          <div class="heading serif">AI Literacy Certification</div>
+          <div class="heading serif">{heading}</div>
           <div class="heading-rule"></div>
 
           <div class="present">This certificate is proudly presented to</div>
           <div class="name serif">{name}</div>
           <div class="name-rule"></div>
 
-          <div class="desc">
-            for successfully completing the <strong>AI Literacy Certification</strong> course on the
-            Cosmoplex platform — passing every module examination above the required threshold and
-            completing all assigned practical tasks.
-          </div>
+          <div class="desc">{body_text}</div>
         </div>
 
         <div class="footer">

@@ -12,6 +12,9 @@ type Result = {
   course?: string;
   issuer?: string;
   issued_at?: string | null;
+  level?: number;
+  modules?: string[];
+  lessons?: number | null;
 };
 
 async function verify(code: string): Promise<Result> {
@@ -99,6 +102,22 @@ export default async function VerifyPage({
                     </dt>
                     <dd className="mt-1 text-zinc-800">{r.course}</dd>
                   </div>
+                  {/* What the level actually covered. "Level 1" alone means
+                      nothing to whoever is checking this certificate; the module
+                      names are the part that tells them something. */}
+                  {r.modules && r.modules.length > 0 && (
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-[0.14em] text-zinc-400">
+                        Covering
+                      </dt>
+                      <dd className="mt-1 text-zinc-800">
+                        {r.modules.join(" · ")}
+                        {r.lessons ? (
+                          <span className="text-zinc-500"> ({r.lessons} microlessons)</span>
+                        ) : null}
+                      </dd>
+                    </div>
+                  )}
                   {issued && (
                     <div>
                       <dt className="text-[11px] uppercase tracking-[0.14em] text-zinc-400">
