@@ -14,12 +14,12 @@ from db.models import AppSetting
 # next lesson, and the assignment step is opt-in.
 DEFAULTS: dict[str, bool] = {
     "assignments_enabled": False,
-    # Is the whole course uploaded? While False, running out of lessons means
-    # "we haven't published the rest yet", not "you finished" — so the learner is
-    # told more is coming and NO certificate is issued. Turning this on is what
-    # makes finishing the last lesson an actual completion.
-    "course_complete": False,
 }
+# course_complete used to live here. It was a global switch deciding whether
+# running out of lessons meant "you finished" or "more is coming" — but how much
+# is published differs per language, so no single value was ever right, and an
+# admin had no way to set it correctly. It is now derived per learner from the
+# levels they hold, in _advance_lesson.
 
 
 def _as_bool(raw: str | None, default: bool) -> bool:

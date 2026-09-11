@@ -1711,11 +1711,13 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
         return True
     session.stage = "done"
     await db.commit()
-    # Out of lessons for THIS language. Until the course is marked complete that
-    # means "more is coming", not "you finished" — lessons without an uploaded
-    # video for the learner's language are filtered out of the list entirely, so
-    # a language can run out earlier than another.
-    finished = await get_flag(db, "course_complete")
+    # Out of lessons for THIS language. Whether that means "you finished" or
+    # "more is coming" is answered per learner, not by a global switch: English
+    # has three modules uploaded, Hindi four, Marathi two, so any single setting
+    # is wrong for somebody. They have finished when they hold every level —
+    # which is the same arithmetic that issues the certificates, so the message
+    # and the certificate can never disagree.
+    finished = len(await _levels_completed(db, lessons, len(lessons))) == len(LEVELS)
     await send_text(frm, tr(lang, "done" if finished else "no_more").format(name=nm))
     await _maybe_issue_certificates(db, session, frm, lang, nm, lessons, len(lessons))
     # They have seen everything that exists in their language — the moment their
