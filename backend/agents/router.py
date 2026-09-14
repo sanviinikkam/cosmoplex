@@ -119,6 +119,12 @@ Rules that matter:
 - Extract, do not echo. "value" is the name/status/goal alone, never the whole sentence.
 - When genuinely unsure between a doubt and anything else, choose "question". A wrong answer is
   recoverable; a wrong ACTION is not.
+- The same tie-break applies between "question" and "course_info": if it could be either, choose
+  "question". course_info is answered WITHOUT the lesson material, so calling a real doubt
+  course_info gives a worse answer, while calling a product question "question" only costs a
+  little more. Lean to question whenever the message mentions anything TAUGHT in the course.
+- "How far along am I", "how much is left", "how many lessons remain for my certificate" are
+  course_info: they are about their progress through the product, not about its subject.
 - Never invent an intent outside the list. Never add other fields.
 
 Worked examples, all from real messages this got wrong before:

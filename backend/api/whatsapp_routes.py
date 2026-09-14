@@ -1940,7 +1940,7 @@ def _whatsapp_markdown(text: str, lang: str) -> str:
     return out
 
 
-async def _course_facts(db, lang: str) -> str:
+async def _course_facts(db, lang: str, session=None) -> str:
     """The COURSE FACTS block handed to the Teacher, with live numbers."""
     try:
         res = await db.execute(select(Course).order_by(Course.created_at).options(
@@ -1977,6 +1977,40 @@ async def _course_facts(db, lang: str) -> str:
     lines.append(f"- {available} of them are ready in this learner's language right now; more are added "
                  f"regularly. If they ask how many lessons there are, give the full programme size and "
                  f"mention how many are ready in their language so far.")
+    # Where THIS learner stands. The single most common question in the real
+    # transcripts is a version of "how much is left?" — "kitna rehta hai",
+    # "Level 1 kitna reh gya", "ajun kiti aahe", "kitne test baki hai" — and the
+    # facts block could describe the programme without knowing where the person
+    # asking had got to. Forty tokens, and it makes the commonest question
+    # answerable in both modes.
+    if session is not None:
+        try:
+            done = min((session.lesson_index or 0)
+                       + (1 if session.stage in ("between_lessons", "clarify", "done") else 0),
+                       available)
+            held = list((await db.execute(
+                select(WhatsAppCertificate.level)
+                .where(WhatsAppCertificate.phone == session.phone))).scalars().all())
+            lines.append(f"- THIS learner has completed {done} lesson(s) so far.")
+            for lv in LEVELS:
+                # Levels are CUMULATIVE: Level 2 is reached by finishing modules
+                # 1-5, not by doing 14 lessons anywhere. Counting the level's own
+                # size against their running total told a learner 23 lessons in
+                # that they had finished Level 2, when they had done one of its
+                # two modules.
+                last = max(lv["modules"])
+                need = sum(n for m, n in counts.items() if m <= last)
+                if lv["level"] in held:
+                    lines.append(f"  They already hold the Level {lv['level']} certificate.")
+                elif done >= need:
+                    lines.append(f"  They have finished everything Level {lv['level']} requires "
+                                 f"({need} lessons) — the certificate is on its way.")
+                else:
+                    lines.append(f"  Level {lv['level']} takes {need} lessons in total; "
+                                 f"they have {need - done} to go.")
+        except Exception as e:
+            print(f"WARN learner progress facts unavailable: {type(e).__name__}: {e}")
+
     lines.append(COURSE_POLICY)
     return chr(10).join(lines)
 
@@ -2043,7 +2077,7 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None,
                                  "COURSE FACTS below.",
                "not_yet_covered": [], "has_any_progress": True}
 
-    facts = await _course_facts(db, lang)
+    facts = await _course_facts(db, lang, session)
     state = LearnerState(
         learner_id=f"wa:{frm}",
         name=session.name or "there",
