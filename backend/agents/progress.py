@@ -39,6 +39,10 @@ def ordered_lessons_from_course(course) -> list[dict]:
     return out
 
 
+# How much of an earlier module's document to keep as its gist.
+SUMMARY_CHARS = 400
+
+
 def build_teacher_context(ordered_lessons: list[dict], is_completed) -> dict:
     """Returns {"knowledge_text": str, "not_yet_covered": list[str], "has_any_progress": bool}."""
     modules: "OrderedDict[str, dict]" = OrderedDict()
@@ -52,7 +56,30 @@ def build_teacher_context(ordered_lessons: list[dict], is_completed) -> dict:
     not_yet_covered: list[str] = []
     has_any_progress = False
 
-    for mod in modules.values():
+    # Only the module they are IN gets its full document; earlier ones get a
+    # summary — their lesson titles plus the opening of the document.
+    #
+    # Every completed module used to be inlined whole, which reached 24,000
+    # tokens by module four and was sent on EVERY question, including "is this
+    # free?" — answered from a 200-token facts block. That was the largest line
+    # in the bill by an order of magnitude. Questions are nearly always about
+    # the lesson just watched, so the depth stays where it is used while the
+    # rest remains in outline, which is what lets the Teacher still place a
+    # question in what they have already seen.
+    ordered = list(modules.values())
+    current_idx = max((i for i, m in enumerate(ordered)
+                       if any(is_completed(l) for l in m["lessons"])), default=-1)
+
+    def _summary(mod, lessons_done):
+        titles = ", ".join(l["title"] for l in lessons_done)
+        doc = (mod["content_doc"] or "").strip()
+        gist = (doc[:SUMMARY_CHARS].rsplit(" ", 1)[0] + "\u2026") if len(doc) > SUMMARY_CHARS else doc
+        out = ("=== Module: " + mod["title"] +
+               " (completed earlier \u2014 summary only) ===\n"
+               "Lessons covered: " + titles)
+        return out + ("\n" + gist if gist else "")
+
+    for _mi, mod in enumerate(ordered):
         lessons = mod["lessons"]
         if not lessons:
             continue
@@ -62,7 +89,9 @@ def build_teacher_context(ordered_lessons: list[dict], is_completed) -> dict:
 
         if len(done) == len(lessons):
             has_any_progress = True
-            if doc:
+            if _mi != current_idx:
+                knowledge_parts.append(_summary(mod, done))
+            elif doc:
                 knowledge_parts.append(
                     "=== Module: {title} (learner has FULLY completed this module) ===\n{doc}".format(
                         title=mod["title"], doc=doc)

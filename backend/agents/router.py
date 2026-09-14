@@ -32,6 +32,7 @@ from core.config import settings
 # The complete set. Anything else the model says is thrown away.
 INTENTS = (
     "question",        # a genuine doubt about the course content -> Teacher
+    "course_info",     # about the course as a product -> answered from facts alone
     "ask_doubt",       # says they HAVE a doubt but has not asked it yet
     "refer",           # wants to invite/share with a friend
     "feedback",        # an opinion about the course, or an offer to give one (+ "value")
@@ -62,7 +63,11 @@ Reply with ONE JSON object and nothing else:
 {"intent": "<one of the list>", "language": "<en|hi|mr|te|ta|kn or omit>", "value": "<short extracted text or omit>"}
 
 The ONLY valid intents:
-- question        — they are asking something about AI, the lessons, the price, the certificate, how the course works
+- question        — a doubt about what a LESSON taught: AI itself, a term, an example, something
+                    they did not follow. Needs the course material to answer.
+- course_info     — about the course as a PRODUCT, not its subject matter: price, whether it is
+                    free, the certificate, how many lessons, how long it takes, languages, how
+                    the quiz works, who made it. Answerable without any lesson content.
 - ask_doubt       — they say they HAVE a doubt or want to ask something, but have not actually asked
                     it yet ("i have a doubt", "mujhe ek doubt hai", "can I ask something?"). If the
                     question itself is there, it is "question", not ask_doubt.
@@ -135,7 +140,11 @@ Worked examples, all from real messages this got wrong before:
 "mein apna friend ko bhejna chahta hu" -> {"intent":"refer"}
 "i want to give feedback" -> {"intent":"feedback"}
 "the videos are going too fast for me" -> {"intent":"feedback","value":"The videos go too fast"}
-"kya iske liye paise lagenge" -> {"intent":"question"}
+"kya iske liye paise lagenge" -> {"intent":"course_info"}
+   About the price, not about AI. No lesson explains this.
+"is there a certificate at the end" -> {"intent":"course_info"}
+"what is generative AI" -> {"intent":"question"}
+   About the subject. Needs the lesson material.
 "i have a doubt" -> {"intent":"ask_doubt"}
    The same words as the button. They are announcing a question, not asking one — invite it,
    do not answer it.

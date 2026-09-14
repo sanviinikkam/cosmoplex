@@ -2000,7 +2000,8 @@ def _spend_teacher_call(session) -> None:
     session.teacher_calls_today = (session.teacher_calls_today or 0) + 1
 
 
-async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) -> None:
+async def _teacher_answer(db, session, frm: str, lang: str, text: str | None,
+                          facts_only: bool = False) -> None:
     """Answer a free-text question via the Teacher agent, scoped to exactly what
     this learner has actually completed (admin-uploaded module content docs)."""
     if is_abusive(text):
@@ -2022,13 +2023,25 @@ async def _teacher_answer(db, session, frm: str, lang: str, text: str | None) ->
         await _offer_next_step(db, session, frm, lang, _nm)
         return
 
-    lessons = await _db_lessons(db, lang)
+    # "Is it free?", "is there a certificate?", "how many lessons?" are about the
+    # course as a product. They are answered from COURSE FACTS, a couple of
+    # hundred tokens — yet they used to arrive with every completed module's
+    # document attached, up to 24,000 tokens, because the Teacher had only one
+    # mode. Dropping the content for these cuts them roughly fivefold and cannot
+    # cost accuracy: none of it was being used.
+    lessons = [] if facts_only else await _db_lessons(db, lang)
     idx = session.lesson_index or 0
     # Between lessons / just finished the course → the current lesson itself is done too.
     current_lesson_done = session.stage in ("between_lessons", "clarify", "done")
     completed_up_to = min(idx + 1 if current_lesson_done else idx, len(lessons))
     completed_ids = {l["video_id"] for l in lessons[:completed_up_to] if l["video_id"]}
     ctx = build_teacher_context(lessons, lambda l: l["video_id"] in completed_ids)
+    if facts_only:
+        # Not "(empty)", which reads as "this learner has done nothing" and would
+        # have the Teacher answer as though they had just signed up.
+        ctx = {"knowledge_text": "Not included for this question — answer it from "
+                                 "COURSE FACTS below.",
+               "not_yet_covered": [], "has_any_progress": True}
 
     facts = await _course_facts(db, lang)
     state = LearnerState(
@@ -2348,6 +2361,12 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
     # Only the QUIZ language. Before this, "quiz hindi me karna hai" was read as
     # switch_language and changed the whole course including the videos — not a
     # dead end but the wrong action, which is worse.
+    # A question about the course as a product. Same Teacher, same rules and
+    # voice, without the lesson documents it has no use for.
+    if kind == "course_info":
+        await _teacher_answer(db, session, frm, lang, text, facts_only=True)
+        return True
+
     if kind == "quiz_language":
         chosen = intent.get("language")
         if not chosen:
