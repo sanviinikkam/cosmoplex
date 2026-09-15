@@ -1207,12 +1207,11 @@ async def _db_lessons(db, lang: str) -> list[dict]:
     for module in course.modules:            # relationships already order_by order_index
         if stop:
             break
-        # The certified path is shorter than the catalogue, and it has a hole in
-        # it: Role-Specific Applications is not certified, so it is skipped
-        # rather than sat through. `continue`, not `break` — an uncertified
-        # module in the middle must not end the course, only be stepped over.
-        # Modules beyond the certified set stay in the admin portal, uploadable
-        # and editable, but no learner ever reaches them.
+        # The certified path is shorter than the catalogue: modules in a level
+        # that is not open yet stay in the admin portal, uploadable and
+        # editable, but no learner reaches them. `continue` rather than `break`
+        # so that a closed level sitting anywhere in the order is stepped over
+        # instead of silently ending the course.
         if (module.order_index or 0) not in CERTIFIED_MODULES:
             continue
         for section in module.sections:

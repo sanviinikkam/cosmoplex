@@ -21,13 +21,14 @@ Order indexes, not titles: modules can be renamed, and are, in six languages.
 # Level 3, which is written down here so the structure is explicit, and simply
 # not open. Opening it later is one flag, not a redesign.
 #
-# Note the ordering: Level 3's module sits BETWEEN Level 2's, because the
-# catalogue order and the teaching order are not the same. That is exactly why
-# levels are sets of module indexes rather than ranges.
+# The catalogue is ordered to match: Role-Specific Applications was sitting at
+# position 6, between the Level 2 modules, purely because that is where it
+# happened to be written. It moved to the end, where a Level 3 module belongs,
+# so the levels are contiguous and a learner walks straight through them.
 LEVELS: list[dict] = [
     {"level": 1, "modules": (0, 1, 2), "open": True},
-    {"level": 2, "modules": (3, 4, 6, 7), "open": True},
-    {"level": 3, "modules": (5,), "open": False},
+    {"level": 2, "modules": (3, 4, 5, 6), "open": True},
+    {"level": 3, "modules": (7,), "open": False},
 ]
 
 # The levels a learner can actually earn today. Everything that issues a
@@ -36,11 +37,9 @@ LEVELS: list[dict] = [
 # arrive.
 OPEN_LEVELS: list[dict] = [lv for lv in LEVELS if lv.get("open")]
 
-# The modules a learner may reach, which are exactly the certified ones. Module
-# 6 (Role-Specific Applications, order 5) is deliberately not certified and is
-# therefore SKIPPED, not merely capped: leaving it in the path would march
-# everybody through seven lessons that earn them nothing on the way to Ethics.
-# Membership, not a ceiling — a gap in the middle is a thing that can happen.
+# The modules a learner may reach: exactly those in an open level. Membership
+# rather than a ceiling, which costs nothing now that the ordering is tidy and
+# keeps the rule honest if a level is ever opened out of sequence.
 CERTIFIED_MODULES = frozenset(m for lv in OPEN_LEVELS for m in lv["modules"])
 LEARNER_MAX_MODULE_ORDER = max(CERTIFIED_MODULES)
 
@@ -71,11 +70,11 @@ def last_module_of_level(level: int) -> int | None:
 
 
 def modules_up_to_level(level: int) -> tuple[int, ...]:
-    """Every certified module from the start through this level.
+    """Every open module from the start through this level.
 
-    Levels are cumulative but no longer contiguous, so "everything up to here"
-    cannot be expressed as a range — asking for module <= 7 would count
-    Role-Specific, which nobody takes.
+    Built from the level map rather than a range: the two agree today, and a
+    range would quietly start counting a closed level's lessons the moment the
+    ordering changed again.
     """
     out: list[int] = []
     for lv in OPEN_LEVELS:
