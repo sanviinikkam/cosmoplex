@@ -958,6 +958,10 @@ async def receive(request: Request, background_tasks: BackgroundTasks):
                     # times would be read as a loop and silently ignored.
                     if reply_id is None and text and check_repeat_loop(frm, text):
                         print(f"⚠ repeat loop from {frm} — dropping: {text[:60]!r}")
+                        # Dropping the reply ends this burst, but the next drip
+                        # nudge starts another one — the nudge is what wakes the
+                        # other bot. Remember the number so we stop initiating.
+                        background_tasks.add_task(_mark_auto_responder, frm)
                         continue
 
                     # And the version that changes its wording: instant, lengthy
@@ -2732,6 +2736,25 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
         return
     session.source_type = "organic"
     session.campaign = "organic"
+
+
+async def _mark_auto_responder(frm: str) -> None:
+    """Note that this number replies automatically, so the drip leaves it alone.
+
+    Deliberately not opt_out: they are a real learner — this one has passed
+    quizzes and holds a Level 1 certificate — and everything they actually
+    initiate still works. What stops is us poking a number whose software
+    answers back.
+    """
+    try:
+        async with async_session_factory() as db:
+            s = await db.get(WhatsAppSession, frm)
+            if s is not None and not s.auto_responder:
+                s.auto_responder = True
+                await db.commit()
+                print(f"⚠ {frm} marked as an auto-responder — drip nudges suppressed")
+    except Exception as e:
+        print(f"⚠ could not mark auto-responder for {frm}: {type(e).__name__}: {e}")
 
 
 async def _handle_message(frm: str, reply_id: str | None, text: str | None,

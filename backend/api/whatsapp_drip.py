@@ -381,6 +381,14 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 report["skipped"] += 1
                 continue
 
+            # This number is answered by software. Nudging it starts a loop: the
+            # nudge wakes the other bot, its reply wakes us, and so on until a
+            # rate limit ends it — twice a day, on schedule, because the drip
+            # runs on schedule. They keep everything they initiate themselves.
+            if getattr(s, "auto_responder", False):
+                report["skipped"] += 1
+                continue
+
             # Assignments can be switched off by an admin. When they are, never
             # nudge someone to finish one — the step does not exist for them, and
             # the message would point at a screen they can no longer reach.

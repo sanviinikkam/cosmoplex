@@ -127,6 +127,18 @@ LOOP_WINDOW = 180
 LOOP_REPEATS = 3        # the third identical message is where we stop replying
 LOOP_MIN_LEN = 8        # "hi", "ok", "haan" repeated is a person, not a machine
 
+# Identical text is not the only shape automation takes. One learner's phone
+# runs a business auto-responder that ALTERNATES between two replies — "I only
+# help with Disha Competitive Classes" and "your last message didn't come
+# through clearly" — so neither ever reached three, and the loop ran on.
+#
+# What gives it away is variety, or the lack of it: four or more substantial
+# messages drawn from barely any distinct texts. A person repeating themselves
+# twice inside three minutes is rare; a person alternating between exactly two
+# sentences four times is not something people do.
+LOOP_VARIETY_MSGS = 4       # at least this many substantial messages...
+LOOP_VARIETY_DISTINCT = 2   # ...drawn from at most this many distinct texts
+
 _recent_texts: dict[str, deque] = defaultdict(deque)
 
 
@@ -152,7 +164,12 @@ def check_repeat_loop(phone: str, text: str | None,
         return False
     if len(_recent_texts) > 5000:        # never grows without bound
         _recent_texts.clear()
-    return sum(1 for t, _ in dq if t == norm) >= LOOP_REPEATS
+    if sum(1 for t, _ in dq if t == norm) >= LOOP_REPEATS:
+        return True
+    # The alternating case: plenty of messages, almost no distinct ones.
+    substantial = [t for t, _ in dq if len(t) >= LOOP_MIN_LEN]
+    return (len(substantial) >= LOOP_VARIETY_MSGS
+            and len(set(substantial)) <= LOOP_VARIETY_DISTINCT)
 
 
 # ── Ping-pong detector: automation whose wording changes ─────────────────────

@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS "
                 "levels_announced BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text(
+                "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS "
+                "auto_responder BOOLEAN DEFAULT FALSE"))
             # Level certificates live in their own table (create_all makes it);
             # these indexes are what /verify and the issuing guard rely on.
             await conn.execute(text(

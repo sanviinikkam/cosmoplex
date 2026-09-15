@@ -418,6 +418,11 @@ class WhatsAppSession(Base):
     # 24-hour window at any moment, so a broadcast would simply fail for most of
     # them, and templates for it do not exist yet.
     levels_announced = Column(Boolean, default=False)
+    # This number is answered by software. Set when the loop breaker trips, and
+    # read by the drip engine, which stops nudging them: the nudge is what wakes
+    # the other bot up, so the only way to end the loop is to stop starting it.
+    # They keep the course — taps, lessons, quizzes, replies to what they send.
+    auto_responder = Column(Boolean, default=False)
     # Teacher answers used today, and the UTC day they belong to. On the session
     # rather than in memory so a deploy does not hand everyone a fresh allowance.
     teacher_calls_today = Column(Integer, default=0)
