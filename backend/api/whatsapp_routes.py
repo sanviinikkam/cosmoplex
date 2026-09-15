@@ -33,8 +33,9 @@ from core.config import settings
 # Which stages mean 'has not finished signup' — one definition, shared.
 from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
-from core.levels import (LEARNER_MAX_MODULE_ORDER, LEVELS, last_module_of_level,
-                         level_for_module, modules_in_level)
+from core.levels import (CERTIFIED_MODULES, LEARNER_MAX_MODULE_ORDER, LEVELS,
+                         MAX_LEVEL, OPEN_LEVELS, last_module_of_level,
+                         level_for_module, modules_in_level, modules_up_to_level)
 from db.models import WhatsAppCertificate
 from core.rate_limit import (check_ping_pong, check_rate_limit, check_repeat_loop,
                              note_outbound, should_notify)
@@ -1206,12 +1207,14 @@ async def _db_lessons(db, lang: str) -> list[dict]:
     for module in course.modules:            # relationships already order_by order_index
         if stop:
             break
-        # The certified path is shorter than the catalogue. Modules past the last
-        # certified one stay in the admin portal — uploadable, editable — but a
-        # learner never reaches them, so the course ends where Level 2 ends and
-        # they get the coming-soon message rather than uncertified content.
-        if (module.order_index or 0) > LEARNER_MAX_MODULE_ORDER:
-            break
+        # The certified path is shorter than the catalogue, and it has a hole in
+        # it: Role-Specific Applications is not certified, so it is skipped
+        # rather than sat through. `continue`, not `break` — an uncertified
+        # module in the middle must not end the course, only be stepped over.
+        # Modules beyond the certified set stay in the admin portal, uploadable
+        # and editable, but no learner ever reaches them.
+        if (module.order_index or 0) not in CERTIFIED_MODULES:
+            continue
         for section in module.sections:
             if stop:
                 break
@@ -1501,7 +1504,7 @@ async def _levels_completed(db, lessons: list[dict], done: int) -> list[int]:
         if mo is not None:
             seen[mo] = seen.get(mo, 0) + 1
     out = []
-    for lv in LEVELS:
+    for lv in OPEN_LEVELS:        # never award a level that is not open yet
         mods = lv["modules"]
         if all(canonical.get(m, 0) > 0 and seen.get(m, 0) >= canonical[m] for m in mods):
             out.append(lv["level"])
@@ -1721,7 +1724,7 @@ async def _advance_lesson(db, session, frm: str, lang: str, nm: str) -> bool:
     # is wrong for somebody. They have finished when they hold every level —
     # which is the same arithmetic that issues the certificates, so the message
     # and the certificate can never disagree.
-    finished = len(await _levels_completed(db, lessons, len(lessons))) == len(LEVELS)
+    finished = len(await _levels_completed(db, lessons, len(lessons))) == len(OPEN_LEVELS)
     await send_text(frm, tr(lang, "done" if finished else "no_more").format(name=nm))
     await _maybe_issue_certificates(db, session, frm, lang, nm, lessons, len(lessons))
     # They have seen everything that exists in their language — the moment their
@@ -1955,7 +1958,7 @@ async def _course_facts(db, lang: str, session=None) -> str:
         # The CERTIFIED programme, not the whole catalogue. Modules past Level 2
         # exist in the admin portal but no learner can reach them, so quoting the
         # catalogue size would promise lessons nobody can take.
-        total = sum(n for m, n in counts.items() if m <= LEARNER_MAX_MODULE_ORDER)
+        total = sum(n for m, n in counts.items() if m in CERTIFIED_MODULES)
         available = len(await _db_lessons(db, lang))
         by_order = {m.order_index or 0: m.title for m in (course.modules if course else [])}
     except Exception as e:
@@ -1966,15 +1969,16 @@ async def _course_facts(db, lang: str, session=None) -> str:
     # Levels, because the certificate is now per level and the Teacher is the
     # thing learners ask about it. Built from the same map the issuing gate uses,
     # so the two can never drift apart.
-    for lv in LEVELS:
+    for lv in OPEN_LEVELS:
         names = [by_order.get(m, f"Module {m + 1}") for m in lv["modules"]]
         n = sum(counts.get(m, 0) for m in lv["modules"])
         lines.append(f"- Level {lv['level']} = {', '.join(names)} ({n} microlessons). "
                      f"Finishing every lesson in those modules earns the Level {lv['level']} "
                      f"certificate, sent on WhatsApp as a PDF with a verification code.")
-    lines.append("- Certificates are per LEVEL. There is no single end-of-course certificate; "
-                 "Level 1 is earned first, then Level 2. Levels beyond 2 do not exist yet — if "
-                 "asked, say more levels are coming and do not promise when.")
+    lines.append(f"- Certificates are per LEVEL. There is no single end-of-course certificate; "
+                 f"they are earned in order, Level 1 first. Level {MAX_LEVEL} is the highest one "
+                 f"open today. Further levels are being prepared — if asked, say more is coming, "
+                 f"do NOT promise when, and do not describe what is in them.")
     lines.append(f"- The certified programme is {total} short video lessons in total.")
     # Said plainly, because it is the honest answer and the gap is real: a Telugu
     # learner can reach one lesson today while the programme is fifty.
@@ -1996,14 +2000,13 @@ async def _course_facts(db, lang: str, session=None) -> str:
                 select(WhatsAppCertificate.level)
                 .where(WhatsAppCertificate.phone == session.phone))).scalars().all())
             lines.append(f"- THIS learner has completed {done} lesson(s) so far.")
-            for lv in LEVELS:
+            for lv in OPEN_LEVELS:
                 # Levels are CUMULATIVE: Level 2 is reached by finishing modules
                 # 1-5, not by doing 14 lessons anywhere. Counting the level's own
                 # size against their running total told a learner 23 lessons in
                 # that they had finished Level 2, when they had done one of its
                 # two modules.
-                last = max(lv["modules"])
-                need = sum(n for m, n in counts.items() if m <= last)
+                need = sum(counts.get(m, 0) for m in modules_up_to_level(lv["level"]))
                 if lv["level"] in held:
                     lines.append(f"  They already hold the Level {lv['level']} certificate.")
                 elif done >= need:
