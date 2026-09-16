@@ -1314,7 +1314,7 @@ function FeedbackPanel() {
   const [err, setErr] = useState("");
   // One page at a time: there are already 147 replies and the list only grows,
   // so the whole thing in one scroll stopped being readable a while ago.
-  const PER_PAGE = 25;
+  const PER_PAGE = 10;
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
@@ -1326,7 +1326,11 @@ function FeedbackPanel() {
         limit: PER_PAGE, offset,
       });
       setRows(r.items); setAsked(r.asked); setAnswered(r.answered); setRate(r.responseRate);
-      setTotal(r.total);
+      // `?? items.length` so the pager still appears against a backend that
+      // predates paging and returns the whole list — otherwise total is
+      // undefined, every comparison against it is false, and the controls
+      // silently never render.
+      setTotal(r.total ?? r.items.length);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load feedback");
     } finally { setLoading(false); }
@@ -1393,7 +1397,10 @@ function FeedbackPanel() {
         </div>
       ) : (
         <div className="space-y-3">
-          {rows.map((r, i) => (
+          {/* The server pages, but slice here too: if it ever returns more than
+              a page (an older build, a cached response) the pager would show
+              the right numbers while the list ignored them. */}
+          {(rows.length > PER_PAGE ? rows.slice(offset, offset + PER_PAGE) : rows).map((r, i) => (
             <div key={`${r.id}-${r.checkpoint}-${i}`} className="rounded-xl border border-zinc-200 p-3">
               <div className="flex flex-wrap items-center gap-2 mb-1.5">
                 <span className="text-sm font-medium">{r.name}</span>
