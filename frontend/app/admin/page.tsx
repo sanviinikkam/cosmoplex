@@ -1465,6 +1465,18 @@ function CampaignsPanel() {
   const [err, setErr] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // Paged in the browser, unlike feedback: the endpoint returns one row per
+  // campaign, so the volume is small, and the totals row has to sum EVERY
+  // campaign rather than the ten on screen.
+  const PER_PAGE = 10;
+  const [page, setPage] = useState(0);
+  const pageRows = rows.length > PER_PAGE
+    ? rows.slice(page * PER_PAGE, (page + 1) * PER_PAGE)
+    : rows;
+  const pages = Math.ceil(rows.length / PER_PAGE);
+  // A new date range is a different set of campaigns; page 3 of the old one
+  // may not exist in the new one.
+  useEffect(() => { setPage(0); }, [from, to]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
@@ -1530,7 +1542,7 @@ function CampaignsPanel() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.campaign} className="border-b border-zinc-100 last:border-0">
                   <td className="py-2.5 pr-3">
                     <div className="font-medium text-zinc-900">{r.campaign}</div>
@@ -1612,6 +1624,32 @@ function CampaignsPanel() {
               );
             })()}
           </table>
+          {rows.length > PER_PAGE && (
+            <div className="flex items-center justify-between gap-3 pt-3">
+              <span className="text-xs text-zinc-500">
+                Showing {page * PER_PAGE + 1}–{Math.min((page + 1) * PER_PAGE, rows.length)}
+                {" "}of {rows.length} campaigns
+                <span className="text-zinc-400"> · totals below cover all of them</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(Math.max(0, page - 1))}
+                  disabled={page === 0}
+                  className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50
+                             disabled:opacity-40 disabled:hover:bg-transparent">
+                  ← Prev
+                </button>
+                <span className="text-xs text-zinc-500">Page {page + 1} of {pages}</span>
+                <button
+                  onClick={() => setPage(Math.min(pages - 1, page + 1))}
+                  disabled={page >= pages - 1}
+                  className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50
+                             disabled:opacity-40 disabled:hover:bg-transparent">
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>
