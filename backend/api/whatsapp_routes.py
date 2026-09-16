@@ -2691,6 +2691,27 @@ async def _send_referral_info(db, session, frm: str) -> None:
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
+# Words that stop the messages, matched exactly and WITHOUT the model.
+#
+# The marketing message tells people to reply "stop". Until now only
+# "unsubscribe" was handled here and "stop" relied on the intent router — which
+# is dark whenever the Anthropic key is capped or out of credit. Telling somebody
+# how to opt out and then ignoring them is precisely what gets an account
+# reported, so this cannot depend on anything that can be switched off.
+#
+# Exact match, not substring: "stop" inside "I can't stop watching these" is not
+# a request to leave.
+OPT_OUT_WORDS = {
+    "unsubscribe", "stop", "stop.", "unsub", "opt out", "optout", "remove me",
+    "band karo", "band karein", "band kro", "mat bhejo", "message mat bhejo",
+    "बंद करो", "बंद करें", "मत भेजो", "रोको",
+    "बंद करा", "पाठवू नका",
+    "ఆపండి", "ఆపు", "పంపవద్దు",
+    "நிறுத்து", "நிறுத்துங்கள்", "அனுப்பாதீர்கள்",
+    "ನಿಲ್ಲಿಸಿ", "ನಿಲ್ಸಿ", "ಕಳಿಸಬೇಡಿ",
+}
+
+
 # ── Acquisition attribution ──────────────────────────────────────────────────
 # Two sources, because Facebook traffic arrives two different ways:
 #   1. Click-to-WhatsApp ads: Meta attaches a `referral` object to the FIRST
@@ -2813,7 +2834,7 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
         # next nudge — i.e. asking to stop would have SCHEDULED more messages.
         # Suppresses proactive nudges/marketing only; they can still message us and
         # keep learning (they initiated that contact), and *restart* re-subscribes.
-        if reply_id is None and low == "unsubscribe":
+        if reply_id is None and low in OPT_OUT_WORDS:
             session.opt_out = True
             await db.commit()
             await send_text(frm, tr(session.language or "en", "unsub_ok"))

@@ -79,11 +79,13 @@ SIGNUP_STAGES = {"new", "welcome", "ask_name", "ask_profile", "ask_goal"}
 # The pre-sale marketing drip: (idle-DAYS threshold, nudge key). One touch each,
 # fired once, in order. Each sends the admin-uploaded photo/video for that
 # (day, language) if present — otherwise falls back to the finish_signup text.
+# Two touches, not four. These go out as TEMPLATES, which means they reach
+# people outside the 24-hour window — the only messages WhatsApp counts as
+# unsolicited — and Meta warned this account for spam after 1,293 of them went
+# to 601 people in a week, a third of whom had never written back at all.
 SIGNUP_TIERS = [
     (1, "signup_d1"),
-    (2, "signup_d2"),
     (3, "signup_d3"),
-    (7, "signup_d7"),
 ]
 
 NUDGE_RULES = [
@@ -129,14 +131,20 @@ PRESALE_TEMPLATE_LANG = "en"
 # stage nudge has two, alternated by how many times that key has already fired
 # for that learner. finish_signup stays a single string: the pre-sale drip
 # already varies by tier and carries its own admin-uploaded creative.
+#
+# Each one ends with a way out. Marketing that cannot be stopped is what people
+# report, and reporting is what costs the account — "stop" was always handled,
+# it was just never mentioned. Note this text is the CAPTION when the send goes
+# out as an approved template; the template's own body has to carry the same
+# line, and that is edited in WhatsApp Manager, not here.
 NUDGE_TEXT = {
     "finish_signup": {
-        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?",
-        "hi": "{name}, आपने हमें 'seen' पर छोड़ दिया 👀 आपका AI glow-up बस एक reply दूर है — और पहला पाठ बिल्कुल free 🎓 वापस आओ ना?",
-        "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?",
-        "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?",
-        "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?",
-        "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?",
+        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?\n\nReply *stop* and we won't message again.",
+        "hi": "{name}, आपने हमें 'seen' पर छोड़ दिया 👀 आपका AI glow-up बस एक reply दूर है — और पहला पाठ बिल्कुल free 🎓 वापस आओ ना?\n\nन चाहें तो *stop* लिखें — हम दोबारा message नहीं करेंगे।",
+        "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?\n\nनको असल्यास *stop* लिहा — आम्ही पुन्हा message करणार नाही.",
+        "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?\n\nవద్దనుకుంటే *stop* అని రాయండి — మళ్లీ message చేయము.",
+        "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?\n\nவேண்டாம் என்றால் *stop* என எழுதுங்கள் — மீண்டும் message செய்ய மாட்டோம்.",
+        "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?\n\nಬೇಡವಾದರೆ *stop* ಎಂದು ಬರೆಯಿರಿ — ಮತ್ತೆ message ಮಾಡುವುದಿಲ್ಲ.",
     },
     "next_lesson": {
         "en": [
@@ -309,6 +317,27 @@ def _parse_iso(v: str | None) -> datetime | None:
         return None
 
 
+def _marketing_ignored(s: WhatsAppSession) -> bool:
+    """True if we already sent a pre-sale message and they never answered it.
+
+    `last_active_at` only moves when the learner sends something, so comparing
+    it against the last tier's timestamp is exactly the question "did this
+    prompt a reply?". The first message they ever sent — the ad's prefilled
+    text — predates every tier, so somebody who only ever clicked the ad reads
+    as ignoring, which is correct.
+    """
+    log = s.nudge_log or {}
+    stamps = [v.get("at") for k, v in log.items()
+              if k.startswith("signup_d") and isinstance(v, dict) and v.get("at")]
+    if not stamps:
+        return False                    # nothing sent yet, so nothing ignored
+    last_sent = max(stamps)
+    active = s.last_active_at
+    if active is None:
+        return True
+    return active.isoformat() <= last_sent
+
+
 def _pick_nudge(s: WhatsAppSession, now: datetime):
     """Return (nudge_key, idle_hours, day) for this learner, or None.
     `day` is the marketing-tier day for signup nudges, else None."""
@@ -318,6 +347,13 @@ def _pick_nudge(s: WhatsAppSession, now: datetime):
     # don't backfill lower tiers if an earlier window was missed — just send the
     # one that fits where they are now.
     if s.stage in SIGNUP_STAGES:
+        # One unanswered marketing message is a follow-up. Two is a pattern, and
+        # it is the pattern Meta measures: people who ignored the first are the
+        # ones who block the second. So a later tier is only sent to someone who
+        # SAID something after the last one — the sequence continues for anyone
+        # showing interest and stops dead for anyone who is not.
+        if _marketing_ignored(s):
+            return None
         idle_days = idle_hours / 24.0
         tier = None
         for day, key in SIGNUP_TIERS:   # ascending → ends on highest reached
