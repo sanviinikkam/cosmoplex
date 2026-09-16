@@ -2465,8 +2465,15 @@ function CourseEditor({ course, run }: { course: AdminCourse; run: (fn: () => Pr
 // ── Module (collapsible) ─────────────────────────────────────────────────────
 function ModuleCard({ m, moduleNo, run }: { m: AdminCourse["modules"][number]; moduleNo: number; run: (fn: () => Promise<unknown>) => Promise<void> }) {
   // 1-based lesson number within the module (running across its sections)
+  // Numbered by the SECTION's position, not by counting videos.
+  //
+  // Counting videos skipped sections that had none, so a module whose first
+  // section was still empty showed its second section's lesson as x.1 while
+  // WhatsApp called the same video x.2 — the learner flow numbers by section
+  // position, and the two disagreed about what a lesson was called. A lesson
+  // number is a place in the syllabus, not a tally of what has been uploaded.
   const lessonNum = new Map<string, number>();
-  m.sections.forEach((s) => s.videos.forEach((v) => lessonNum.set(v.id, lessonNum.size + 1)));
+  m.sections.forEach((s, si) => s.videos.forEach((v) => lessonNum.set(v.id, si + 1)));
   const [open, setOpen] = useState(false);
   const videoCount = m.sections.reduce((n, s) => n + s.videos.length, 0);
 
