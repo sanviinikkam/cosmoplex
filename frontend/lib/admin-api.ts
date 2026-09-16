@@ -231,6 +231,9 @@ export type FeedbackRow = {
 };
 export type FeedbackPage = {
   items: FeedbackRow[]; asked: number; answered: number; responseRate: number;
+  // `total` is every row matching the filter; `items` is just this page. The
+  // counts above stay whole-set, so they don't shift as you page through.
+  total: number; offset: number; limit: number;
 };
 
 export type AuditRow = {
@@ -304,10 +307,13 @@ export const adminApi = {
     adminFetch<{ role: string; configured: boolean }>(`/admin/team/${role}/password`, {
       method: "DELETE",
     }),
-  feedback: (opts?: { checkpoint?: string; language?: string }) => {
+  feedback: (opts?: { checkpoint?: string; language?: string;
+                      limit?: number; offset?: number }) => {
     const p = new URLSearchParams();
     if (opts?.checkpoint) p.set("checkpoint", opts.checkpoint);
     if (opts?.language) p.set("language", opts.language);
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    if (opts?.offset) p.set("offset", String(opts.offset));
     const q = p.toString();
     return adminFetch<FeedbackPage>(`/admin/feedback${q ? `?${q}` : ""}`);
   },

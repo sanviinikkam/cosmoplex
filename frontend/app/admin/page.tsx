@@ -1312,19 +1312,29 @@ function FeedbackPanel() {
   const [language, setLanguage] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // One page at a time: there are already 147 replies and the list only grows,
+  // so the whole thing in one scroll stopped being readable a while ago.
+  const PER_PAGE = 25;
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
       const r = await adminApi.feedback({
         checkpoint: checkpoint || undefined, language: language || undefined,
+        limit: PER_PAGE, offset,
       });
       setRows(r.items); setAsked(r.asked); setAnswered(r.answered); setRate(r.responseRate);
+      setTotal(r.total);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load feedback");
     } finally { setLoading(false); }
-  }, [checkpoint, language]);
+  }, [checkpoint, language, offset]);
   useEffect(() => { load(); }, [load]);
+  // A filter changes what the pages ARE, so staying on page 6 of the old set
+  // would land on an empty page of the new one.
+  useEffect(() => { setOffset(0); }, [checkpoint, language]);
 
   // Deliberately no lesson count: the threshold is a server-side constant that
   // has already moved once, and a number here would drift out of sync silently.
@@ -1406,6 +1416,33 @@ function FeedbackPanel() {
               {r.audioId && <VoiceNote audioId={r.audioId} />}
             </div>
           ))}
+
+          {total > PER_PAGE && (
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <span className="text-xs text-zinc-500">
+                Showing {offset + 1}–{Math.min(offset + PER_PAGE, total)} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setOffset(Math.max(0, offset - PER_PAGE))}
+                  disabled={offset === 0}
+                  className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50
+                             disabled:opacity-40 disabled:hover:bg-transparent">
+                  ← Newer
+                </button>
+                <span className="text-xs text-zinc-500">
+                  Page {Math.floor(offset / PER_PAGE) + 1} of {Math.ceil(total / PER_PAGE)}
+                </span>
+                <button
+                  onClick={() => setOffset(offset + PER_PAGE)}
+                  disabled={offset + PER_PAGE >= total}
+                  className="text-xs rounded-lg border border-zinc-300 px-2.5 py-1 hover:bg-zinc-50
+                             disabled:opacity-40 disabled:hover:bg-transparent">
+                  Older →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

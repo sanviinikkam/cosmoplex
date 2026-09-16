@@ -562,6 +562,8 @@ async def list_feedback(
     checkpoint: str | None = None,
     language: str | None = None,
     answered_only: bool = True,
+    limit: int = 25,
+    offset: int = 0,
     role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -630,8 +632,16 @@ async def list_feedback(
     # Newest first; entries with no timestamp sort last rather than crashing the
     # comparison against None.
     items.sort(key=lambda x: (x["at"] or x["askedAt"] or ""), reverse=True)
+    # One page at a time. The counts above stay whole-set — they describe the
+    # filter, not the page, and a response rate that changed as you clicked
+    # through pages would be worse than useless.
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     return {
-        "items": items,
+        "items": items[offset:offset + limit],
+        "total": len(items),
+        "offset": offset,
+        "limit": limit,
         "asked": asked,
         "answered": answered,
         "responseRate": round(100 * answered / asked) if asked else 0,
