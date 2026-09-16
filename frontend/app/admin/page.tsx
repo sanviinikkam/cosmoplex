@@ -1456,6 +1456,54 @@ function FeedbackPanel() {
   );
 }
 
+// The language a campaign's arrivals start in, instead of being asked to pick.
+//
+// Content and super can change it; marketing sees the value and not a control.
+// The server enforces that — this only avoids showing marketing a dropdown that
+// would fail. "default" is the absence of a choice, not a stored value, so a new
+// campaign works the day it launches instead of waiting to be configured.
+function CampaignLanguage({ row, onSaved }: { row: CampaignRow; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const role = getAdminRole();
+  const canEdit = (role === "super" || role === "content") && row.languageEditable;
+  const label = LANGUAGES.find((l) => l.code === row.language)?.label ?? row.language;
+
+  if (!row.languageEditable) {
+    return <span className="text-xs text-zinc-400">they choose</span>;
+  }
+  if (!canEdit) {
+    return (
+      <span className="text-xs text-zinc-700">
+        {label}
+        {row.languageIsDefault && <span className="text-zinc-400"> · default</span>}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={row.language}
+        disabled={saving}
+        onChange={async (e) => {
+          setSaving(true); setErr("");
+          try {
+            await adminApi.setCampaignLanguage(row.campaign, e.target.value);
+            onSaved();
+          } catch (ex) {
+            setErr(ex instanceof Error ? ex.message : "Could not save");
+          } finally { setSaving(false); }
+        }}
+        className="text-xs border border-zinc-300 rounded px-1.5 py-0.5 disabled:opacity-50">
+        {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+      </select>
+      {row.languageIsDefault && <span className="text-[11px] text-zinc-400">default</span>}
+      {saving && <Spinner className="w-3 h-3" />}
+      {err && <span className="text-[11px] text-red-600" title={err}>!</span>}
+    </div>
+  );
+}
+
 // Where learners actually come from. Deliberately a funnel, not a click count:
 // a campaign that sends 500 people who never reply is worth less than one that
 // sends 50 who finish, and only the funnel makes that visible.
@@ -1532,6 +1580,7 @@ function CampaignsPanel() {
               <tr className="text-left text-[11px] uppercase tracking-wider text-zinc-400 border-b border-zinc-200">
                 <th className="py-2 pr-3 font-medium">Campaign</th>
                 <th className="py-2 px-3 font-medium">Source</th>
+                <th className="py-2 px-3 font-medium">Starts in</th>
                 <th className="py-2 px-3 font-medium text-right">Arrived</th>
                 <th className="py-2 px-3 font-medium text-right">Picked lang</th>
                 <th className="py-2 px-3 font-medium text-right">Signed up</th>
@@ -1553,6 +1602,9 @@ function CampaignsPanel() {
                     <span className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(r.source_type)}`}>
                       {r.source_type}
                     </span>
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <CampaignLanguage row={r} onSaved={load} />
                   </td>
                   <td className="py-2.5 px-3 text-right font-medium text-zinc-900">{r.arrived}</td>
                   <td className="py-2.5 px-3 text-right text-zinc-700">
@@ -1598,6 +1650,7 @@ function CampaignsPanel() {
                   <tr className="border-t-2 border-zinc-300 font-medium">
                     <td className="py-2.5 pr-3 text-zinc-900">All campaigns</td>
                     <td className="py-2.5 px-3 text-zinc-400 text-[11px]">{rows.length} rows</td>
+                    <td className="py-2.5 px-3" />
                     <td className="py-2.5 px-3 text-right text-zinc-900">{t.arrived}</td>
                     <td className="py-2.5 px-3 text-right text-zinc-700">
                       {t.picked_language}

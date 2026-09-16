@@ -33,6 +33,7 @@ from core.config import settings
 # Which stages mean 'has not finished signup' — one definition, shared.
 from api.whatsapp_drip import SIGNUP_STAGES
 from core.moderation import is_abusive
+from core.campaigns import DEFAULT_CAMPAIGN_LANGUAGE, NO_CAMPAIGN
 from core.levels import (CERTIFIED_MODULES, LEARNER_MAX_MODULE_ORDER, LEVELS,
                          MAX_LEVEL, OPEN_LEVELS, last_module_of_level,
                          level_for_module, modules_in_level, modules_up_to_level)
@@ -2740,6 +2741,27 @@ def _apply_attribution(session, referral: dict | None, text: str | None) -> None
     session.campaign = "organic"
 
 
+async def _campaign_language(db, campaign: str | None) -> str | None:
+    """The language arrivals from this campaign start in, or None to ask them.
+
+    None for organic: they found the number themselves and nothing says what
+    they speak. For a real campaign the answer is whatever an admin chose, and
+    Hindi if nobody has — the default is a value, not an absence, so a new ad
+    starts working the moment it runs rather than waiting to be configured.
+    """
+    if not campaign or campaign == NO_CAMPAIGN:
+        return None
+    try:
+        from db.models import CampaignSetting
+        row = await db.get(CampaignSetting, campaign)
+        return (row.language if row else DEFAULT_CAMPAIGN_LANGUAGE)
+    except Exception as e:
+        # Never block signup on this: falling through to the picker is a worse
+        # experience, not a broken one.
+        print(f"⚠ campaign language lookup failed for {campaign!r}: {type(e).__name__}: {e}")
+        return None
+
+
 async def _mark_auto_responder(frm: str) -> None:
     """Note that this number replies automatically, so the drip leaves it alone.
 
@@ -3041,8 +3063,21 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 await _resume_stage(db, session, frm, detected)
                 return
 
-        # No language yet → show picker
+        # No language yet. Someone who arrived from an ad does not get asked:
+        # the campaign already says which language it was selling in, so asking
+        # is a tap that costs a portion of every cohort before lesson one. Anyone
+        # who messaged the number directly still chooses, because nothing about
+        # them says which language they want.
         if not session.language:
+            campaign_lang = await _campaign_language(db, session.campaign)
+            if campaign_lang:
+                session.language = campaign_lang
+                session.stage = "ask_name"
+                await db.commit()
+                print(f"✓ {frm} started in {campaign_lang} from campaign "
+                      f"{session.campaign!r} — picker skipped")
+                await send_text(frm, ob(campaign_lang, "name_q"))
+                return
             await db.commit()
             await _send_language_picker(frm)
             return

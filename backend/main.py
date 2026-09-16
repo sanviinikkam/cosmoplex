@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(
                 "ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS "
                 "auto_responder BOOLEAN DEFAULT FALSE"))
+            # campaign_settings is created by create_all; nothing to backfill —
+            # an absent row means "nobody chose", which is the default.
             # Level certificates live in their own table (create_all makes it);
             # these indexes are what /verify and the issuing guard rely on.
             await conn.execute(text(

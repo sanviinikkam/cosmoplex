@@ -37,12 +37,15 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.campaigns import (CAMPAIGN_LANGS, DEFAULT_CAMPAIGN_LANGUAGE,
+                            NO_CAMPAIGN)
 from core.auth import (create_admin_token, require_admin, require_roles, admin_role,
                        ADMIN_SUPER, ADMIN_CONTENT, ADMIN_MARKETING)
 from core.config import settings
 from db.database import get_db
 from api.whatsapp_drip import SIGNUP_STAGES
 from db.models import (
+    CampaignSetting,
     WhatsAppCertificate,
     AdminAudit,
     FeedbackAudio,
@@ -503,6 +506,43 @@ async def system_check(request: Request, _: str = Depends(require_roles(ADMIN_SU
             "overall": overall, "checks": checks}
 
 
+class CampaignLanguageBody(BaseModel):
+    language: str
+
+
+@router.put("/campaigns/{campaign}/language")
+async def set_campaign_language(
+    campaign: str,
+    body: CampaignLanguageBody,
+    request: Request,
+    role: str = Depends(require_roles(ADMIN_SUPER, ADMIN_CONTENT)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Choose the language arrivals from this campaign start in.
+
+    Content and super only — marketing reads the column but does not set it, and
+    that is enforced here rather than by hiding the control, which is decoration.
+    """
+    lang = (body.language or "").strip().lower()
+    if lang not in CAMPAIGN_LANGS:
+        raise HTTPException(400, f"unknown language {lang!r}")
+    if campaign == NO_CAMPAIGN:
+        raise HTTPException(400, "organic arrivals choose their own language")
+    row = await db.get(CampaignSetting, campaign)
+    previous = row.language if row else None
+    if row is None:
+        row = CampaignSetting(campaign=campaign, language=lang, updated_by=role)
+        db.add(row)
+    else:
+        row.language = lang
+        row.updated_by = role
+    await db.commit()
+    await _audit(db, role, "set_campaign_language", "campaign", campaign,
+                 summary=f"{previous or 'default'} -> {lang}",
+                 detail={"previous": previous, "language": lang}, request=request)
+    return {"campaign": campaign, "language": lang, "languageIsDefault": False}
+
+
 class TeamPasswordBody(BaseModel):
     password: str
 
@@ -960,6 +1000,9 @@ async def campaign_report(
     # One query for the whole report rather than a lookup per row.
     certified_phones = {p for (p,) in (await db.execute(
         select(WhatsAppCertificate.phone).distinct())).all()}
+    # Absence of a row is the default, so read them all once and let .get() say so.
+    chosen = {c.campaign: c for c in (await db.execute(
+        select(CampaignSetting))).scalars().all()}
     buckets: dict[str, dict] = {}
     for r in rows:
         key = r.campaign or "organic"
@@ -970,6 +1013,14 @@ async def campaign_report(
             "ad_id": r.ad_id,
             "arrived": 0, "picked_language": 0, "signed_up": 0,
             "started_lesson": 0, "completed": 0, "certified": 0, "opted_out": 0,
+            # What arrivals from this campaign start in. Hindi unless somebody
+            # chose; `languageIsDefault` is what lets the table say which.
+            "language": (chosen[key].language if key in chosen
+                         else DEFAULT_CAMPAIGN_LANGUAGE),
+            "languageIsDefault": key not in chosen,
+            # Organic arrivals are not from a campaign and still pick for
+            # themselves, so there is nothing here to set.
+            "languageEditable": key != "organic",
         })
         b["arrived"] += 1
         if r.language:

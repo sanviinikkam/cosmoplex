@@ -216,6 +216,9 @@ export type CampaignRow = {
   completion_rate: number;
   certified: number;
   certified_rate: number;
+  // What arrivals from this campaign start in. `languageIsDefault`
+  // means nobody has chosen, so the value is the Hindi fallback.
+  language: string; languageIsDefault: boolean; languageEditable: boolean;
 };
 export type CampaignsData = { campaigns: CampaignRow[]; total_users: number };
 
@@ -307,6 +310,10 @@ export const adminApi = {
     adminFetch<{ role: string; configured: boolean }>(`/admin/team/${role}/password`, {
       method: "DELETE",
     }),
+  setCampaignLanguage: (campaign: string, language: string) =>
+    adminFetch<{ campaign: string; language: string; languageIsDefault: boolean }>(
+      `/admin/campaigns/${encodeURIComponent(campaign)}/language`,
+      { method: "PUT", body: JSON.stringify({ language }) }),
   feedback: (opts?: { checkpoint?: string; language?: string;
                       limit?: number; offset?: number }) => {
     const p = new URLSearchParams();

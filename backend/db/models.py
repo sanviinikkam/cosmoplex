@@ -443,6 +443,27 @@ class WhatsAppMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class CampaignSetting(Base):
+    """The language a campaign's arrivals start in.
+
+    A row existing IS the record that someone chose it. No "is_default" column:
+    absence means nobody has set one, which is exactly what the admin table needs
+    to show, and it cannot fall out of step with the value the way a flag can.
+
+    Only campaigns that came from an ad get one. Somebody who messages the number
+    directly still picks their own language, because nothing about them says
+    which one they want.
+    """
+    __tablename__ = "campaign_settings"
+
+    campaign = Column(String(80), primary_key=True)
+    language = Column(String(5), nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # The role that set it — the three admin logins are shared passwords, so a
+    # role is genuinely all the system knows.
+    updated_by = Column(String(20), nullable=True)
+
+
 class WhatsAppCertificate(Base):
     """One certificate, for one learner, at one level.
 
