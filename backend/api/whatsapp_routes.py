@@ -3034,6 +3034,14 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 return
 
         # Language selection from the list → ask the learner's name next
+        # "Change language" from the preset offer. Must stay above the signup
+        # handlers: at ask_name a tap arrives with the button's LABEL as text,
+        # and the name handler would happily store it as their name.
+        if reply_id == "change_lang":
+            await db.commit()
+            await _send_language_picker(frm)
+            return
+
         if reply_id and reply_id.startswith("lang_"):
             lang = reply_id.split("_", 1)[1]
             if lang in LANGS:
@@ -3097,6 +3105,13 @@ async def _handle_message(frm: str, reply_id: str | None, text: str | None,
                 await db.commit()
                 print(f"✓ {frm} started in {campaign_lang} from campaign "
                       f"{session.campaign!r} — picker skipped")
+                # Told which language we picked, and offered the way out — in
+                # THAT language, naming it. Somebody who cannot read Hindi still
+                # has to be able to tell that this button changes the language,
+                # so the offer is written where they will be looking.
+                await send_buttons(
+                    frm, tr(campaign_lang, "lang_preset"),
+                    [("change_lang", tr(campaign_lang, "change_lang_btn"))])
                 await send_text(frm, ob(campaign_lang, "name_q"))
                 return
             await db.commit()

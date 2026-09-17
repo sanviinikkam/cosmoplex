@@ -155,6 +155,8 @@ On fail (score < {ASSIGN_PASS}): identify the specific term(s) that are off and 
 CONTENT = {
     "en": {
         "picker_done": "Great! We'll learn in English. 🎉",
+        "lang_preset": "👋 We'll learn in *English*. Would you prefer another language? Tap below 👇",
+        "change_lang_btn": "🌐 Change language",
         "rename_ask": "Sure — what should I call you instead? Just send your new name. 😊",
         "rename_done": "Done! I'll call you *{name}* from now on. 👍",
         "lesson_caption": "Watch the video, then tap “Start quiz”.",
@@ -209,6 +211,8 @@ CONTENT = {
     },
     "hi": {
         "picker_done": "बढ़िया! अब हम हिंदी में सीखेंगे। 🎉",
+        "lang_preset": "👋 हम *हिंदी* में सीखेंगे। कोई और भाषा चाहिए? नीचे tap करें 👇",
+        "change_lang_btn": "🌐 भाषा बदलें",
         "rename_ask": "ज़रूर — आपको किस नाम से बुलाऊँ? बस अपना नया नाम भेज दीजिए। 😊",
         "rename_done": "हो गया! अब से मैं आपको *{name}* कहूँगा। 👍",
         "lesson_caption": "वीडियो देखें, फिर “क्विज़ शुरू करें” दबाएँ।",
@@ -263,6 +267,8 @@ CONTENT = {
     },
     "mr": {
         "picker_done": "छान! आता आपण मराठीत शिकूया. 🎉",
+        "lang_preset": "👋 आपण *मराठी* मध्ये शिकू. दुसरी भाषा हवी आहे का? खाली tap करा 👇",
+        "change_lang_btn": "🌐 भाषा बदला",
         "rename_ask": "नक्कीच — तुम्हाला कोणत्या नावाने हाक मारू? फक्त तुमचं नवीन नाव पाठवा. 😊",
         "rename_done": "झालं! आतापासून मी तुम्हाला *{name}* म्हणेन. 👍",
         "lesson_caption": "व्हिडिओ पाहा, मग “क्विझ सुरू करा” दाबा.",
@@ -317,6 +323,8 @@ CONTENT = {
     },
     "te": {
         "picker_done": "అద్భుతం! ఇక తెలుగులో నేర్చుకుందాం. 🎉",
+        "lang_preset": "👋 మనం *తెలుగు*లో నేర్చుకుందాం. వేరే భాష కావాలా? కింద tap చేయండి 👇",
+        "change_lang_btn": "🌐 భాష మార్చు",
         "rename_ask": "తప్పకుండా — మిమ్మల్ని ఏ పేరుతో పిలవాలి? మీ కొత్త పేరు పంపండి చాలు. 😊",
         "rename_done": "అయిపోయింది! ఇప్పటి నుంచి మిమ్మల్ని *{name}* అని పిలుస్తాను. 👍",
         "lesson_caption": "వీడియో చూసి, తర్వాత “క్విజ్ మొదలుపెట్టు” నొక్కండి.",
@@ -371,6 +379,8 @@ CONTENT = {
     },
     "ta": {
         "picker_done": "அருமை! இனி தமிழில் கற்போம். 🎉",
+        "lang_preset": "👋 நாம் *தமிழில்* கற்போம். வேறு மொழி வேண்டுமா? கீழே tap செய்யுங்கள் 👇",
+        "change_lang_btn": "🌐 மொழி மாற்று",
         "rename_ask": "கண்டிப்பாக — உங்களை என்ன பெயரில் அழைக்கட்டும்? உங்கள் புதிய பெயரை அனுப்புங்கள். 😊",
         "rename_done": "முடிந்தது! இனி உங்களை *{name}* என்று அழைப்பேன். 👍",
         "lesson_caption": "வீடியோவைப் பாருங்கள், பிறகு “வினாடி வினா தொடங்கு” அழுத்துங்கள்.",
@@ -425,6 +435,8 @@ CONTENT = {
     },
     "kn": {
         "picker_done": "ಅದ್ಭುತ! ಇನ್ನು ಕನ್ನಡದಲ್ಲಿ ಕಲಿಯೋಣ. 🎉",
+        "lang_preset": "👋 ನಾವು *ಕನ್ನಡ*ದಲ್ಲಿ ಕಲಿಯೋಣ. ಬೇರೆ ಭಾಷೆ ಬೇಕೆ? ಕೆಳಗೆ tap ಮಾಡಿ 👇",
+        "change_lang_btn": "🌐 ಭಾಷೆ ಬದಲಿಸಿ",
         "rename_ask": "ಖಂಡಿತ — ನಿಮ್ಮನ್ನು ಯಾವ ಹೆಸರಿನಿಂದ ಕರೆಯಲಿ? ನಿಮ್ಮ ಹೊಸ ಹೆಸರನ್ನು ಕಳಿಸಿ. 😊",
         "rename_done": "ಆಯಿತು! ಇನ್ನು ಮುಂದೆ ನಿಮ್ಮನ್ನು *{name}* ಎಂದು ಕರೆಯುತ್ತೇನೆ. 👍",
         "lesson_caption": "ವೀಡಿಯೊ ನೋಡಿ, ನಂತರ “ಕ್ವಿಜ್ ಆರಂಭಿಸಿ” ಒತ್ತಿ.",
