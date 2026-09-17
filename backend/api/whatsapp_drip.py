@@ -137,14 +137,30 @@ PRESALE_TEMPLATE_LANG = "en"
 # it was just never mentioned. Note this text is the CAPTION when the send goes
 # out as an approved template; the template's own body has to carry the same
 # line, and that is edited in WhatsApp Manager, not here.
+# Appended to EVERY nudge, in the learner's language.
+#
+# On every one, not only the pre-sale sequence: a course reminder is still
+# a message somebody did not ask for that day, and this account has been
+# warned for spam. Added at send time rather than written into each string
+# — six languages with several variations each is forty-odd places for a
+# line to go missing from.
+OPT_OUT_TAIL = {
+    "en": "\n\nReply *stop* or *unsubscribe* to stop these messages.",
+    "hi": "\n\nये messages बंद करने के लिए *stop* या *unsubscribe* लिखें।",
+    "mr": "\n\nहे messages बंद करण्यासाठी *stop* किंवा *unsubscribe* लिहा.",
+    "te": "\n\nఈ messages ఆపడానికి *stop* లేదా *unsubscribe* అని రాయండి.",
+    "ta": "\n\nஇந்த messages நிற்க *stop* அல்லது *unsubscribe* என எழுதுங்கள்.",
+    "kn": "\n\nಈ messages ನಿಲ್ಲಿಸಲು *stop* ಅಥವಾ *unsubscribe* ಎಂದು ಬರೆಯಿರಿ.",
+}
+
 NUDGE_TEXT = {
     "finish_signup": {
-        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?\n\nReply *stop* and we won't message again.",
-        "hi": "{name}, आपने हमें 'seen' पर छोड़ दिया 👀 आपका AI glow-up बस एक reply दूर है — और पहला पाठ बिल्कुल free 🎓 वापस आओ ना?\n\nन चाहें तो *stop* लिखें — हम दोबारा message नहीं करेंगे।",
-        "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?\n\nनको असल्यास *stop* लिहा — आम्ही पुन्हा message करणार नाही.",
-        "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?\n\nవద్దనుకుంటే *stop* అని రాయండి — మళ్లీ message చేయము.",
-        "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?\n\nவேண்டாம் என்றால் *stop* என எழுதுங்கள் — மீண்டும் message செய்ய மாட்டோம்.",
-        "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?\n\nಬೇಡವಾದರೆ *stop* ಎಂದು ಬರೆಯಿರಿ — ಮತ್ತೆ message ಮಾಡುವುದಿಲ್ಲ.",
+        "en": "{name}, you left us on 'seen' 👀 your AI glow-up is one reply away — and the first lesson's on us 🎓 slide back in?",
+        "hi": "{name}, आपने हमें 'seen' पर छोड़ दिया 👀 आपका AI glow-up बस एक reply दूर है — और पहला पाठ बिल्कुल free 🎓 वापस आओ ना?",
+        "mr": "{name}, तुम्ही आम्हाला 'seen' वर सोडलंत 👀 तुमचा AI glow-up फक्त एक reply दूर आहे — आणि पहिला धडा अगदी free 🎓 परत या ना?",
+        "te": "{name}, మమ్మల్ని 'seen'లో వదిలేశారు 👀 మీ AI glow-up కేవలం ఒక్క reply దూరం — పైగా మొదటి పాఠం పూర్తిగా free 🎓 తిరిగి రండి?",
+        "ta": "{name}, எங்களை 'seen'-ல விட்டுட்டீங்க 👀 உங்க AI glow-up ஒரே ஒரு reply தூரம்தான் — முதல் பாடம் முழுசா free 🎓 திரும்பி வாங்களேன்?",
+        "kn": "{name}, ನಮ್ಮನ್ನ 'seen' ನಲ್ಲಿ ಬಿಟ್ಟುಬಿಟ್ರಿ 👀 ನಿಮ್ಮ AI glow-up ಒಂದೇ reply ದೂರ — ಮೊದಲ ಪಾಠ ಸಂಪೂರ್ಣ free 🎓 ವಾಪಸ್ ಬನ್ನಿ?",
     },
     "next_lesson": {
         "en": [
@@ -508,6 +524,10 @@ async def run_drip(force_to: str | None = None, force_key: str | None = None) ->
                 # Admin's text is the caption under the media (or a plain message if no
                 # media). Falls back to the default nudge copy when text is empty.
                 caption = (asset.text.strip() if (asset and asset.text and asset.text.strip()) else text)
+                # After the admin's own copy too — a marketing caption somebody
+                # typed by hand is exactly the kind that would otherwise never
+                # say how to stop.
+                caption += OPT_OUT_TAIL.get(lang, OPT_OUT_TAIL["en"])
                 in_window = _idle_hours(s, now) < WINDOW_HOURS
 
                 if in_window:
