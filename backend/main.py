@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -256,10 +256,46 @@ else:
 app.include_router(admin_router)      # admin portal — always on
 app.include_router(whatsapp_router)   # WhatsApp webhook — always on
 
-# Serve generated certificates
+# Serve generated certificates.
+#
+# A route rather than a StaticFiles mount, because the disk underneath it is
+# ephemeral: every deploy wipes it, and all 41 certificates issued so far became
+# 404s that way — including for a learner who asked for hers back. The database
+# row holds everything the document is made of, so a missing file is rebuilt on
+# request instead of being lost. The QR printed on an issued certificate
+# therefore keeps working for as long as the record exists.
 certs_dir = Path("certificates")
 certs_dir.mkdir(exist_ok=True)
-app.mount("/certificates", StaticFiles(directory="certificates"), name="certificates")
+
+
+@app.get("/certificates/{filename}")
+async def serve_certificate(filename: str):
+    from fastapi.responses import FileResponse
+    from sqlalchemy import select as _sel
+    from db.database import async_session_factory
+    from db.models import WhatsAppCertificate
+
+    safe = Path(filename).name          # no directory traversal
+    if not safe.lower().endswith(".pdf"):
+        raise HTTPException(status_code=404, detail="Not found")
+    path = certs_dir / safe
+    if path.exists():
+        return FileResponse(path, media_type="application/pdf", filename=safe)
+
+    async with async_session_factory() as db:
+        cert = (await db.execute(_sel(WhatsAppCertificate)
+                .where(WhatsAppCertificate.pdf == safe))).scalars().first()
+    if cert is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    from agents.certifier import render_certificate_pdf
+    mods = cert.modules if isinstance(cert.modules, list) else None
+    ok = render_certificate_pdf(path, cert.name, cert.issued_at, cert.code,
+                                level=cert.level, modules=mods, lessons=cert.lessons)
+    if not ok:
+        raise HTTPException(status_code=503, detail="Certificate could not be rendered")
+    print(f"↻ rebuilt {safe} for {cert.code} (file was missing)")
+    return FileResponse(path, media_type="application/pdf", filename=safe)
 
 
 # WebSocket — part of the web learner channel, so it follows the same flag.

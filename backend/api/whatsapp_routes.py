@@ -2408,6 +2408,26 @@ async def _apply_intent(db, session, frm: str, nm: str, intent: dict,
         await _teacher_answer(db, session, frm, lang, text, facts_only=True)
         return True
 
+    # "I never got my certificate." Send it, rather than telling them they have
+    # it — which is what happened to a learner who asked four times over two
+    # days while the file behind the link had been wiped by a deploy.
+    if kind == "my_certificate":
+        certs = (await db.execute(
+            select(WhatsAppCertificate).where(WhatsAppCertificate.phone == frm)
+            .order_by(WhatsAppCertificate.level))).scalars().all()
+        if not certs:
+            return False                 # none earned yet — the Teacher explains
+        base = (settings.backend_url or "").rstrip("/")
+        for c in certs:
+            if not (base and c.pdf):
+                continue
+            await send_text(frm, tr(lang, "cert_level_ready").format(name=nm, level=c.level))
+            await send_document(frm, f"{base}/certificates/{c.pdf}",
+                                f"Cosmoplex_AI_Literacy_Level_{c.level}.pdf",
+                                tr(lang, "cert_caption").format(level=c.level))
+        await _offer_next_step(db, session, frm, lang, nm)
+        return True
+
     if kind == "quiz_language":
         chosen = intent.get("language")
         if not chosen:

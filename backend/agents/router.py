@@ -33,6 +33,7 @@ from core.config import settings
 INTENTS = (
     "question",        # a genuine doubt about the course content -> Teacher
     "course_info",     # about the course as a product -> answered from facts alone
+    "my_certificate",  # wants a certificate they have earned sent again
     "ask_doubt",       # says they HAVE a doubt but has not asked it yet
     "refer",           # wants to invite/share with a friend
     "feedback",        # an opinion about the course, or an offer to give one (+ "value")
@@ -65,6 +66,10 @@ Reply with ONE JSON object and nothing else:
 The ONLY valid intents:
 - question        — a doubt about what a LESSON taught: AI itself, a term, an example, something
                     they did not follow. Needs the course material to answer.
+- my_certificate  — they want a certificate they have ALREADY EARNED sent to them again, or say
+                    they never received it ("certificate nahi mila", "send my certificate",
+                    "where is my certificate"). Asking how certificates WORK is course_info;
+                    asking for THEIRS is this.
 - course_info     — about the course as a PRODUCT, not its subject matter: price, whether it is
                     free, the certificate, how many lessons, how long it takes, languages, how
                     the quiz works, who made it. Answerable without any lesson content.
@@ -149,6 +154,8 @@ Worked examples, all from real messages this got wrong before:
 "kya iske liye paise lagenge" -> {"intent":"course_info"}
    About the price, not about AI. No lesson explains this.
 "is there a certificate at the end" -> {"intent":"course_info"}
+"mujhe certificate nahi mila" -> {"intent":"my_certificate"}
+"phir se certificate do" -> {"intent":"my_certificate"}
 "what is generative AI" -> {"intent":"question"}
    About the subject. Needs the lesson material.
 "i have a doubt" -> {"intent":"ask_doubt"}

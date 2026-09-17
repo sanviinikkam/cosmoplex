@@ -144,6 +144,32 @@ _SEAL_SVG = """<svg width="19.5mm" height="25.8mm" viewBox="0 0 100 132" xmlns="
 </svg>"""
 
 
+def render_certificate_pdf(path, name, issued_at, code=None, level=None,
+                           modules=None, lessons=None) -> bool:
+    """Write the certificate PDF to `path`. True if it rendered.
+
+    Exists so a certificate can be rebuilt from its database row at any time.
+    The PDF is a pure function of the row — name, date, code, level, modules,
+    lesson count are all frozen there at issue — so a rebuild is the same
+    document, not a new one. That matters because the file itself lives on a
+    filesystem that does not survive a deploy.
+    """
+    try:
+        from weasyprint import HTML as WP_HTML
+    except Exception as e:
+        print(f"⚠ certificate render unavailable: {type(e).__name__}: {e}")
+        return False
+    try:
+        html_doc = _generate_certificate_html(name, issued_at, code,
+                                              level=level, modules=modules,
+                                              lessons=lessons)
+        WP_HTML(string=html_doc).write_pdf(str(path))
+        return True
+    except Exception as e:
+        print(f"⚠ certificate render failed: {type(e).__name__}: {e}")
+        return False
+
+
 def _generate_certificate_html(name: str, issued_at: datetime, code: str | None = None,
                                level: int | None = None,
                                modules: list[str] | None = None,
