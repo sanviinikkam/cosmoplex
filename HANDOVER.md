@@ -256,16 +256,129 @@ voice, grading, and drip.
 
 ## 13. Known gaps / to-do
 
-- [ ] Upload **English + Marathi** "Welcome" (Lesson 1.1) videos — those two languages currently skip it.
-- [ ] Confirm **WhatsApp token is permanent** (§5.1) — do this first.
-- [ ] Move Render off the **sleeping free tier** for reliable nudges + fast replies.
-- [ ] Set up **Anthropic auto-reload** + low-balance alert.
-- [ ] Decide on **custom domain** (update `SITE_URL` in `frontend/app/layout.tsx` and `FRONTEND_URL` if so).
-- [ ] Complete **Meta Business Verification** before scaling WhatsApp volume.
-- [ ] Landing page still shows "12+ languages" / "4.8k learners certified" — update when convenient
-  (`frontend/app/page.tsx`).
-- [ ] Temporary `/whatsapp/diag` endpoint is deployed for debugging — safe (guarded by
-  `WHATSAPP_OPS_KEY`) but can be removed later.
+_Verified against production on 17 Sep 2026. A rendered version of this section, with the
+numbers laid out, is at https://claude.ai/artifact/3xDoysrhFxXczyd5uUQ6F3_
+
+### 13.1 Three third-party limits that can stop the service
+
+None of these fails loudly; each stops the course for everyone at once.
+
+- [ ] **Cloudinary is at 82% of the free plan** (35.14 / 43 credits; 6.0 GB stored, 15.6 GB
+  bandwidth). At 100%, **uploads and playback both stop**. The burn is source files nobody
+  sees — median upload 31 MB, delivered to learners at `w_480,br_400k` (~6 MB). Upgrade, or
+  export at 720p before uploading. Weeks, not months.
+- [ ] **Meta has warned the number for spam.** The pre-sale drip was sending marketing
+  templates on days 1/2/3/7 with no engagement check — 1,293 to 601 people in a week, 37% of
+  whom had never replied. Now: one follow-up, then silence unless they answer; two tiers, not
+  four; an opt-out line on every nudge. Watch the quality rating in WhatsApp Manager for a
+  fortnight. Emergency brake: `WHATSAPP_TEMPLATES_ENABLED=false` in Render (no deploy needed).
+- [ ] **Set an Anthropic spend alert.** The API went dark for two days in September — not an
+  empty balance but a monthly *usage limit* set in the Console, which reads
+  `You have reached your specified API usage limits`, not the credit-balance error. When it
+  trips, the Teacher and the intent router stop silently and free text falls back to keyword
+  handling. Cost is about $0.10 per learner to Level 1.
+
+### 13.2 Content is the bottleneck, not engineering
+
+Level 2 exists in code and **nobody can earn it**, because the modules it needs have no video.
+
+| Module | Level | Videos with media |
+|---|---|---|
+| 1 Understanding AI | 1 | 6 / 6 |
+| 2 How AI Actually Works | 1 | 6 / 6 |
+| 3 Art of Prompting | 1 | 4 / 4 |
+| 4 AI Landscape & Tools | 2 | 7 / 7 |
+| 5 AI at Work | 2 | 7 / 7 |
+| **6 AI Ethics & Safety** | 2 | **2 / 8** |
+| **7 Future & Career** | 2 | **0 / 6** |
+| 8 Role-Specific | 3 (closed) | 0 / 7 |
+
+Reachable lessons per language: hi 32 · en 16 · mr 12 · ta 12 · kn 12 · **te 1**.
+
+- [ ] Upload modules 6 and 7 so Level 2 becomes earnable. 41 learners hold Level 1 with
+  nowhere further to go.
+- [ ] Telugu has one lesson. A missing video **ends that language there** — the lesson list
+  stops at the first gap rather than skipping ahead, because module 2 assumes module 1. Upload
+  order matters more than upload volume.
+- [ ] Lesson `7.1 What Companies Are Actually Doing With AI Right Now` is a section with no
+  lesson row — it needs **+ Add lesson** before a video can go near it. The only one in the
+  course in that state.
+
+### 13.3 Open engineering work
+
+- [ ] **Uploads are intermittently slow** — same file, same connection, 30 seconds or minutes.
+  Ruled out: backend latency (126–266 ms, no cold starts) and file size. Remaining candidates:
+  Cloudinary's free-tier ingest, or the hourly drip, which runs **inside the API process** and
+  loads every session in one pass with no batching (`main.py` AsyncIOScheduler → `run_drip()`).
+  Decisive test: DevTools → Network during a slow upload — whichever of the Cloudinary POST,
+  the signature call, or the PUT is slow names the cause.
+- [ ] **Approved template bodies carry no opt-out line.** Every nudge now ends with one, but
+  where a send goes out as a template that text is only the caption. The template's own body
+  must carry the same line, and it is edited in **WhatsApp Manager**, not in this repo. Meta
+  weighs this in the quality rating currently under warning.
+- [ ] **`cosmoplex_finish_signup` does not exist** — 12 sends failed with HTTP 404. Create the
+  template or drop that tier.
+- [ ] **`restart` does not reset `lesson_index`** — a learner who restarts resumes mid-course
+  instead of at lesson 1.
+- [ ] **Rate limiting can be bypassed via `X-Forwarded-For`** — the throttle keys off a header
+  the client can set.
+- [ ] **A five-option quiz question would crash the send.** Latent: no question has five today,
+  but adding one through bulk import breaks that lesson for everyone in it.
+- [ ] **Stale taps** on buttons from old messages (~9% of taps). Most paths handle it; "next
+  lesson" from an old message does not always land where the learner expects.
+- [ ] **The admin console logs three 403s on load** — the dashboard initialises its role state
+  to `"super"`, so super-only panels mount for one render before the effect corrects it.
+  Cosmetic, one line.
+
+### 13.4 Traps that are not visible in the code
+
+Each of these cost real time or real damage to discover.
+
+- **Render's filesystem is wiped on every deploy.** All 41 certificate PDFs became 404s this
+  way, and a learner spent two days being told she already had hers. Certificates now rebuild
+  from their database row on request, and they are the only thing written to disk — but
+  **anything else written there will vanish the same way**.
+- **The backend pushes to two git remotes.** `origin` is Rayaan's fork; `colleague`
+  (`sanviinikkam/cosmoplex`) is what Render actually deploys from. A backend change pushed only
+  to `origin` never goes live. That is a personal account — see §13.5.
+- **Two products share one Meta business.** The WhatsApp account named **"Cosmoplex" belongs to
+  WiseOrder**; ours is **"AI School"** (`1687271549060074`), whose number is *displayed* as
+  "Cosmoplex". The crossed names are the trap. Our app was subscribed to their account for
+  weeks — their conversations appeared in our admin portal and our number replied to their
+  testers. Removing asset access does **not** stop webhook delivery; only
+  `DELETE /{waba}/subscribed_apps` does, and that call needs the access you just removed — so
+  **unsubscribe first, remove access second**. Both sides verified clean on 17 Sep, and the
+  webhook now rejects any `phone_number_id` that is not ours.
+- **Render's environment differs from `backend/.env`.** `WHATSAPP_TEMPLATES_ENABLED` reads
+  false locally and true in production — which is why the marketing problem was invisible from
+  a dev machine. Check the dashboard before concluding a feature is off.
+- **The three admin logins are shared passwords.** The audit log records the *role*, because a
+  role is genuinely all the system knows. The role in `localStorage` is presentation only —
+  every endpoint re-derives it from the signed token, so never add a check that trusts it.
+- **Deletes are recoverable.** Fifteen destructive admin actions are audited, and the audit row
+  is written *before* the delete, so it captures the Cloudinary id about to be orphaned.
+  Deleting a lesson removes DB rows but **not the file** — undo it by reading
+  `detail.previous` from the Audit panel (super admin only) and pasting the id back.
+
+### 13.5 Before the current maintainer leaves
+
+- [ ] **Move the repo off a personal account.** Render deploys from `sanviinikkam/cosmoplex`;
+  if that access lapses, nobody can deploy the backend. Pick one canonical repo (ideally
+  org-owned), point Render at it, drop the second remote, and add the successor as admin.
+- [ ] **Write down ownership for every service** — Render, Vercel, Neon, Cloudinary, Anthropic,
+  Groq, Meta Business Manager, the domain, GitHub: who owns it, whose card pays, who else has
+  admin. Confirm the Anthropic org (`5de83f6e-8e5e-4d22-b913-6050b3b6a0c9`) is the company's
+  workspace and not someone's personal one — that ambiguity already caused two days of
+  downtime.
+- [ ] **Rotate every secret the departing maintainer has seen**: WhatsApp token, Anthropic key,
+  Cloudinary secret, Groq key, `SECRET_KEY`, and all three admin passwords. Rotating
+  `SECRET_KEY` logs every admin out, which is the point.
+- [ ] **Remove departing people from Meta** — Business Manager, the app, and the WABA — and
+  confirm Business Verification status.
+- [ ] **Decide who controls the data.** 1,724 learners' phone numbers and conversations, and
+  the admin portal now shows transcripts to content and marketing as well as super.
+- [ ] Confirm Render is not on a sleeping tier (measured 126–266 ms with no cold starts on
+  17 Sep, so it probably is not) and that the WhatsApp token is permanent.
 
 ---
 
